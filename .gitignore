@@ -1,0 +1,50 @@
+# Виртуальные окружения
+.venv/
+venv/
+env/
+ENV/
+
+# Python: байт-код и кеши
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.hypothesis/
+
+# Покрытие и результаты сборки
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Временные файлы и логи
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+
+# Локальные настройки IDE и редакторов
+.idea/
+.vscode/
+*.code-workspace
+
+# Локальные переменные окружения и секреты
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+Desktop.ini
+
