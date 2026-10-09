@@ -20,8 +20,13 @@ Zero Knowledge — интеллектуальная образовательна
 ```
 
 Модуль генерации и проверки трёх Python-задач (ZEROK-4) описан в
-[`docs/zerok-4.md`](docs/zerok-4.md). До подключения реальных ZEROK-1 и ZEROK-3
-он предоставляет проверяемое ядро и явные неисполняющие integration stubs.
+[`docs/zerok-4.md`](docs/zerok-4.md). До подключения реального ZEROK-1 он
+предоставляет проверяемое ядро и явный неисполняющий provider stub.
+
+Изолированное исполнение кода (ZEROK-3) реализовано на Docker и описано в
+[`docs/zerok-3.md`](docs/zerok-3.md): реальный runner
+`DockerIsolatedExecutionRunner` подключается к `TaskBlockService` вместо
+`UnavailableExecutionRunner`.
 
 ## Правила совместной работы
 
