@@ -1,4 +1,4 @@
-"""Explicit non-operational adapters used until ZEROK-1 and ZEROK-3 land."""
+"""Explicit non-operational adapters for unconfigured/preview scenarios."""
 
 from __future__ import annotations
 

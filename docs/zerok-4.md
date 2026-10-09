@@ -22,19 +22,46 @@ task_set, tasks, solutions, tests = service.generate()
 ## Интеграции
 
 - `TaskGenerationProvider.generate(prompt) -> str` — минимальная граница для
-  ZEROK-1. Адаптер реального клиента должен вернуть JSON-текст и преобразовать
-  timeout/auth/network ошибки в `ProviderUnavailableError`.
+  ZEROK-1. Фактический `zero_knowledge.llm.DeepSeekClient` уже реализует этот
+  протокол напрямую, поэтому дополнительный adapter не нужен. Клиент возвращает
+  JSON-текст и преобразует timeout/auth/network ошибки в
+  `ProviderUnavailableError`.
 - `IsolatedExecutionRunner.verify_reference(task, solution, tests) -> None` —
   минимальная граница для ZEROK-3. Успешный возврат допустим только после
   реального изолированного запуска всех тестов. Несовпадение результата —
   `ReferenceSolutionFailedError`, недоступность runner —
-  `IsolatedExecutionUnavailableError`.
+  `IsolatedExecutionUnavailableError`. Фактический
+  `zero_knowledge.execution.DockerIsolatedExecutionRunner` напрямую реализует
+  этот протокол, поэтому второй sandbox или adapter не создавались.
 
-Пока реальные модули отсутствуют, доступны явные заглушки
+Для неподключённых интеграций доступны явные заглушки
 `UnavailableTaskGenerationProvider` и `UnavailableExecutionRunner`. Они ничего
 не генерируют и не исполняют. Runner-заглушка всегда возвращает ошибку
 `ReferenceNotExecutedError`, поэтому stub/mock никогда не выдаётся за успешную
 проверку безопасности или корректности.
+
+`TaskBlockService.generate_without_reference_execution()` позволяет получить
+реальный DeepSeek-ответ после полной ZEROK-2 валидации. Он намеренно не вызывает
+runner и возвращает отдельный `UnverifiedTaskBlock` со статусами
+`generation=success`, `schema_validation=success`,
+`reference_execution=not_run`. Обычный `generate()` сохраняет прежний строгий
+контракт: успешный возврат возможен только после проверки реальным runner.
+
+## Ручной DeepSeek demo
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe -e ".[dev]"
+docker build -t zero-knowledge/sandbox:latest infra/sandbox
+$env:DEEPSEEK_API_KEY = "..."
+.\.venv\Scripts\python.exe scripts\demo_task_generation.py
+```
+
+По умолчанию demo использует строгий `generate()`: печатает три задачи,
+эталонный код, тесты, число пройденных тестов и `TaskSet status: VERIFIED`
+только после успешного исполнения всех эталонов через ZEROK-3. Запуск с
+`--preview` сохраняет generation-only режим и явно выводит
+`Reference execution: NOT RUN`. Настройки перечислены в `.env.example`; `.env`
+автоматически не загружается.
 
 ## Валидация и повторы
 
@@ -58,6 +85,13 @@ task_set, tasks, solutions, tests = service.generate()
 - `ProviderUnavailableError` — недоступен ZEROK-1/provider;
 - `IsolatedExecutionUnavailableError` — недоступен ZEROK-3;
 - `ReferenceNotExecutedError` — настроена только неисполняющая заглушка.
+
+ZEROK-3 трактует несовпадение вывода, ненулевой exit code (включая
+`ZeroDivisionError`, `IndexError`, `SyntaxError` и `MemoryError`) и timeout
+эталона как содержательную ошибку генерации. Недоступный Docker CLI/daemon или
+образ — инфраструктурная ошибка без повторного запроса к DeepSeek. Сообщение о
+runtime error ограничивается коротким stderr; полный внутренний traceback demo
+не печатает.
 
 ## Границы гарантий
 
