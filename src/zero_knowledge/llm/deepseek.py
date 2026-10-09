@@ -1,7 +1,18 @@
-"""Minimal OpenAI-compatible DeepSeek HTTP client for ZEROK-1.
+"""Минимальный HTTP-клиент DeepSeek (OpenAI-совместимый) для ZEROK-1.
 
-The client implements the ``generate(prompt) -> str`` boundary expected by
-ZEROK-4 and exposes lower-level JSON/chat methods used by the original PoC.
+Реализует границу ``generate(prompt) -> str``, которую ожидает ZEROK-4
+(``TaskGenerationProvider``), и JSON-режим для сценариев PoC (профиль,
+roadmap, вопросы по решениям).
+
+Поведение при ошибках:
+
+- 401/403 (auth) и прочие 4xx — немедленный :class:`ProviderUnavailableError`,
+  без retries: повтор того же запроса не поможет.
+- 429 (rate limit) и 5xx — повтор с экспоненциальной задержкой и учётом
+  заголовка ``Retry-After``.
+- таймаут/сетевые ошибки — повтор с экспоненциальной задержкой.
+- исчерпание retries — :class:`ProviderUnavailableError`.
+- ответ, который не удаётся разобрать как JSON-объект, — :class:`DeepSeekJsonError`.
 """
 
 from __future__ import annotations
@@ -27,12 +38,12 @@ _JSON_OBJECT_FORMAT: dict[str, Any] = {"type": "json_object"}
 
 
 class DeepSeekJsonError(ValueError):
-    """The model response cannot be parsed as a JSON object."""
+    """Модель вернула текст, который нельзя разобрать как JSON-объект."""
 
 
 @dataclass
 class ChatResult:
-    """Raw model content and request metadata."""
+    """Сырой ответ модели плюс служебная информация о вызове."""
 
     content: str
     usage: dict[str, Any] | None
@@ -41,7 +52,7 @@ class ChatResult:
 
 
 class DeepSeekClient:
-    """Synchronous ``chat/completions`` client with JSON mode and retries."""
+    """Синхронный клиент ``chat/completions`` с JSON-режимом и retries."""
 
     def __init__(
         self,
@@ -75,11 +86,11 @@ class DeepSeekClient:
         return self._model
 
     def generate(self, prompt: str) -> str:
-        """Return the model response as JSON text for ZEROK-4.
+        """Вернуть ответ как JSON-текст (граница ZEROK-1).
 
-        Markdown fences and surrounding commentary are removed when a complete
-        JSON value can be extracted. Otherwise the raw text is returned so that
-        ZEROK-4 can classify it as a content validation failure.
+        Если модель оборачивает JSON в Markdown-ограждение или добавляет
+        текст, возвращается вырезанная JSON-подстрока; иначе — сырой текст,
+        чтобы валидация в ZEROK-4 классифицировала его как контентную ошибку.
         """
 
         result = self.chat(prompt)
@@ -93,7 +104,11 @@ class DeepSeekClient:
         system: str | None = None,
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Return the response parsed as a JSON object."""
+        """Вернуть ответ, разобранный как JSON-объект.
+
+        Поднимает :class:`DeepSeekJsonError`, если ответ не является
+        JSON-объектом.
+        """
 
         result = self.chat(prompt, system=system, response_format=response_format)
         return _parse_json_object(result.content)
@@ -105,7 +120,7 @@ class DeepSeekClient:
         system: str | None = None,
         response_format: dict[str, Any] | None = None,
     ) -> ChatResult:
-        """Perform one logical request and return content plus metadata."""
+        """Выполнить запрос и вернуть сырой ответ с метаданными."""
 
         if not self._api_key:
             raise ProviderUnavailableError("DEEPSEEK_API_KEY is not set")
@@ -214,6 +229,7 @@ def _env_int(name: str) -> int | None:
 
 
 def _backoff(attempt: int) -> float:
+    """Экспоненциальная задержка с джиттером: ~0.5s, 1s, 2s, ... до 8s."""
     base = min(2**attempt, 8)
     return base * 0.5 * (1 + random.random() * 0.2)
 
@@ -233,7 +249,7 @@ def _retry_after(response: httpx.Response) -> float | None:
 
 
 def _extract_json_text(text: str) -> str | None:
-    """Extract a complete JSON value from fences or surrounding text."""
+    """Вырезать JSON-подстроку (убирая Markdown-ограждения и лишний текст)."""
 
     content = text.strip()
     if content.startswith("```"):
@@ -245,32 +261,32 @@ def _extract_json_text(text: str) -> str | None:
         content = "\n".join(lines).strip()
 
     pairs = {"{": "}", "[": "]"}
-    start = next((i for i, char in enumerate(content) if char in pairs), -1)
+    start = next((i for i, ch in enumerate(content) if ch in pairs), -1)
     if start == -1:
         return None
 
     stack: list[str] = []
     in_string = False
     escaped = False
-    for index in range(start, len(content)):
-        char = content[index]
+    for i in range(start, len(content)):
+        ch = content[i]
         if in_string:
             if escaped:
                 escaped = False
-            elif char == "\\":
+            elif ch == "\\":
                 escaped = True
-            elif char == '"':
+            elif ch == '"':
                 in_string = False
             continue
-        if char == '"':
+        if ch == '"':
             in_string = True
-        elif char in pairs:
-            stack.append(char)
-        elif char in ("}", "]"):
-            if not stack or pairs[stack.pop()] != char:
+        elif ch in pairs:
+            stack.append(ch)
+        elif ch in ("}", "]"):
+            if not stack or pairs[stack.pop()] != ch:
                 return None
             if not stack:
-                candidate = content[start : index + 1]
+                candidate = content[start : i + 1]
                 try:
                     json.loads(candidate)
                 except json.JSONDecodeError:

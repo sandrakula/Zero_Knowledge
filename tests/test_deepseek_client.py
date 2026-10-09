@@ -1,4 +1,7 @@
-"""ZEROK-1 HTTP client tests use a mock transport and never call the network."""
+"""Тесты HTTP-клиента DeepSeek: JSON-парсинг и обработка ошибок.
+
+Используют ``httpx.MockTransport``, поэтому не требуют сети и API-ключа.
+"""
 
 from __future__ import annotations
 
@@ -18,11 +21,12 @@ def _body(content: str) -> str:
 def _make_client(handler, **kwargs) -> DeepSeekClient:
     kwargs.setdefault("api_key", "test-key")
     kwargs.setdefault("max_retries", 3)
-    return DeepSeekClient(transport=httpx.MockTransport(handler), **kwargs)
+    transport = httpx.MockTransport(handler)
+    return DeepSeekClient(transport=transport, **kwargs)
 
 
 @pytest.fixture(autouse=True)
-def _no_sleep(monkeypatch):
+def _no_sleep(monkeypatch) -> None:
     monkeypatch.setattr("zero_knowledge.llm.deepseek._sleep", lambda seconds: None)
 
 
@@ -67,7 +71,18 @@ def test_chat_json_tolerates_trailing_text() -> None:
 
 def test_invalid_json_raises_deepseek_json_error() -> None:
     def handler(request):
-        return httpx.Response(200, text=_body("this is not JSON"), request=request)
+        return httpx.Response(
+            200, text=_body("this is not JSON at all"), request=request
+        )
+
+    client = _make_client(handler)
+    with pytest.raises(DeepSeekJsonError):
+        client.chat_json("hi")
+
+
+def test_json_array_root_is_rejected() -> None:
+    def handler(request):
+        return httpx.Response(200, text=_body("[1, 2, 3]"), request=request)
 
     client = _make_client(handler)
     with pytest.raises(DeepSeekJsonError):
@@ -81,7 +96,8 @@ def test_generate_returns_clean_json_text() -> None:
         )
 
     client = _make_client(handler)
-    assert json.loads(client.generate("hi")) == {"k": "v"}
+    raw = client.generate("hi")
+    assert json.loads(raw) == {"k": "v"}
 
 
 def test_auth_401_fails_immediately_without_retry() -> None:
@@ -98,15 +114,36 @@ def test_auth_401_fails_immediately_without_retry() -> None:
     assert calls == 1
 
 
-@pytest.mark.parametrize("status", [429, 503])
-def test_retryable_status_retries_then_succeeds(status: int) -> None:
+def test_429_retries_then_succeeds() -> None:
     calls = 0
 
     def handler(request):
         nonlocal calls
         calls += 1
         if calls == 1:
-            return httpx.Response(status, text="retry", request=request)
+            return httpx.Response(
+                429,
+                text="rate limited",
+                headers={"retry-after": "1"},
+                request=request,
+            )
+        return httpx.Response(200, text=_body('{"ok": true}'), request=request)
+
+    client = _make_client(handler)
+    result = client.chat("hi")
+    assert calls == 2
+    assert result.attempts == 2
+    assert json.loads(result.content) == {"ok": True}
+
+
+def test_5xx_retries_then_succeeds() -> None:
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, text="unavailable", request=request)
         return httpx.Response(200, text=_body('{"ok": true}'), request=request)
 
     client = _make_client(handler)
@@ -123,10 +160,10 @@ def test_retry_exhaustion_raises_provider_unavailable() -> None:
         calls += 1
         return httpx.Response(429, text="rate limited", request=request)
 
-    client = _make_client(handler, max_retries=2)
+    client = _make_client(handler, max_retries=3)
     with pytest.raises(ProviderUnavailableError, match="429"):
         client.chat("hi")
-    assert calls == 3
+    assert calls == 4
 
 
 def test_timeout_retries_then_succeeds() -> None:
@@ -140,7 +177,39 @@ def test_timeout_retries_then_succeeds() -> None:
         return httpx.Response(200, text=_body('{"ok": true}'), request=request)
 
     client = _make_client(handler)
-    assert client.chat("hi").attempts == 2
+    result = client.chat("hi")
+    assert calls == 2
+    assert result.attempts == 2
+
+
+def test_timeout_exhaustion_raises_provider_unavailable() -> None:
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("slow")
+
+    client = _make_client(handler, max_retries=2)
+    with pytest.raises(ProviderUnavailableError, match="timed out"):
+        client.chat("hi")
+    assert calls == 3
+
+
+def test_transport_error_retries_then_succeeds() -> None:
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("refused")
+        return httpx.Response(200, text=_body('{"ok": true}'), request=request)
+
+    client = _make_client(handler)
+    result = client.chat("hi")
+    assert calls == 2
+    assert result.attempts == 2
 
 
 def test_transport_error_exhaustion_is_provider_unavailable() -> None:

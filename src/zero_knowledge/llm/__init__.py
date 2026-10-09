@@ -1,4 +1,4 @@
-"""ZEROK-1: HTTP client for DeepSeek and structured JSON handling."""
+"""ZEROK-1: HTTP-клиент DeepSeek и обработка структурированного JSON."""
 
 from .deepseek import ChatResult, DeepSeekClient, DeepSeekJsonError
 
