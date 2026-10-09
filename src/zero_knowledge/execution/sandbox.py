@@ -98,7 +98,9 @@ class DockerSandbox:
     ) -> None:
         self._image = image or os.environ.get("ZK_SANDBOX_IMAGE", DEFAULT_IMAGE)
         self._memory = memory or os.environ.get("ZK_SANDBOX_MEMORY", DEFAULT_MEMORY)
-        self._cpus = cpus if cpus is not None else _env_float("ZK_SANDBOX_CPUS", DEFAULT_CPUS)
+        self._cpus = (
+            cpus if cpus is not None else _env_float("ZK_SANDBOX_CPUS", DEFAULT_CPUS)
+        )
         self._pids_limit = (
             pids_limit
             if pids_limit is not None
@@ -107,8 +109,10 @@ class DockerSandbox:
         self._tmpfs_size = tmpfs_size or os.environ.get(
             "ZK_SANDBOX_TMPFS_SIZE", DEFAULT_TMPFS_SIZE
         )
-        self._timeout = timeout if timeout is not None else _env_float(
-            "ZK_SANDBOX_TIMEOUT", DEFAULT_TIMEOUT
+        self._timeout = (
+            timeout
+            if timeout is not None
+            else _env_float("ZK_SANDBOX_TIMEOUT", DEFAULT_TIMEOUT)
         )
         self._network = network or os.environ.get("ZK_SANDBOX_NETWORK", DEFAULT_NETWORK)
         self._user = user or os.environ.get("ZK_SANDBOX_USER", DEFAULT_USER)
@@ -259,8 +263,8 @@ class DockerSandbox:
                 timeout=10,
                 check=False,
             )
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError):
+            return
 
     @staticmethod
     def _is_infrastructure_failure(exit_code: int | None, stderr: str) -> bool:

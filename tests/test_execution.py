@@ -29,7 +29,6 @@ import pytest
 from zero_knowledge.execution import (
     DockerIsolatedExecutionRunner,
     DockerSandbox,
-    SandboxUnavailableError,
 )
 from zero_knowledge.schemas import (
     CognitiveDepth,
@@ -38,8 +37,8 @@ from zero_knowledge.schemas import (
     ReferenceSolution,
     Task,
     TaskType,
-    TestCase as ZkTestCase,
 )
+from zero_knowledge.schemas import TestCase as ZkTestCase
 from zero_knowledge.task_generation import TaskBlockService
 from zero_knowledge.task_generation.errors import (
     IsolatedExecutionUnavailableError,
@@ -58,7 +57,7 @@ def _docker_available() -> bool:
             ["docker", "version"], capture_output=True, timeout=10, check=True
         )
         return True
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return False
 
 
@@ -66,7 +65,10 @@ def _ensure_image() -> bool:
     """Вернуть True, если образ доступен или успешно собран."""
 
     inspect = subprocess.run(
-        ["docker", "image", "inspect", IMAGE], capture_output=True, timeout=30
+        ["docker", "image", "inspect", IMAGE],
+        capture_output=True,
+        timeout=30,
+        check=False,
     )
     if inspect.returncode == 0:
         return True
@@ -74,6 +76,7 @@ def _ensure_image() -> bool:
         ["docker", "build", "-t", IMAGE, str(ROOT / "infra" / "sandbox")],
         capture_output=True,
         timeout=600,
+        check=False,
     )
     return build.returncode == 0
 

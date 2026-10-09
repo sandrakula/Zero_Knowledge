@@ -64,7 +64,9 @@ class SolutionQuestionnaire(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    solution_summary: str = Field(..., min_length=1, description="Краткая оценка решения")
+    solution_summary: str = Field(
+        ..., min_length=1, description="Краткая оценка решения"
+    )
     questions: list[SolutionQuestion] = Field(default_factory=list)
 
 
@@ -85,8 +87,7 @@ def build_profile_prompt(observations: str) -> str:
         f"Observations:\n{observations}\n\n"
         "Return exactly one JSON object and nothing else (no Markdown, no commentary) "
         "matching the canonical schema. Use the given student_id. Use only enum values "
-        "from the schema.\nCanonical JSON Schema:\n"
-        + _schema_json(KnowledgeProfile)
+        "from the schema.\nCanonical JSON Schema:\n" + _schema_json(KnowledgeProfile)
     )
 
 
@@ -100,8 +101,7 @@ def build_roadmap_prompt(goal: str, level_summary: str) -> str:
         "matching the canonical schema. Use the given student_id and set "
         "based_on_profile_id to "
         f"{PROFILE_ID}. Use only enum values from the schema.\n"
-        "Canonical JSON Schema:\n"
-        + _schema_json(Roadmap)
+        "Canonical JSON Schema:\n" + _schema_json(Roadmap)
     )
 
 
@@ -127,7 +127,9 @@ _OBSERVATIONS = (
     "- Two weeks later, re-solved only 4/6 of the easy tasks it knew before."
 )
 
-_GOAL = "Prepare for a competitive-programming interview focused on recursion and trees."
+_GOAL = (
+    "Prepare for a competitive-programming interview focused on recursion and trees."
+)
 
 _LEVEL_SUMMARY = (
     "Comfortable with basic loops and arrays; knows what recursion is but struggles "
@@ -202,13 +204,19 @@ def run_tasks(client: DeepSeekClient):
 def run_profile(client: DeepSeekClient):
     data = client.chat_json(build_profile_prompt(_OBSERVATIONS))
     profile = _validate_profile(data)
-    return {"skills": list(profile.skills), "misconceptions": len(profile.misconceptions)}
+    return {
+        "skills": list(profile.skills),
+        "misconceptions": len(profile.misconceptions),
+    }
 
 
 def run_roadmap(client: DeepSeekClient):
     data = client.chat_json(build_roadmap_prompt(_GOAL, _LEVEL_SUMMARY))
     roadmap = _validate_roadmap(data)
-    return {"steps": len(roadmap.steps), "recommendations": len(roadmap.recommendations)}
+    return {
+        "steps": len(roadmap.steps),
+        "recommendations": len(roadmap.recommendations),
+    }
 
 
 def run_questions(client: DeepSeekClient):
@@ -234,7 +242,8 @@ def run_probe_json_schema(client: DeepSeekClient) -> dict[str, Any]:
     }
     try:
         data = client.chat_json(
-            "Return JSON with an integer field value=42.", response_format=response_format
+            "Return JSON with an integer field value=42.",
+            response_format=response_format,
         )
         return {"ok": True, "data": data}
     except (ProviderUnavailableError, DeepSeekJsonError) as exc:
@@ -244,7 +253,9 @@ def run_probe_json_schema(client: DeepSeekClient) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--all", action="store_true", help="run all four scenarios")
-    parser.add_argument("--scenario", choices=["tasks", "questions", "profile", "roadmap"])
+    parser.add_argument(
+        "--scenario", choices=["tasks", "questions", "profile", "roadmap"]
+    )
     parser.add_argument("--probe-json-schema", action="store_true")
     args = parser.parse_args()
 
@@ -258,7 +269,9 @@ def main() -> None:
 
     try:
         if args.probe_json_schema:
-            print(json.dumps(run_probe_json_schema(client), ensure_ascii=False, indent=2))
+            print(
+                json.dumps(run_probe_json_schema(client), ensure_ascii=False, indent=2)
+            )
             return
         names = list(scenarios) if args.all else [args.scenario]
         if not names:
@@ -269,7 +282,9 @@ def main() -> None:
             results.append(result)
             print(json.dumps(result, ensure_ascii=False, indent=2))
         ok = all(r["ok"] for r in results)
-        print(f"\nRESULT: {'ALL OK' if ok else 'FAILURES'} ({sum(r['ok'] for r in results)}/{len(results)})")
+        print(
+            f"\nRESULT: {'ALL OK' if ok else 'FAILURES'} ({sum(r['ok'] for r in results)}/{len(results)})"
+        )
         sys.exit(0 if ok else 1)
     finally:
         client.close()

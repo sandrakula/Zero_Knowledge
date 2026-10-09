@@ -304,5 +304,7 @@ def _parse_json_object(content: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise DeepSeekJsonError(f"model output is not valid JSON: {exc}") from exc
     if not isinstance(value, dict):
-        raise DeepSeekJsonError("model JSON root must be an object, not an array/scalar")
+        raise DeepSeekJsonError(
+            "model JSON root must be an object, not an array/scalar"
+        )
     return value

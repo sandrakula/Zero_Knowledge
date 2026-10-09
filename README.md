@@ -20,13 +20,25 @@ Zero Knowledge — интеллектуальная образовательна
 ```
 
 Модуль генерации и проверки трёх Python-задач (ZEROK-4) описан в
-[`docs/zerok-4.md`](docs/zerok-4.md). До подключения реального ZEROK-1 он
-предоставляет проверяемое ядро и явный неисполняющий provider stub.
+[`docs/zerok-4.md`](docs/zerok-4.md). Он напрямую использует DeepSeek-клиент
+ZEROK-1, валидирует ответ схемами ZEROK-2 и выполняет эталоны через Docker-runner
+ZEROK-3, описанный в [`docs/zerok-3.md`](docs/zerok-3.md).
 
-Изолированное исполнение кода (ZEROK-3) реализовано на Docker и описано в
-[`docs/zerok-3.md`](docs/zerok-3.md): реальный runner
-`DockerIsolatedExecutionRunner` подключается к `TaskBlockService` вместо
-`UnavailableExecutionRunner`.
+Полный demo через DeepSeek и реальную песочницу (ключ читается из
+`DEEPSEEK_API_KEY`):
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe -e ".[dev]"
+docker build -t zero-knowledge/sandbox:latest infra/sandbox
+.\.venv\Scripts\python.exe scripts\demo_task_generation.py
+```
+
+Режим `--preview` выполняет генерацию и ZEROK-2 validation, но намеренно не
+исполняет эталонный код и помечает результат как `UNVERIFIED`.
+
+Endpoint, модель, таймаут, retries и лимиты песочницы настраиваются переменными из
+`.env.example`. Сам файл `.env` не загружается автоматически и исключён из Git;
+переменные нужно передать процессу через окружение.
 
 ## Правила совместной работы
 

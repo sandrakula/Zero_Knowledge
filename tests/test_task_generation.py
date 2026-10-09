@@ -116,14 +116,16 @@ class FailingRunner:
 def test_valid_block_is_returned_as_canonical_schemas() -> None:
     provider = QueueProvider(json.dumps(make_payload()))
     runner = PassingRunner()
+    service = TaskBlockService(provider, runner)
 
-    task_set, tasks, solutions, tests = TaskBlockService(provider, runner).generate()
+    task_set, tasks, solutions, tests = service.generate()
 
     assert [task.difficulty.value for task in tasks] == ["easy", "medium", "hard"]
     assert [item.task_id for item in task_set.items] == [task.id for task in tasks]
     assert len(solutions) == 3
     assert len(tests) == 3
     assert runner.calls == 3
+    assert service.attempts_used == 1
 
 
 @pytest.mark.parametrize("raw", ["not-json", "[]", '{"tasks": []}'])

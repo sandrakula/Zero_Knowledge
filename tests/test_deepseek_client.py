@@ -26,17 +26,18 @@ def _make_client(handler, **kwargs) -> DeepSeekClient:
 
 
 @pytest.fixture(autouse=True)
-def _no_sleep(monkeypatch):
+def _no_sleep(monkeypatch) -> None:
     monkeypatch.setattr("zero_knowledge.llm.deepseek._sleep", lambda seconds: None)
 
 
-def test_missing_api_key_raises_provider_unavailable():
+def test_missing_api_key_raises_provider_unavailable(monkeypatch) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     client = DeepSeekClient(api_key="", transport=httpx.MockTransport(lambda req: None))
-    with pytest.raises(ProviderUnavailableError):
+    with pytest.raises(ProviderUnavailableError, match="DEEPSEEK_API_KEY"):
         client.chat("hi")
 
 
-def test_chat_json_parses_clean_object():
+def test_chat_json_parses_clean_object() -> None:
     def handler(request):
         return httpx.Response(200, text=_body('{"a": 1, "b": [true]}'), request=request)
 
@@ -44,36 +45,42 @@ def test_chat_json_parses_clean_object():
     assert client.chat_json("hi") == {"a": 1, "b": [True]}
 
 
-def test_chat_json_strips_markdown_fence():
+def test_chat_json_strips_markdown_fence() -> None:
     payload = '{"skill_id": "recursion", "mastery": "developing"}'
 
     def handler(request):
-        return httpx.Response(200, text=_body(f"```json\n{payload}\n```"), request=request)
+        return httpx.Response(
+            200, text=_body(f"```json\n{payload}\n```"), request=request
+        )
 
     client = _make_client(handler)
     assert client.chat_json("hi") == json.loads(payload)
 
 
-def test_chat_json_tolerates_trailing_text():
+def test_chat_json_tolerates_trailing_text() -> None:
     def handler(request):
         return httpx.Response(
-            200, text=_body('{"x": 1}\nHere is some extra commentary.'), request=request
+            200,
+            text=_body('{"x": 1}\nHere is some extra commentary.'),
+            request=request,
         )
 
     client = _make_client(handler)
     assert client.chat_json("hi") == {"x": 1}
 
 
-def test_invalid_json_raises_deepseek_json_error():
+def test_invalid_json_raises_deepseek_json_error() -> None:
     def handler(request):
-        return httpx.Response(200, text=_body("this is not JSON at all"), request=request)
+        return httpx.Response(
+            200, text=_body("this is not JSON at all"), request=request
+        )
 
     client = _make_client(handler)
     with pytest.raises(DeepSeekJsonError):
         client.chat_json("hi")
 
 
-def test_json_array_root_is_rejected():
+def test_json_array_root_is_rejected() -> None:
     def handler(request):
         return httpx.Response(200, text=_body("[1, 2, 3]"), request=request)
 
@@ -82,16 +89,18 @@ def test_json_array_root_is_rejected():
         client.chat_json("hi")
 
 
-def test_generate_returns_clean_json_text():
+def test_generate_returns_clean_json_text() -> None:
     def handler(request):
-        return httpx.Response(200, text=_body('```json\n{"k": "v"}\n```'), request=request)
+        return httpx.Response(
+            200, text=_body('```json\n{"k": "v"}\n```'), request=request
+        )
 
     client = _make_client(handler)
     raw = client.generate("hi")
     assert json.loads(raw) == {"k": "v"}
 
 
-def test_auth_401_fails_immediately_without_retry():
+def test_auth_401_fails_immediately_without_retry() -> None:
     calls = 0
 
     def handler(request):
@@ -105,7 +114,7 @@ def test_auth_401_fails_immediately_without_retry():
     assert calls == 1
 
 
-def test_429_retries_then_succeeds():
+def test_429_retries_then_succeeds() -> None:
     calls = 0
 
     def handler(request):
@@ -113,7 +122,10 @@ def test_429_retries_then_succeeds():
         calls += 1
         if calls == 1:
             return httpx.Response(
-                429, text="rate limited", headers={"retry-after": "1"}, request=request
+                429,
+                text="rate limited",
+                headers={"retry-after": "1"},
+                request=request,
             )
         return httpx.Response(200, text=_body('{"ok": true}'), request=request)
 
@@ -124,7 +136,7 @@ def test_429_retries_then_succeeds():
     assert json.loads(result.content) == {"ok": True}
 
 
-def test_5xx_retries_then_succeeds():
+def test_5xx_retries_then_succeeds() -> None:
     calls = 0
 
     def handler(request):
@@ -140,7 +152,7 @@ def test_5xx_retries_then_succeeds():
     assert result.attempts == 2
 
 
-def test_retry_exhaustion_raises_provider_unavailable():
+def test_retry_exhaustion_raises_provider_unavailable() -> None:
     calls = 0
 
     def handler(request):
@@ -151,10 +163,10 @@ def test_retry_exhaustion_raises_provider_unavailable():
     client = _make_client(handler, max_retries=3)
     with pytest.raises(ProviderUnavailableError, match="429"):
         client.chat("hi")
-    assert calls == 4  # initial + 3 retries
+    assert calls == 4
 
 
-def test_timeout_retries_then_succeeds():
+def test_timeout_retries_then_succeeds() -> None:
     calls = 0
 
     def handler(request):
@@ -170,7 +182,7 @@ def test_timeout_retries_then_succeeds():
     assert result.attempts == 2
 
 
-def test_timeout_exhaustion_raises_provider_unavailable():
+def test_timeout_exhaustion_raises_provider_unavailable() -> None:
     calls = 0
 
     def handler(request):
@@ -184,7 +196,7 @@ def test_timeout_exhaustion_raises_provider_unavailable():
     assert calls == 3
 
 
-def test_transport_error_retries_then_succeeds():
+def test_transport_error_retries_then_succeeds() -> None:
     calls = 0
 
     def handler(request):
@@ -198,3 +210,12 @@ def test_transport_error_retries_then_succeeds():
     result = client.chat("hi")
     assert calls == 2
     assert result.attempts == 2
+
+
+def test_transport_error_exhaustion_is_provider_unavailable() -> None:
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    client = _make_client(handler, max_retries=0)
+    with pytest.raises(ProviderUnavailableError, match="transport"):
+        client.chat("hi")

@@ -9,7 +9,7 @@ from .errors import (
     ReferenceSolutionFailedError,
     Zerok4Error,
 )
-from .orchestrator import GeneratedTaskBlock, TaskBlockService
+from .orchestrator import GeneratedTaskBlock, TaskBlockService, UnverifiedTaskBlock
 from .ports import IsolatedExecutionRunner, TaskGenerationProvider
 from .stubs import UnavailableExecutionRunner, UnavailableTaskGenerationProvider
 from .validation import parse_and_validate_block
@@ -27,6 +27,7 @@ __all__ = [
     "TaskGenerationProvider",
     "UnavailableExecutionRunner",
     "UnavailableTaskGenerationProvider",
+    "UnverifiedTaskBlock",
     "Zerok4Error",
     "parse_and_validate_block",
 ]
