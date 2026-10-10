@@ -6,7 +6,7 @@
  * обещаний о будущих HTTP-маршрутах: они ещё не согласованы.
  */
 
-const wait = (ms = 650) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const defaultWait = (ms = 650) => new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 
 const taskIds = [
   "11111111-1111-4111-8111-111111111111",
@@ -85,6 +85,12 @@ const taskPresentation = {
       { input_data: "[-4, -2]", expected_output: "0" },
     ],
     starterCode: "def sum_positive(numbers):\n    # Напишите решение\n    pass",
+    fixtures: [
+      { id: "passed", label: "Корректный образец", description: "Известный заглушке успешный исход", code: "def sum_positive(numbers):\n    return sum(number for number in numbers if number > 0)" },
+      { id: "failed", label: "Неверный результат", description: "Подготовленное несовпадение вывода", code: "def sum_positive(numbers):\n    return sum(numbers)" },
+      { id: "syntax_error", label: "Синтаксическая ошибка", description: "Подготовленная ошибка SyntaxError", code: "def sum_positive(numbers)\n    return sum(numbers)" },
+      { id: "execution_error", label: "Ошибка выполнения", description: "Подготовленная ошибка RuntimeError", code: "def sum_positive(numbers):\n    raise RuntimeError(\"demo\")" },
+    ],
   },
   [taskIds[1]]: {
     examples: [
@@ -92,6 +98,12 @@ const taskPresentation = {
       { input_data: "'aabb'", expected_output: "None" },
     ],
     starterCode: "def first_unique(text):\n    # Напишите решение\n    pass",
+    fixtures: [
+      { id: "passed", label: "Корректный образец", description: "Известный заглушке успешный исход", code: "def first_unique(text):\n    counts = {}\n    for char in text:\n        counts[char] = counts.get(char, 0) + 1\n    for char in text:\n        if counts[char] == 1:\n            return char\n    return None" },
+      { id: "failed", label: "Неверный результат", description: "Подготовленное несовпадение вывода", code: "def first_unique(text):\n    return text[0] if text else None" },
+      { id: "syntax_error", label: "Синтаксическая ошибка", description: "Подготовленная ошибка SyntaxError", code: "def first_unique(text)\n    return None" },
+      { id: "execution_error", label: "Ошибка выполнения", description: "Подготовленная ошибка IndexError", code: "def first_unique(text):\n    return text[len(text)]" },
+    ],
   },
   [taskIds[2]]: {
     examples: [
@@ -99,41 +111,14 @@ const taskPresentation = {
       { input_data: "[[1, 2], [2, 4]]", expected_output: "[[1, 4]]" },
     ],
     starterCode: "def merge_intervals(intervals):\n    # Напишите решение\n    pass",
+    fixtures: [
+      { id: "passed", label: "Корректный образец", description: "Известный заглушке успешный исход", code: "def merge_intervals(intervals):\n    sorted_intervals = sorted(intervals)\n    merged = []\n    for start, end in sorted_intervals:\n        if not merged or start > merged[-1][1]:\n            merged.append([start, end])\n        else:\n            merged[-1][1] = max(merged[-1][1], end)\n    return merged" },
+      { id: "failed", label: "Неверный результат", description: "Подготовленное несовпадение вывода", code: "def merge_intervals(intervals):\n    return sorted(intervals)" },
+      { id: "syntax_error", label: "Синтаксическая ошибка", description: "Подготовленная ошибка SyntaxError", code: "def merge_intervals(intervals)\n    return intervals" },
+      { id: "execution_error", label: "Ошибка выполнения", description: "Подготовленная ошибка TypeError", code: "def merge_intervals(intervals):\n    return intervals + None" },
+    ],
   },
 };
-
-const discussionTasks = [
-  {
-    id: "44444444-4444-4444-8444-444444444441",
-    title: "Выбор структуры данных",
-    discipline: "programming",
-    task_type: "explanation",
-    statement: "Почему для поиска первого неповторяющегося символа удобно сначала посчитать частоты в словаре?",
-    difficulty: "medium",
-    cognitive_depth: "evaluation",
-    topic_ids: ["python.dictionaries", "algorithms.counting"],
-  },
-  {
-    id: "44444444-4444-4444-8444-444444444442",
-    title: "Оценка сложности",
-    discipline: "algorithms",
-    task_type: "explanation",
-    statement: "Какова временная сложность вашего подхода к объединению интервалов и какая операция определяет её?",
-    difficulty: "hard",
-    cognitive_depth: "analysis",
-    topic_ids: ["algorithms.complexity", "algorithms.sorting"],
-  },
-  {
-    id: "44444444-4444-4444-8444-444444444443",
-    title: "Граничный случай",
-    discipline: "programming",
-    task_type: "explanation",
-    statement: "Как ваши функции поведут себя на пустом вводе? Объясните ожидаемый результат.",
-    difficulty: "easy",
-    cognitive_depth: "comprehension",
-    topic_ids: ["python.edge_cases"],
-  },
-];
 
 const profile = {
   id: "55555555-5555-4555-8555-555555555555",
@@ -167,27 +152,131 @@ const roadmap = {
   ],
 };
 
-let scenario = new URLSearchParams(window.location.search).get("mock") || "success";
-if (!['success', 'incorrect', 'network-error'].includes(scenario)) scenario = 'success';
-const failedOperations = new Set();
+const reviewQuestions = {
+  [taskIds[0]]: [
+    { order: 0, kind: "strategy", text: "Почему в генераторном выражении используется условие number > 0?", target: "number > 0", rationale: "Проверить понимание фильтрации положительных значений." },
+    { order: 1, kind: "transfer", text: "Как изменится это генераторное выражение, если нужно суммировать только чётные положительные числа?", target: "generator expression", rationale: "Проверить перенос выбранного способа фильтрации." },
+  ],
+  [taskIds[1]]: [
+    { order: 0, kind: "strategy", text: "Зачем решение сначала заполняет словарь counts, а затем проходит по text второй раз?", target: "counts", rationale: "Проверить понимание двух проходов и сохранения порядка строки." },
+    { order: 1, kind: "explanation", text: "Почему выражение counts.get(char, 0) безопасно для символа, которого ещё нет в словаре?", target: "counts.get(char, 0)", rationale: "Проверить понимание работы словаря в представленном коде." },
+  ],
+  [taskIds[2]]: [
+    { order: 0, kind: "strategy", text: "Почему интервалы сортируются до заполнения списка merged?", target: "sorted_intervals", rationale: "Проверить роль сортировки в выбранном алгоритме." },
+    { order: 1, kind: "understanding", text: "Что означает проверка start > merged[-1][1] именно в вашем цикле?", target: "start > merged[-1][1]", rationale: "Проверить понимание условия начала нового интервала." },
+  ],
+};
 
-async function respond(operation, value) {
-  await wait();
-  if (scenario === "network-error" && !failedOperations.has(operation)) {
-    failedOperations.add(operation);
-    throw new Error("Демонстрационный сбой загрузки. Данные не были отправлены.");
-  }
-  return structuredClone(value);
+function normalizedCode(value) {
+  return value.replace(/\r\n/g, "\n").trim();
 }
 
-export const mockApi = {
-  getScenario: () => scenario,
-  setScenario(value) {
-    scenario = value;
-    failedOperations.clear();
-  },
+function initialTransportMode() {
+  if (typeof window === "undefined") return "normal";
+  const query = new URLSearchParams(window.location.search);
+  return query.get("transport") === "network-error" || query.get("mock") === "network-error"
+    ? "network-error"
+    : "normal";
+}
+
+function answerId(taskId, attemptNumber) {
+  const prefix = taskId.slice(0, 8);
+  return `${prefix}-eeee-4eee-8eee-${String(attemptNumber).padStart(12, "0")}`;
+}
+
+function makeAnswer(draft, fixtureId) {
+  const isCorrect = fixtureId === "passed" ? true : fixtureId === "failed" || fixtureId.endsWith("error") ? false : null;
+  const status = isCorrect === true ? "correct" : isCorrect === false ? "incorrect" : "pending";
+  return {
+    id: answerId(draft.task_id, draft.attempt_number),
+    ...draft,
+    status,
+    is_correct: isCorrect,
+    score: null,
+    feedback: null,
+    execution_log: null,
+  };
+}
+
+function makeReview(answer) {
+  return {
+    id: `${answer.task_id.slice(0, 8)}-dddd-4ddd-8ddd-000000000001`,
+    answer_id: answer.id,
+    task_id: answer.task_id,
+    questions: structuredClone(reviewQuestions[answer.task_id]),
+    assessment: {
+      is_correct: true,
+      independence: 1,
+      understanding: "expert",
+      hints_used: [],
+      rationale: "Ответ: верно. подсказки не использованы. Самостоятельность: 1.00. Понимание: expert.",
+    },
+  };
+}
+
+function evaluateKnownFixture(draft) {
+  const presentation = taskPresentation[draft.task_id];
+  const fixture = presentation?.fixtures.find((item) => normalizedCode(item.code) === normalizedCode(draft.content));
+  const fixtureId = fixture?.id || "unknown";
+  const answer = makeAnswer(draft, fixtureId);
+
+  if (fixtureId === "passed") {
+    answer.feedback = "Заглушка узнала подготовленный корректный образец.";
+    answer.execution_log = "mock fixture: 2 of 2 cases passed";
+    return { evaluation: { state: "passed", kind: "known_fixture", message: "Подготовленные тесты пройдены.", details: answer.execution_log }, answer, review: makeReview(answer) };
+  }
+  if (fixtureId === "failed") {
+    answer.feedback = "Подготовленный образец возвращает неверный результат.";
+    answer.execution_log = "mock fixture: expected output differs from prepared output";
+    return { evaluation: { state: "failed", kind: "output_mismatch", message: "Результат не совпал с ожидаемым.", details: answer.execution_log }, answer, review: null };
+  }
+  if (fixtureId === "syntax_error") {
+    answer.feedback = "Подготовленный образец содержит синтаксическую ошибку.";
+    answer.execution_log = "mock fixture: SyntaxError in function declaration";
+    return { evaluation: { state: "error", kind: "syntax_error", message: "Интерпретатор не смог разобрать код.", details: answer.execution_log }, answer, review: null };
+  }
+  if (fixtureId === "execution_error") {
+    answer.feedback = "Подготовленный образец завершился ошибкой выполнения.";
+    answer.execution_log = `mock fixture: runtime failure in ${presentation ? tasks.find((task) => task.id === draft.task_id).metadata.function_name : "solution"}`;
+    return { evaluation: { state: "error", kind: "execution_error", message: "Во время демонстрационного запуска возникло исключение.", details: answer.execution_log }, answer, review: null };
+  }
+
+  answer.feedback = "Произвольный код нельзя достоверно проверить без изолированного backend-исполнения ZEROK-8.";
+  return {
+    evaluation: { state: "not_evaluated", kind: "backend_required", message: "Корректность не определена.", details: "Код сохранён, но не выполнялся и не сравнивался эвристиками." },
+    answer,
+    review: null,
+  };
+}
+
+export class MockDiagnosticService {
+  constructor({ delay = 650, transportMode = initialTransportMode(), wait = defaultWait } = {}) {
+    this.delay = delay;
+    this.transportMode = transportMode;
+    this.wait = wait;
+    this.failedOperations = new Set();
+  }
+
+  getTransportMode() {
+    return this.transportMode;
+  }
+
+  setTransportMode(value) {
+    this.transportMode = value;
+    this.failedOperations.clear();
+  }
+
+  async respond(operation, value) {
+    await this.wait(this.delay);
+    if (this.transportMode === "network-error" && !this.failedOperations.has(operation)) {
+      this.failedOperations.add(operation);
+      throw new Error("Демонстрационный сбой загрузки. Данные не были отправлены.");
+    }
+    return structuredClone(value);
+  }
+
   getDiagnostic() {
-    return respond("diagnostic", {
+    return this.respond("diagnostic", {
       taskSet: {
         id: "99999999-9999-4999-8999-999999999999",
         title: "Диагностика Python",
@@ -199,30 +288,31 @@ export const mockApi = {
       tasks,
       taskPresentation,
     });
-  },
-  checkAnswer(answer) {
-    const incorrect = scenario === "incorrect";
-    return respond(`check-${answer.task_id}`, {
-      ...answer,
-      status: incorrect ? "incorrect" : "correct",
-      is_correct: !incorrect,
-      score: null,
-      feedback: incorrect
-        ? "Демонстрация ошибки: один из подготовленных тестов не пройден. Измените сценарий заглушки или код и повторите."
-        : "Демонстрация успеха: подготовленные тесты отмечены как пройденные.",
-      execution_log: incorrect ? "mock: expected value differs from received value" : "mock: 2 of 2 prepared cases passed",
-    });
-  },
-  getDiscussion() {
-    return respond("discussion", discussionTasks);
-  },
-  submitExplanations(answers) {
-    return respond("explanations", { accepted: answers.length });
-  },
+  }
+
+  checkAnswer(answerDraft) {
+    return this.respond(`check-${answerDraft.task_id}`, evaluateKnownFixture(answerDraft));
+  }
+
+  getDiscussion(evaluationResults) {
+    const reviews = evaluationResults.map((result) => result?.review);
+    if (reviews.some((review) => !review)) {
+      throw new Error("Вопросы доступны только после успешной проверки всех трёх подготовленных образцов.");
+    }
+    return this.respond("discussion", reviews);
+  }
+
+  submitExplanations(responses) {
+    return this.respond("explanations", { accepted: responses.length });
+  }
+
   getProfile() {
-    return respond("profile", profile);
-  },
+    return this.respond("profile", profile);
+  }
+
   getRoadmap() {
-    return respond("roadmap", roadmap);
-  },
-};
+    return this.respond("roadmap", roadmap);
+  }
+}
+
+export const mockApi = new MockDiagnosticService();
