@@ -26,6 +26,7 @@ from .enums import (
     MisconceptionStatus,
     RoadmapStepStatus,
     RoadmapStepType,
+    SolutionQuestionKind,
     TaskSetPurpose,
     TaskType,
 )
@@ -33,6 +34,13 @@ from .hint import Hint
 from .profile import KnowledgeProfile, Misconception, SkillAssessment
 from .roadmap import Recommendation, Roadmap, RoadmapStep
 from .solution import ReferenceSolution, SolutionStep
+from .solution_review import (
+    HintUsage,
+    SolutionQuestion,
+    SolutionQuestionnaire,
+    SolutionReview,
+    UnderstandingAssessment,
+)
 from .task import Task
 from .task_set import TaskSet, TaskSetItem
 from .testcase import TestCase
@@ -59,6 +67,12 @@ __all__ = [
     "Roadmap",
     "RoadmapStep",
     "Recommendation",
+    # Разбор решения и оценка понимания
+    "SolutionQuestion",
+    "SolutionQuestionnaire",
+    "HintUsage",
+    "UnderstandingAssessment",
+    "SolutionReview",
     # Перечисления
     "Discipline",
     "TaskType",
@@ -75,4 +89,5 @@ __all__ = [
     "RoadmapStepStatus",
     "LearningGoalStatus",
     "TaskSetPurpose",
+    "SolutionQuestionKind",
 ]
