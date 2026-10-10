@@ -164,3 +164,14 @@ class TaskSetPurpose(str, Enum):
     DIAGNOSTIC = "diagnostic"            # начальная диагностика (п. 5)
     CHECKPOINT = "checkpoint"            # промежуточная проверка понимания
     FINAL = "final"                      # итоговая оценка
+
+
+class SolutionQuestionKind(str, Enum):
+    """Тип диагностического вопроса к решению студента (п. 10, 12)."""
+
+    UNDERSTANDING = "understanding"      # проверка понимания собственного решения
+    ERROR_DETECTION = "error_detection"  # помочь найти ошибку
+    STRATEGY = "strategy"                # выбор стратегии/подхода
+    TRANSFER = "transfer"                # перенос на новый контекст
+    EXPLANATION = "explanation"          # просьба объяснить решение
+    CALIBRATION = "calibration"          # сверка уверенности с результатом
