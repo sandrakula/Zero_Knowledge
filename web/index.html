@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Демонстрационный интерфейс диагностики Python для Zero Knowledge">
+    <title>Zero Knowledge — диагностика Python</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#app">Перейти к содержимому</a>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Zero Knowledge — на стартовый экран">
+        <span class="brand-mark" aria-hidden="true">ZK</span>
+        <span>Zero Knowledge</span>
+      </a>
+      <div class="header-actions">
+        <span class="demo-badge"><span aria-hidden="true">●</span> Демонстрационный режим</span>
+        <label class="scenario-control" for="mock-scenario">
+          <span>Сценарий заглушки</span>
+          <select id="mock-scenario">
+            <option value="success">Успешный</option>
+            <option value="incorrect">Ошибка в решении</option>
+            <option value="network-error">Сбой и повтор</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <main id="app" tabindex="-1"></main>
+    <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+    <noscript>
+      <div class="noscript">Для прохождения демонстрации включите JavaScript в браузере.</div>
+    </noscript>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
