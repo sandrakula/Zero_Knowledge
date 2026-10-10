@@ -1,6 +1,6 @@
 import { mockApi } from "./mock-data.js";
 
-const STORAGE_KEY = "zerok-7-session-v1";
+const STORAGE_KEY = "zerok-7-session-v2";
 const steps = ["Старт", "Задачи", "Вопросы", "Профиль", "Roadmap"];
 const difficultyLabels = { easy: "Лёгкая", medium: "Средняя", hard: "Сложная" };
 const masteryLabels = { novice: "Начальный", developing: "Развивается", proficient: "Уверенный" };
@@ -19,6 +19,7 @@ const initialState = {
   roadmap: null,
   codes: {},
   checks: {},
+  attempts: {},
   explanations: {},
   loading: null,
   error: null,
@@ -28,10 +29,10 @@ let state = loadState();
 const app = document.querySelector("#app");
 const announcer = document.querySelector("#announcer");
 const scenarioSelect = document.querySelector("#mock-scenario");
-scenarioSelect.value = mockApi.getScenario();
+scenarioSelect.value = mockApi.getTransportMode();
 
 scenarioSelect.addEventListener("change", () => {
-  mockApi.setScenario(scenarioSelect.value);
+  mockApi.setTransportMode(scenarioSelect.value);
   announce(`Выбран сценарий: ${scenarioSelect.options[scenarioSelect.selectedIndex].text}`);
 });
 
@@ -145,25 +146,33 @@ function renderTasks() {
   const busy = state.loading === `check-${task.id}`;
   const inlineError = state.error?.scope === `check-${task.id}` ? `
     <div class="inline-alert error" role="alert"><span aria-hidden="true">!</span><div><strong>Проверка не завершена</strong><p>${escapeHtml(state.error.message)}</p></div><button class="text-button" data-action="check">Повторить</button></div>` : "";
+  const evaluationLabels = {
+    passed: { icon: "✓", heading: "Подготовленные тесты пройдены", className: "success" },
+    failed: { icon: "×", heading: "Есть несовпадение с ожидаемым результатом", className: "failure" },
+    error: { icon: "!", heading: result?.evaluation.kind === "syntax_error" ? "Синтаксическая ошибка" : "Ошибка выполнения", className: "failure" },
+    not_evaluated: { icon: "?", heading: "Корректность не определена", className: "neutral" },
+  };
+  const evaluationView = result ? evaluationLabels[result.evaluation.state] : null;
   const resultHtml = result ? `
-    <div class="result ${result.is_correct ? "success" : "failure"}" role="status">
-      <div class="result-heading"><span aria-hidden="true">${result.is_correct ? "✓" : "×"}</span><div><small>Демонстрационный результат</small><h3>${result.is_correct ? "Подготовленные тесты пройдены" : "Есть несовпадение с ожидаемым результатом"}</h3></div></div>
-      <p>${escapeHtml(result.feedback)}</p>
-      <code>${escapeHtml(result.execution_log)}</code>
-      <p class="result-disclaimer"><strong>Важно:</strong> введённый код фактически не выполнялся, это ответ заглушки.</p>
+    <div class="result ${evaluationView.className}" role="status">
+      <div class="result-heading"><span aria-hidden="true">${evaluationView.icon}</span><div><small>Симуляция · ${escapeHtml(result.evaluation.state)} · попытка ${result.answer.attempt_number}</small><h3>${evaluationView.heading}</h3></div></div>
+      <p>${escapeHtml(result.answer.feedback)}</p>
+      <code>${escapeHtml(result.evaluation.details)}</code>
+      <p class="result-disclaimer"><strong>Важно:</strong> код фактически не выполнялся. Заглушка распознаёт только перечисленные подготовленные образцы; произвольный код остаётся непроверенным.</p>
     </div>` : "";
-  const canContinue = Boolean(result);
+  const canContinue = result?.evaluation.state === "passed";
   return shell(`
     <div class="task-layout">
       <aside class="task-sidebar" aria-label="Задачи диагностики">
         <div><span class="eyebrow">${escapeHtml(state.diagnostic.taskSet.title)}</span><h1>Практические задачи</h1><p>Решайте в удобном темпе. Черновики сохраняются в этой вкладке.</p></div>
-        <ol>${state.diagnostic.tasks.map((item, index) => `<li><button data-action="task" data-index="${index}" class="${index === state.activeTask ? "active" : ""}"><span>${state.checks[item.id] ? "✓" : index + 1}</span><span><small>${difficultyLabels[item.difficulty]}</small>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol>
+        <ol>${state.diagnostic.tasks.map((item, index) => `<li><button data-action="task" data-index="${index}" class="${index === state.activeTask ? "active" : ""}"><span>${state.checks[item.id]?.evaluation.state === "passed" ? "✓" : index + 1}</span><span><small>${difficultyLabels[item.difficulty]}</small>${escapeHtml(item.title)}</span></button></li>`).join("")}</ol>
       </aside>
       <section class="task-card">
         <div class="task-meta"><span class="difficulty ${task.difficulty}">${difficultyLabels[task.difficulty]}</span><span>Задача ${state.activeTask + 1} из 3</span><span>Python</span></div>
         <h2>${escapeHtml(task.title)}</h2>
         <p class="statement">${escapeHtml(task.statement)}</p>
         <div class="examples"><h3>Примеры</h3>${presentation.examples.map((example) => `<div><span><small>Ввод</small><code>${escapeHtml(example.input_data)}</code></span><span aria-hidden="true">→</span><span><small>Результат</small><code>${escapeHtml(example.expected_output)}</code></span></div>`).join("")}</div>
+        <div class="fixture-panel"><div><h3>Сценарии проверки заглушки</h3><p>Подставьте известный образец. Любой другой код останется непроверенным до подключения ZEROK-8.</p></div><div class="fixture-actions">${presentation.fixtures.map((fixture) => `<button class="fixture-button ${fixture.id}" data-action="apply-fixture" data-fixture-id="${fixture.id}" title="${escapeHtml(fixture.description)}">${escapeHtml(fixture.label)}</button>`).join("")}</div></div>
         <label class="editor-label" for="code-editor"><span>Ваше решение</span><small>Python 3</small></label>
         <div class="editor-wrap"><div class="editor-dots" aria-hidden="true"><i></i><i></i><i></i></div><textarea id="code-editor" data-field="code" data-task-id="${task.id}" spellcheck="false" autocapitalize="off">${escapeHtml(code)}</textarea></div>
         <p id="code-error" class="field-error ${state.error?.scope === "code" ? "visible" : ""}">${state.error?.scope === "code" ? escapeHtml(state.error.message) : ""}</p>
@@ -176,15 +185,31 @@ function renderTasks() {
     </div>`);
 }
 
+function discussionEntries() {
+  if (!state.discussion || !state.diagnostic) return [];
+  return state.discussion.flatMap((review) => {
+    const task = state.diagnostic.tasks.find((item) => item.id === review.task_id);
+    return review.questions.map((question) => ({
+      ...question,
+      key: `${review.answer_id}:${question.order}`,
+      answerId: review.answer_id,
+      taskTitle: task?.title || "Задача",
+    }));
+  });
+}
+
 function renderQuestions() {
   if (!state.discussion) return shell(loadingCard("Подбираем вопросы по решениям"));
   const busy = state.loading === "explanations";
+  const questions = discussionEntries();
+  const kindLabels = { strategy: "Стратегия", transfer: "Перенос", explanation: "Объяснение", understanding: "Понимание", error_detection: "Поиск ошибки", calibration: "Самооценка" };
   return shell(`
     <section class="content-card narrow">
-      <div class="eyebrow">Объясните ход мысли</div><h1>Несколько вопросов по решениям</h1>
-      <p class="lead">Здесь важен не идеальный термин, а логика рассуждения. Ответы сохраняются при переходах в этой вкладке.</p>
+      <div class="eyebrow">Объясните ход мысли</div><h1>Вопросы по вашим образцам</h1>
+      <p class="lead">Это подготовленные вопросы в структуре ZEROK-5. Они относятся только к конструкциям, которые действительно присутствуют в успешно принятом демонстрационном коде.</p>
+      <div class="inline-alert info"><span aria-hidden="true">i</span><div><strong>Вопросы не сгенерированы AI</strong><p>До ZEROK-8 используются разные заранее написанные наборы для каждой задачи.</p></div></div>
       <form id="questions-form" novalidate>
-        ${state.discussion.map((question, index) => `<div class="question"><div class="question-number">0${index + 1}</div><div><label for="question-${question.id}">${escapeHtml(question.statement)}</label><textarea id="question-${question.id}" data-field="explanation" data-question-id="${question.id}" placeholder="Опишите ваш подход…">${escapeHtml(state.explanations[question.id] || "")}</textarea><p class="field-error ${state.error?.fields?.includes(question.id) ? "visible" : ""}">Заполните ответ, чтобы продолжить.</p></div></div>`).join("")}
+        ${questions.map((question, index) => `<div class="question"><div class="question-number">${String(index + 1).padStart(2, "0")}</div><div><div class="question-context"><span>${escapeHtml(question.taskTitle)}</span><span>${escapeHtml(kindLabels[question.kind] || question.kind)}</span>${question.target ? `<code>${escapeHtml(question.target)}</code>` : ""}</div><label for="question-${index}">${escapeHtml(question.text)}</label><textarea id="question-${index}" data-field="explanation" data-question-id="${escapeHtml(question.key)}" placeholder="Опишите ваш подход…">${escapeHtml(state.explanations[question.key] || "")}</textarea><p class="field-error ${state.error?.fields?.includes(question.key) ? "visible" : ""}">Заполните ответ, чтобы продолжить.</p></div></div>`).join("")}
         ${state.error?.scope === "explanations" ? `<div class="inline-alert error" role="alert"><span aria-hidden="true">!</span><div><strong>Ответы не отправлены</strong><p>${escapeHtml(state.error.message)}</p></div><button type="button" class="text-button" data-action="submit-explanations">Повторить</button></div>` : ""}
         <div class="form-actions"><button type="button" class="button ghost" data-action="back-to-tasks">← Вернуться к задачам</button><button type="submit" class="button primary" ${busy ? "disabled" : ""}>${busy ? '<span class="button-spinner" aria-hidden="true"></span> Сохраняем…' : 'Продолжить <span aria-hidden="true">→</span>'}</button></div>
       </form>
@@ -218,7 +243,17 @@ function renderRoadmap() {
 function handleInput(event) {
   const target = event.target;
   if (target.matches('[data-field="code"]')) {
-    state.codes[target.dataset.taskId] = target.value;
+    const taskId = target.dataset.taskId;
+    state.codes[taskId] = target.value;
+    if (state.checks[taskId]) {
+      delete state.checks[taskId];
+      state.discussion = null;
+      state.profile = null;
+      state.roadmap = null;
+      document.querySelector(".result")?.remove();
+      const nextButton = document.querySelector('[data-action="next-task"]');
+      if (nextButton) nextButton.disabled = true;
+    }
     if (state.error?.scope === "code") state.error = null;
     persist();
   }
@@ -235,6 +270,7 @@ async function handleClick(event) {
   const action = button.dataset.action;
   if (action === "start" || action === "retry-diagnostic") return loadDiagnostic();
   if (action === "task") return update({ activeTask: Number(button.dataset.index), error: null });
+  if (action === "apply-fixture") return applyFixture(button.dataset.fixtureId);
   if (action === "check") return checkCurrentTask();
   if (action === "next-task") return nextTask();
   if (action === "back-to-tasks") return update({ screen: "tasks", activeTask: 2, error: null }, { focusMain: true });
@@ -273,6 +309,24 @@ function loadDiagnostic() {
   }, "retry-diagnostic");
 }
 
+function applyFixture(fixtureId) {
+  const task = state.diagnostic.tasks[state.activeTask];
+  const fixture = state.diagnostic.taskPresentation[task.id].fixtures.find((item) => item.id === fixtureId);
+  if (!fixture) return;
+  const checks = { ...state.checks };
+  delete checks[task.id];
+  update({
+    codes: { ...state.codes, [task.id]: fixture.code },
+    checks,
+    discussion: null,
+    profile: null,
+    roadmap: null,
+    error: null,
+  });
+  requestAnimationFrame(() => document.querySelector("#code-editor")?.focus());
+  announce(`Подставлен сценарий: ${fixture.label}.`);
+}
+
 async function checkCurrentTask() {
   if (state.loading) return;
   const task = state.diagnostic.tasks[state.activeTask];
@@ -286,7 +340,7 @@ async function checkCurrentTask() {
   const answer = {
     task_id: task.id,
     student_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    attempt_number: 1,
+    attempt_number: (state.attempts[task.id] || 0) + 1,
     format: "code",
     content,
     code_language: "python",
@@ -301,8 +355,8 @@ async function checkCurrentTask() {
   };
   try {
     const result = await mockApi.checkAnswer(answer);
-    update({ checks: { ...state.checks, [task.id]: result }, loading: null, error: null });
-    announce(result.feedback);
+    update({ checks: { ...state.checks, [task.id]: result }, attempts: { ...state.attempts, [task.id]: answer.attempt_number }, loading: null, error: null });
+    announce(result.answer.feedback);
   } catch (error) {
     update({ loading: null, error: { scope: `check-${task.id}`, message: error.message } });
     announce("Ошибка проверки. Доступна повторная попытка.");
@@ -310,6 +364,8 @@ async function checkCurrentTask() {
 }
 
 function nextTask() {
+  const task = state.diagnostic.tasks[state.activeTask];
+  if (state.checks[task.id]?.evaluation.state !== "passed") return;
   if (state.activeTask < 2) {
     update({ activeTask: state.activeTask + 1, error: null });
     requestAnimationFrame(() => document.querySelector("#code-editor")?.focus());
@@ -319,20 +375,23 @@ function nextTask() {
 }
 
 function loadDiscussion() {
-  return runScreenRequest(() => mockApi.getDiscussion(), (discussion) => update({ discussion, screen: "questions", loading: null, error: null }, { focusMain: true }), "retry-discussion");
+  const results = state.diagnostic.tasks.map((task) => state.checks[task.id]);
+  return runScreenRequest(() => mockApi.getDiscussion(results), (discussion) => update({ discussion, screen: "questions", loading: null, error: null }, { focusMain: true }), "retry-discussion");
 }
 
 async function submitExplanations() {
   if (state.loading) return;
-  const empty = state.discussion.filter((question) => !state.explanations[question.id]?.trim()).map((question) => question.id);
+  const questions = discussionEntries();
+  const empty = questions.filter((question) => !state.explanations[question.key]?.trim()).map((question) => question.key);
   if (empty.length) {
     update({ error: { scope: "validation", fields: empty } });
-    requestAnimationFrame(() => document.querySelector(`#question-${empty[0]}`)?.focus());
+    const firstEmptyIndex = questions.findIndex((question) => question.key === empty[0]);
+    requestAnimationFrame(() => document.querySelector(`#question-${firstEmptyIndex}`)?.focus());
     announce("Заполните все ответы.");
     return;
   }
   update({ loading: "explanations", error: null });
-  const answers = state.discussion.map((question) => ({ task_id: question.id, student_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", attempt_number: 1, format: "explanation", content: state.explanations[question.id], code_language: null, chosen_options: [], used_hint_ids: [], confidence: null, status: "pending" }));
+  const answers = questions.map((question) => ({ answer_id: question.answerId, question_order: question.order, content: state.explanations[question.key] }));
   try {
     await mockApi.submitExplanations(answers);
     await loadProfile(true);
