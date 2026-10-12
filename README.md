@@ -24,6 +24,10 @@ Zero Knowledge — интеллектуальная образовательна
 ZEROK-1, валидирует ответ схемами ZEROK-2 и выполняет эталоны через Docker-runner
 ZEROK-3, описанный в [`docs/zerok-3.md`](docs/zerok-3.md).
 
+Модуль профиля знаний и roadmap (ZEROK-6) описан в
+[`docs/zerok-6.md`](docs/zerok-6.md): по итогам диагностики он собирает
+`KnowledgeProfile` и `Roadmap` с поясняющим текстом от DeepSeek.
+
 Полный demo через DeepSeek и реальную песочницу (ключ читается из
 `DEEPSEEK_API_KEY`):
 
