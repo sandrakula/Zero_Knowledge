@@ -12,11 +12,10 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from zero_knowledge.execution.sandbox import SandboxUnavailableError
-from zero_knowledge.learning_path import (
-    LearningPathAttemptsExhaustedError,
-    LearningPathInvalidError,
+from zero_knowledge.profile import (
+    ExplanationInvalidError,
+    ProfileAttemptsExhaustedError,
 )
-from zero_knowledge.llm import DeepSeekJsonError
 from zero_knowledge.solution_review import SolutionReviewAttemptsExhaustedError
 from zero_knowledge.task_generation import (
     AttemptsExhaustedError,
@@ -107,13 +106,12 @@ class ApiApplication:
                 retryable=True,
             ).response()
         except (
-            LearningPathAttemptsExhaustedError,
-            LearningPathInvalidError,
-            DeepSeekJsonError,
+            ProfileAttemptsExhaustedError,
+            ExplanationInvalidError,
         ):
             return ApiError(
                 502,
-                "learning_path_invalid",
+                "profile_invalid",
                 "Не удалось сформировать валидный профиль или roadmap.",
                 retryable=True,
             ).response()

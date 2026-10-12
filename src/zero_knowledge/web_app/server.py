@@ -10,8 +10,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from zero_knowledge.execution import DockerIsolatedExecutionRunner, DockerSandbox
-from zero_knowledge.learning_path import LearningPathService
 from zero_knowledge.llm import DeepSeekClient
+from zero_knowledge.profile import ProfileRoadmapService
 from zero_knowledge.solution_review import SolutionReviewService
 from zero_knowledge.task_generation import TaskBlockService
 
@@ -29,7 +29,7 @@ def create_application() -> tuple[ApiApplication, DeepSeekClient]:
         TaskBlockService(client, DockerIsolatedExecutionRunner(sandbox)),
         StudentSolutionEvaluator(sandbox),
         SolutionReviewService(client),
-        LearningPathService(client),
+        ProfileRoadmapService(client),
     )
     return ApiApplication(diagnostics), client
 

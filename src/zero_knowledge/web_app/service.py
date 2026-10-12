@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
-from zero_knowledge.learning_path import LearningPathService
+from zero_knowledge.profile import ProfileRoadmapService, TaskOutcome
 from zero_knowledge.schemas import (
     Answer,
     AnswerFormat,
@@ -47,6 +46,7 @@ class DiagnosticSession:
     explanations: dict[str, str] | None = None
     profile: KnowledgeProfile | None = None
     roadmap: Roadmap | None = None
+    profile_summary: str | None = None
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
 
@@ -58,12 +58,12 @@ class DiagnosticService:
         task_blocks: TaskBlockService,
         evaluator: StudentSolutionEvaluator,
         reviews: SolutionReviewService,
-        learning_path: LearningPathService,
+        profile_roadmap: ProfileRoadmapService,
     ) -> None:
         self._task_blocks = task_blocks
         self._evaluator = evaluator
         self._review_service = reviews
-        self._learning_path = learning_path
+        self._profile_roadmap = profile_roadmap
         self._sessions: dict[UUID, DiagnosticSession] = {}
         self._sessions_lock = threading.RLock()
         self._generation_lock = threading.Lock()
@@ -178,6 +178,7 @@ class DiagnosticService:
             session.explanations = received
             session.profile = None
             session.roadmap = None
+            session.profile_summary = None
             return {
                 "assessments": [
                     review.assessment.model_dump(mode="json")
@@ -190,16 +191,15 @@ class DiagnosticService:
         with session.lock:
             if session.explanations is None or session.reviews is None:
                 raise DiagnosticStateError("Сначала ответьте на вопросы по решениям.")
-            if session.profile is None:
-                session.profile = self._learning_path.build_profile(
-                    session.student_id, self._observations(session)
-                )
+            self._ensure_profile_roadmap(session)
+            assert session.profile is not None
             return {
                 "profile": session.profile.model_dump(mode="json"),
                 "assessments": [
                     review.assessment.model_dump(mode="json")
                     for review in session.reviews
                 ],
+                "profile_summary": session.profile_summary,
             }
 
     def get_roadmap(self, session_id: UUID) -> dict[str, Any]:
@@ -207,14 +207,34 @@ class DiagnosticService:
         with session.lock:
             if session.profile is None:
                 raise DiagnosticStateError("Сначала сформируйте профиль знаний.")
-            if session.roadmap is None:
-                session.roadmap = self._learning_path.build_roadmap(
-                    session.student_id,
-                    session.profile,
-                    goal="Укрепить навыки решения задач на Python",
-                    assessment_summary=self._assessment_summary(session),
-                )
+            self._ensure_profile_roadmap(session)
+            assert session.roadmap is not None
             return session.roadmap.model_dump(mode="json")
+
+    def _ensure_profile_roadmap(self, session: DiagnosticSession) -> None:
+        if (
+            session.profile is not None
+            and session.roadmap is not None
+            and session.profile_summary is not None
+        ):
+            return
+        assert session.reviews is not None
+        outcomes = [
+            TaskOutcome(
+                task=task,
+                answer=session.attempts[task.id][-1],
+                assessment=review.assessment,
+            )
+            for task, review in zip(session.tasks, session.reviews, strict=True)
+        ]
+        result = self._profile_roadmap.build(
+            session.student_id,
+            "Укрепить навыки решения задач на Python",
+            outcomes,
+        )
+        session.profile = result.profile
+        session.roadmap = result.roadmap
+        session.profile_summary = result.profile_summary
 
     def _session(self, session_id: UUID) -> DiagnosticSession:
         with self._sessions_lock:
@@ -250,6 +270,7 @@ class DiagnosticService:
         session.explanations = None
         session.profile = None
         session.roadmap = None
+        session.profile_summary = None
 
     @staticmethod
     def _public_diagnostic(session: DiagnosticSession) -> dict[str, Any]:
@@ -299,42 +320,3 @@ class DiagnosticService:
             "tasks": tasks,
             "taskPresentation": presentations,
         }
-
-    @staticmethod
-    def _assessment_summary(session: DiagnosticSession) -> str:
-        assert session.reviews is not None
-        return "\n".join(
-            f"- {task.title}: {review.assessment.understanding.value}; "
-            f"independence={review.assessment.independence:.2f}; "
-            f"attempts={len(session.attempts[task.id])}."
-            for task, review in zip(session.tasks, session.reviews, strict=True)
-        )
-
-    def _observations(self, session: DiagnosticSession) -> str:
-        assert session.reviews is not None and session.explanations is not None
-        records: list[dict[str, Any]] = []
-        for task, review in zip(session.tasks, session.reviews, strict=True):
-            answer = session.attempts[task.id][-1]
-            records.append(
-                {
-                    "task": {
-                        "title": task.title,
-                        "difficulty": task.difficulty.value,
-                        "topics": task.topic_ids,
-                    },
-                    "attempts": len(session.attempts[task.id]),
-                    "solution_code": answer.content,
-                    "assessment": review.assessment.model_dump(mode="json"),
-                    "question_answers": [
-                        {
-                            "question": question.text,
-                            "kind": question.kind.value,
-                            "answer": session.explanations[
-                                f"{review.answer_id}:{question.order}"
-                            ],
-                        }
-                        for question in review.questions
-                    ],
-                }
-            )
-        return json.dumps(records, ensure_ascii=False, indent=2)
