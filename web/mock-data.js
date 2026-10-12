@@ -291,6 +291,9 @@ export class MockDiagnosticService {
   }
 
   checkAnswer(answerDraft) {
+    if (!answerDraft.content?.trim() && !answerDraft.chosen_options?.length) {
+      return Promise.reject(new Error("Ответ не может быть пустым: заполните content или chosen_options."));
+    }
     return this.respond(`check-${answerDraft.task_id}`, evaluateKnownFixture(answerDraft));
   }
 

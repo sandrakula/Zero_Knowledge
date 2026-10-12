@@ -134,6 +134,7 @@ a, button, textarea, select { outline: none; }
 .result h3 { margin: .15rem 0 0; font-size: .95rem; }
 .result p { font-size: .8rem; color: #405c4e; line-height: 1.5; }
 .result code { display: block; padding: .65rem; background: rgba(255,255,255,.65); border-radius: 7px; font-size: .72rem; }
+.execution-log { margin: .75rem 0 0; padding: .85rem; border-radius: 9px; overflow: auto; background: #171d22; color: #f7d9d6; font: .78rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
 .result-disclaimer { padding-top: .7rem; border-top: 1px solid rgba(67, 104, 83, .18); }
 .inline-alert { display: flex; align-items: flex-start; gap: .7rem; border-radius: 11px; padding: .9rem 1rem; margin: 1rem 0; }
 .inline-alert.error { background: var(--danger-bg); color: #6f352e; border: 1px solid #ebc4bd; }

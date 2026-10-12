@@ -34,17 +34,25 @@ function fixture(diagnostic, task, id) {
   return diagnostic.taskPresentation[task.id].fixtures.find((item) => item.id === id);
 }
 
-test("arbitrary and empty code are never reported as passed", async () => {
+test("empty answers are rejected by the same rule as the Answer schema", async () => {
   const { service, diagnostic } = await setup();
   const task = diagnostic.tasks[0];
 
-  for (const content of ["", "def invented():\n    return 42"]) {
-    const result = await service.checkAnswer(answerDraft(task, content));
-    assert.equal(result.evaluation.state, "not_evaluated");
-    assert.equal(result.answer.status, "pending");
-    assert.equal(result.answer.is_correct, null);
-    assert.equal(result.review, null);
-  }
+  await assert.rejects(
+    service.checkAnswer(answerDraft(task, "   \n")),
+    /Ответ не может быть пустым/,
+  );
+});
+
+test("arbitrary non-empty code is retained as a pending, not evaluated Answer", async () => {
+  const { service, diagnostic } = await setup();
+  const task = diagnostic.tasks[0];
+  const result = await service.checkAnswer(answerDraft(task, "def invented():\n    return 42"));
+
+  assert.equal(result.evaluation.state, "not_evaluated");
+  assert.equal(result.answer.status, "pending");
+  assert.equal(result.answer.is_correct, null);
+  assert.equal(result.review, null);
 });
 
 test("only the explicit passed fixture produces a successful Answer and SolutionReview", async () => {
