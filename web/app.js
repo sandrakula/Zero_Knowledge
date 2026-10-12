@@ -10,7 +10,7 @@ const stepTypeLabels = { review: "Повторение", study: "Изучени�
 
 const initialState = {
   screen: "welcome", activeTask: 0, diagnostic: null, discussion: null,
-  assessments: null, profile: null, roadmap: null, codes: {}, checks: {},
+  assessments: null, profile: null, profileSummary: null, roadmap: null, codes: {}, checks: {},
   attempts: {}, explanations: {}, loading: null, error: null,
 };
 
@@ -183,7 +183,7 @@ function renderProfile() {
   const entries = Object.values(state.profile.skills || {});
   return shell(`
     <section class="content-card profile-card">
-      <div class="profile-heading"><div><div class="eyebrow">ZEROK-5 + ZEROK-6</div><h1>Предварительный профиль знаний</h1><p class="lead">Профиль построен backend по решениям, попыткам, assessment и вашим объяснениям.</p></div></div>
+      <div class="profile-heading"><div><div class="eyebrow">ZEROK-5 + ZEROK-6</div><h1>Предварительный профиль знаний</h1><p class="lead">${escapeHtml(state.profileSummary || "Профиль построен backend по решениям и assessment.")}</p></div></div>
       <div class="skills-grid">${entries.map((skill) => `<article><div class="skill-top"><span class="skill-icon">${escapeHtml(skill.skill_id.slice(0, 2).toUpperCase())}</span><span class="mastery">${masteryLabels[skill.mastery] || skill.mastery}</span></div><h2>${escapeHtml(skill.skill_id)}</h2><div class="bar" role="img" aria-label="Применение ${Math.round(skill.application * 100)} процентов"><span style="width:${Math.round(skill.application * 100)}%"></span></div><p>Глубина: ${escapeHtml(depthLabels[skill.cognitive_depth] || skill.cognitive_depth)} · самостоятельность: ${Math.round(skill.independence * 100)}%</p><small>${skill.evidence_count} наблюдений</small></article>`).join("") || "<p>Backend не выделил отдельных навыков.</p>"}</div>
       <div class="profile-summary"><div><span class="summary-label">Сильные стороны</span><strong>${escapeHtml((state.profile.strengths || []).join(", ") || "Пока не выделены")}</strong><p>По фактическим наблюдениям диагностики.</p></div><div><span class="summary-label attention">На повторение</span><strong>${escapeHtml((state.profile.needs_review || state.profile.weaknesses || []).join(", ") || "Пока не выделено")}</strong><p>Будет учтено в roadmap.</p></div></div>
       <h2>Оценка понимания</h2><div class="skills-grid">${(state.assessments || []).map((assessment, index) => `<article><div class="skill-top"><span class="skill-icon">${index + 1}</span><span class="mastery">${masteryLabels[assessment.understanding] || assessment.understanding}</span></div><h2>${escapeHtml(state.diagnostic.tasks[index]?.title || `Задача ${index + 1}`)}</h2><p>${escapeHtml(assessment.rationale)}</p><small>Самостоятельность ${Math.round(assessment.independence * 100)}%</small></article>`).join("")}</div>
@@ -213,6 +213,7 @@ function handleInput(event) {
       state.discussion = null;
       state.assessments = null;
       state.profile = null;
+      state.profileSummary = null;
       state.roadmap = null;
       document.querySelector(".result")?.remove();
       const nextButton = document.querySelector('[data-action="next-task"]');
@@ -327,7 +328,7 @@ async function loadProfile(fromSubmission = false) {
   update({ loading: "screen", error: null, screen: "profile" });
   try {
     const result = await api.getProfile(state.diagnostic.session_id);
-    update({ profile: result.profile, assessments: result.assessments, screen: "profile", loading: null, error: null }, { focusMain: true });
+    update({ profile: result.profile, profileSummary: result.profile_summary, assessments: result.assessments, screen: "profile", loading: null, error: null }, { focusMain: true });
   } catch (error) {
     update({ loading: null, error: { scope: "screen", message: error.message, retry: "retry-profile" } });
   }

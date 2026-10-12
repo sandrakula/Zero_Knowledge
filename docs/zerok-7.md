@@ -17,7 +17,7 @@ zero_knowledge.web_app
   │    └─ ZEROK-3 DockerIsolatedExecutionRunner
   ├─ ZEROK-3 DockerSandbox (решения пользователя)
   ├─ ZEROK-5 SolutionReviewService
-  └─ ZEROK-6 LearningPathService
+  └─ ZEROK-6 ProfileRoadmapService
        ├─ ZEROK-1 DeepSeekClient
        └─ KnowledgeProfile / Roadmap schemas
 ```
@@ -40,14 +40,15 @@ backend, а переходы между задачами проверяются 
 - **ZEROK-5:** `SolutionReviewService` генерирует вопросы по фактическому
   `Answer.content`; `UnderstandingAssessment` рассчитывается существующей
   моделью по корректности и использованным подсказкам.
-- **ZEROK-6:** `LearningPathService` оформляет существовавший DeepSeek-spike в
-  bounded/retry сервис и валидирует профиль и roadmap каноническими схемами.
+- **ZEROK-6:** `ProfileRoadmapService` детерминированно строит профиль и
+  roadmap из `TaskOutcome`, а DeepSeek добавляет только резюме профиля и
+  обоснования рекомендаций с bounded retry и строгой валидацией.
 
-Ответы на `SolutionQuestion` сохраняются как наблюдения для ZEROK-6. Текущий
-публичный интерфейс ZEROK-5 не содержит отдельной схемы или сервиса
-семантической оценки этих текстов, поэтому UI честно показывает реальный
-`UnderstandingAssessment` ZEROK-5 (корректность + самостоятельность), а не
-выдуманную оценку качества объяснений.
+Ответы на `SolutionQuestion` обязательны для перехода к профилю и сохраняются в
+сессии. Текущие публичные контракты ZEROK-5/6 не передают эти тексты в
+`TaskOutcome` и не содержат сервиса их семантической оценки, поэтому профиль
+строится по реальному `UnderstandingAssessment` ZEROK-5 (корректность +
+самостоятельность), без выдуманной оценки качества объяснений.
 
 ## Локальный запуск
 
@@ -143,7 +144,7 @@ ZEROK-5.
 - AI и Docker вызываются синхронно; для production понадобятся очередь задач,
   персистентность и лимиты на пользователя.
 - ZEROK-5 пока не предоставляет отдельную каноническую модель для ответа на
-  `SolutionQuestion` и его семантического score. Текстовые объяснения влияют на
-  наблюдения ZEROK-6, но сам `UnderstandingAssessment` остаётся детерминированным
-  результатом существующего ZEROK-5.
+  `SolutionQuestion` и его семантического score. Текстовые объяснения служат
+  обязательным этапом сценария, но не влияют на `TaskOutcome`; текущий
+  `UnderstandingAssessment` остаётся детерминированным результатом ZEROK-5.
 - Полный живой smoke-test зависит от внешнего DeepSeek и локального Docker.

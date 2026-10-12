@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import re
 from uuid import uuid4
 
 import pytest
 
 from zero_knowledge.execution import CodeExecutionResult
 from zero_knowledge.execution.sandbox import SandboxUnavailableError
-from zero_knowledge.learning_path import LearningPathService
+from zero_knowledge.profile import ProfileRoadmapService
 from zero_knowledge.schemas import (
     CognitiveDepth,
     Difficulty,
@@ -58,6 +57,7 @@ class FakeTaskBlocks:
                     statement="Echo stdin.",
                     difficulty=difficulty,
                     cognitive_depth=CognitiveDepth.APPLICATION,
+                    topic_ids=["python.io"],
                     solution_id=solution.id,
                     test_ids=[case.id],
                     metadata={"language": "python"},
@@ -111,40 +111,15 @@ class QuestionProvider:
         )
 
 
-class LearningProvider:
+class ExplanationProvider:
     def generate(self, prompt: str) -> str:
-        student_id = re.search(r"student_id=([0-9a-f-]+)", prompt).group(1)  # type: ignore[union-attr]
-        if "KnowledgeProfile JSON Schema" in prompt:
-            return json.dumps(
-                {
-                    "student_id": student_id,
-                    "skills": {
-                        "python.io": {
-                            "skill_id": "python.io",
-                            "mastery": "expert",
-                            "cognitive_depth": "application",
-                            "independence": 1,
-                            "application": 1,
-                            "evidence_count": 3,
-                        }
-                    },
-                    "strengths": ["python.io"],
-                }
-            )
-        profile_id = re.search(r"based_on_profile_id=([0-9a-f-]+)", prompt).group(1)  # type: ignore[union-attr]
+        assert "Knowledge profile" in prompt
+        assert "Planned recommendations" in prompt
         return json.dumps(
             {
-                "student_id": student_id,
-                "goal": "Improve Python",
-                "based_on_profile_id": profile_id,
-                "steps": [
-                    {
-                        "id": str(uuid4()),
-                        "order": 0,
-                        "step_type": "practice",
-                        "title": "More practice",
-                        "difficulty": "medium",
-                    }
+                "profile_summary": "Python I/O уверенно освоен.",
+                "recommendation_rationales": [
+                    "Навык готов к применению в новом контексте."
                 ],
             }
         )
@@ -156,7 +131,7 @@ def api() -> ApiApplication:
         FakeTaskBlocks(),  # type: ignore[arg-type]
         StudentSolutionEvaluator(FakeSandbox()),
         SolutionReviewService(QuestionProvider()),
-        LearningPathService(LearningProvider()),
+        ProfileRoadmapService(ExplanationProvider()),
     )
     return ApiApplication(service)
 
@@ -262,9 +237,11 @@ def test_full_transition_flow_and_server_side_gates(api: ApiApplication) -> None
     profile = post(api, f"/api/diagnostics/{session}/profile")
     assert profile.status == 200
     assert "python.io" in profile.body["profile"]["skills"]
+    assert profile.body["profile_summary"] == "Python I/O уверенно освоен."
     roadmap = post(api, f"/api/diagnostics/{session}/roadmap")
     assert roadmap.status == 200
-    assert roadmap.body["steps"][0]["title"] == "More practice"
+    assert roadmap.body["steps"][0]["title"] == "Задачи на перенос"
+    assert roadmap.body["recommendations"][0]["skill_ids"] == ["python.io"]
 
 
 def test_questions_require_all_three_successes(api: ApiApplication) -> None:
