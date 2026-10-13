@@ -109,7 +109,8 @@ src/
     page.tsx       onboarding (goal input)
 ```
 
-Read `docs/` for architecture decision records.
+Read `docs/` for architecture decision records, and `docs/TECHNICAL.md` for the full technical
+reference (data model, AI layer, mastery math, API reference, user journey, limitations).
 
 ## Key guarantees (non-negotiable tests)
 
