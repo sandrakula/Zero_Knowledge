@@ -1,3 +1,9 @@
+# Skip pnpm's per-entry supply-chain lockfile verification. It re-fetches
+# registry metadata for every dependency (slow/timeout-prone on this network)
+# and otherwise blocks `pnpm dev` before Next.js even starts.
+trustLockfile: true
+
+# Allow build scripts for packages that need native binaries / engines.
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
