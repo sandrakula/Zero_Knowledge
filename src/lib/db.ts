@@ -10,15 +10,12 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-/** The single local learner used for the MVP (no auth yet). */
+/** Legacy seed learner id (no longer used for authenticated users). */
 export const LOCAL_LEARNER_ID = "local-learner";
 
-export async function getOrCreateLearner() {
-  const existing = await prisma.learner.findUnique({
-    where: { id: LOCAL_LEARNER_ID },
-  });
+/** Ensure a Learner row exists for an authenticated user (learner.id === user.id). */
+export async function ensureLearner(userId: string, name = "Learner") {
+  const existing = await prisma.learner.findUnique({ where: { id: userId } });
   if (existing) return existing;
-  return prisma.learner.create({
-    data: { id: LOCAL_LEARNER_ID, name: "Learner" },
-  });
+  return prisma.learner.create({ data: { id: userId, userId, name } });
 }

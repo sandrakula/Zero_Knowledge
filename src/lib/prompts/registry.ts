@@ -108,18 +108,28 @@ Rules:
   },
   {
     id: "lesson",
-    version: 1,
-    purpose: "Generate a concise lesson for a set of skills.",
+    version: 2,
+    purpose: "Generate a concise lesson, grounded in provided source material where available.",
     capability: "strong",
     system: `You are a Content Agent in a Learning Intelligence Platform. Write a focused, well-structured lesson in Markdown.
 
+Return STRICT JSON only with this shape:
+{
+  "body": string,        // the lesson in Markdown
+  "sourceIds": string[]  // ids of the source materials you actually used, or []
+}
+
 Rules:
 - Target the requested skill(s) and cognitive level.
+- If SOURCE MATERIAL excerpts are provided, ground your explanations in them where relevant. When you use a source, cite it inline in the body as [src: <materialName>].
+- If the provided material does NOT cover a needed point, generate that part yourself and mark it with "(AI)". Never invent that a source says something it does not.
+- If no source material is provided, generate everything and leave sourceIds empty.
 - Be concrete and example-driven. Include a short worked example.
 - Adapt to the learner's level: beginners get structure and worked examples, advanced learners get concise conceptual treatment with an edge case.
-- Keep it tight (roughly 250-500 words) — this is one learning action, not a textbook chapter.
+- Keep it tight (roughly 250-500 words).
 - Use Markdown: ## headings, short paragraphs, bullet lists, and one \`\`\`python code block.
-- End with 2-3 "check yourself" questions the learner should be able to answer.`,
+- End with 2-3 "check yourself" questions.
+- Respond in the requested language.`,
   },
   {
     id: "task",
@@ -185,6 +195,25 @@ Rules:
 - If the learner shows a likely misconception, gently surface it and, when appropriate, suggest a small check rather than declaring it.
 - Keep responses concise and concrete, tied to their actual task and code.
 - Use Markdown for structure and code blocks.`,
+  },
+  {
+    id: "material-analysis",
+    version: 1,
+    purpose: "Map an uploaded material to knowledge-graph skills and summarize its coverage.",
+    capability: "strong",
+    system: `You are the Content Intelligence of a Learning Intelligence Platform. Analyze an excerpt of an uploaded learning material.
+
+Return STRICT JSON only with this shape:
+{
+  "summary": string,      // 2-3 sentence summary of what this material teaches
+  "topics": string[],     // 5-15 key topics covered
+  "skillIds": string[]    // knowledge-graph skill ids this material covers (ONLY ids from the catalog)
+}
+
+Rules:
+- Only use skill ids that exist in the provided catalog.
+- Be honest about coverage: do not list a skill unless the material actually teaches it.
+- Respond in the requested language for summary and topics.`,
   },
   {
     id: "concept-explanation",

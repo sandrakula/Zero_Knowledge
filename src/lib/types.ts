@@ -102,6 +102,7 @@ export type StateResponse = {
   nextBest: NextBest;
   domainStats: DomainStat[];
   skillsSeeded: number;
+  materialCount: number;
 };
 
 export type LearnResponse = {
@@ -113,7 +114,14 @@ export type LearnResponse = {
     skillIds: string[];
     description: string;
   };
-  lesson: { id: string; title: string; body: string };
+  lesson: {
+    id: string;
+    title: string;
+    body: string;
+    sourceIds: string[];
+    sources: { materialId: string; materialName: string; heading: string }[];
+    grounded: boolean;
+  };
   task: {
     id: string;
     title: string;

@@ -1,11 +1,12 @@
-import { LOCAL_LEARNER_ID } from "@/lib/db";
 import { answerDiagnostic } from "@/lib/core/diagnostic";
-import { handle } from "@/lib/api";
+import { handle, requireUser } from "@/lib/api";
+import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   return handle(async () => {
+    const userId = await requireUser();
     const body = await req.json();
     return answerDiagnostic({
       goalId: body.goalId,
@@ -15,7 +16,8 @@ export async function POST(req: Request) {
       skillId: body.skillId,
       selectedIndex: body.selectedIndex,
       confidence: body.confidence ?? 0.5,
-      learnerId: LOCAL_LEARNER_ID,
+      learnerId: userId,
+      language: normalizeLang(body.lang),
     });
   });
 }

@@ -7,6 +7,7 @@ import { createEvidence } from "./evidence";
 import { applyEvidence, getCompetencyView } from "./student-twin";
 import { markItemCompleted } from "./roadmap";
 import { getSkill } from "./knowledge-graph";
+import { langInstruction } from "@/lib/lang";
 import { clamp } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ export async function evaluateAttempt(input: {
   hintsUsed: number;
   confidence?: number;
   timeSpentSeconds?: number;
+  language?: string;
 }) {
   const task = await prisma.task.findUnique({ where: { id: input.taskId } });
   if (!task) throw new Error("Task not found");
@@ -70,6 +72,7 @@ export async function evaluateAttempt(input: {
           `Task: ${task.title}\n\nStatement:\n${task.statement}`,
           `Learner submission:\n\`\`\`python\n${input.code}\n\`\`\``,
           `Test results (${run.passed}/${run.total} passed):\n${failing}`,
+          langInstruction(input.language),
         ].join("\n\n"),
         { maxTokens: 3000 },
       );

@@ -21,6 +21,9 @@
 /prisma/*.db
 /prisma/*.db-journal
 
+# uploaded materials
+/storage/
+
 # misc
 .DS_Store
 *.pem

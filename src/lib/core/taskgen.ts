@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
+import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { runTests } from "./code-runner";
 
@@ -36,9 +37,10 @@ export type GeneratedTask = {
   difficulty: number;
   transferLevel: number;
   independenceRequired: number;
+  language?: string;
 };
 
-function normalize(t: z.infer<typeof TaskSchema>, input: { skillIds: string[]; difficulty: number; transferLevel: number; independenceRequired: number }): GeneratedTask {
+function normalize(t: z.infer<typeof TaskSchema>, input: { skillIds: string[]; difficulty: number; transferLevel: number; independenceRequired: number; language?: string }): GeneratedTask {
   return {
     ...t,
     starterCode: t.starterCode ?? "",
@@ -48,6 +50,7 @@ function normalize(t: z.infer<typeof TaskSchema>, input: { skillIds: string[]; d
     difficulty: input.difficulty,
     transferLevel: input.transferLevel,
     independenceRequired: input.independenceRequired,
+    language: input.language,
   };
 }
 
@@ -74,6 +77,7 @@ export async function generateTask(input: {
   transferLevel: number;
   independenceRequired: number;
   misconceptions?: string[];
+  language?: string;
 }): Promise<GeneratedTask> {
   const prompt = getPrompt("task")!;
   const skills = input.skillIds.map((id) => getSkill(id)).filter(Boolean);
@@ -86,6 +90,7 @@ export async function generateTask(input: {
     `Transfer level: ${input.transferLevel}`,
     `Misconception targets to consider: ${(input.misconceptions ?? []).join(", ") || "none"}`,
     `The task must be solvable with ONLY these concepts.`,
+    langInstruction(input.language),
   ].join("\n");
 
   const task = await generateObject(TaskSchema, prompt.capability, prompt.system, user, {
@@ -133,6 +138,8 @@ export async function persistTask(task: GeneratedTask): Promise<string> {
       hints: JSON.stringify(task.hints),
       status: "validated",
       provenance: "generated",
+      sourceIds: "[]",
+      language: task.language ?? "en",
     },
   });
   return saved.id;

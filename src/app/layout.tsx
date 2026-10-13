@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { I18nProvider } from "@/components/i18n";
 import "./globals.css";
 
 const inter = Inter({
@@ -34,7 +35,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <div className="app-bg" />
         <div className="app-grid" />
-        {children}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

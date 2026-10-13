@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
+import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { createEvidence } from "./evidence";
 
@@ -91,6 +92,7 @@ export async function tutor(input: {
   learnerId: string;
   message: string;
   roadmapItemId?: string;
+  language?: string;
 }): Promise<{ intent: string; actionType: string; reply: string; misconceptionCode: string | null }> {
   const context = await buildTutorContext(input.learnerId, input.roadmapItemId);
   const prompt = getPrompt("tutor")!;
@@ -107,6 +109,7 @@ export async function tutor(input: {
       `LEARNER CONTEXT:\n${context || "(no active task)"}`,
       `LEARNER MESSAGE:\n${input.message}`,
       `Return JSON with fields: intent, actionType, reply (Markdown), misconceptionCode (or null).`,
+      langInstruction(input.language),
     ].join("\n\n"),
     { maxTokens: 2500 },
   );

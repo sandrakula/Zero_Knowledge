@@ -12,6 +12,7 @@ import { getCompetencyView } from "./student-twin";
 export async function openLearnItem(input: {
   learnerId: string;
   itemId: string;
+  language?: string;
 }): Promise<{
   item: {
     id: string;
@@ -21,7 +22,14 @@ export async function openLearnItem(input: {
     skillIds: string[];
     description: string;
   };
-  lesson: { id: string; title: string; body: string };
+  lesson: {
+    id: string;
+    title: string;
+    body: string;
+    sourceIds: string[];
+    sources: { materialId: string; materialName: string; heading: string }[];
+    grounded: boolean;
+  };
   task: {
     id: string;
     title: string;
@@ -45,7 +53,7 @@ export async function openLearnItem(input: {
   // Mark the item active.
   await prisma.roadmapItem.update({ where: { id: item.id }, data: { status: "active" } });
 
-  const lesson = await ensureLessonForItem({ learnerId: input.learnerId, itemId: item.id });
+  const lesson = await ensureLessonForItem({ learnerId: input.learnerId, itemId: item.id, language: input.language });
 
   // Reuse the item's existing validated task, or generate + validate a new one.
   let taskRecord = item.taskId
@@ -64,6 +72,7 @@ export async function openLearnItem(input: {
       transferLevel: item.type === "transfer" ? 0.8 : item.type === "project" ? 0.5 : 0.15,
       independenceRequired: item.type === "assessment" ? 0.9 : 0.5,
       misconceptions: comp?.misconceptions,
+      language: input.language,
     });
 
     const taskId = await persistTask(task);
@@ -90,7 +99,14 @@ export async function openLearnItem(input: {
       skillIds,
       description: item.description,
     },
-    lesson: { id: lesson.id, title: lesson.title, body: lesson.body },
+    lesson: {
+      id: lesson.id,
+      title: lesson.title,
+      body: lesson.body,
+      sourceIds: lesson.sourceIds,
+      sources: lesson.sources,
+      grounded: lesson.grounded,
+    },
     task: {
       id: taskRecord.id,
       title: taskRecord.title,

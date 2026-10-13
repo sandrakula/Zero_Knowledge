@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Activity, AlertTriangle, Brain, Loader2, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/components/i18n";
 import { cn, timeAgo } from "@/lib/utils";
 import type { StateResponse } from "@/lib/types";
 
@@ -14,6 +15,7 @@ const SUPPORT_COLOR: Record<string, string> = {
 };
 
 export function ProgressClient() {
+  const { t } = useI18n();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
 
@@ -33,35 +35,32 @@ export function ProgressClient() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="eyebrow flex items-center gap-2"><Brain className="h-3.5 w-3.5" /> Student Learning Twin</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">Your learning state — explainable</h1>
-        <p className="mt-2 max-w-2xl text-sm text-text-muted">
-          Every value below is estimated from evidence, with explicit uncertainty. Nothing is a
-          single global score, and nothing is invented.
-        </p>
+        <p className="eyebrow flex items-center gap-2"><Brain className="h-3.5 w-3.5" /> {t("progress.title")}</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">{t("progress.subtitle")}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-text-muted">{t("progress.note")}</p>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat icon={ShieldCheck} label="Evidence" value={summary.evidenceCount} color="text-mint" />
-        <Stat icon={Activity} label="Attempts" value={summary.attemptCount} color="text-cyan" />
-        <Stat icon={AlertTriangle} label="Misconceptions" value={misconceptions.length} color="text-amber" />
-        <Stat icon={Brain} label="Skills modeled" value={skills.length} color="text-accent-soft" />
+        <Stat icon={ShieldCheck} label={t("progress.evidence")} value={summary.evidenceCount} color="text-mint" />
+        <Stat icon={Activity} label={t("progress.attempts")} value={summary.attemptCount} color="text-cyan" />
+        <Stat icon={AlertTriangle} label={t("progress.misconceptions")} value={misconceptions.length} color="text-amber" />
+        <Stat icon={Brain} label={t("progress.skillsModeled")} value={skills.length} color="text-accent-soft" />
       </div>
 
       {/* Competency vectors */}
       <section className="card p-5">
-        <h2 className="text-sm font-semibold text-text">Competency vectors</h2>
+        <h2 className="text-sm font-semibold text-text">{t("progress.vectors")}</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-text-faint">
-                <th className="pb-2 pr-3 font-medium">Skill</th>
-                <th className="pb-2 pr-3 font-medium">Mastery</th>
-                <th className="pb-2 pr-3 font-medium">Support</th>
-                <th className="pb-2 pr-3 font-medium">Depth</th>
-                <th className="pb-2 pr-3 font-medium">Independence</th>
-                <th className="pb-2 font-medium">Transfer</th>
+                <th className="pb-2 pr-3 font-medium">{t("progress.skill")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("progress.mastery")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("progress.support")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("progress.depth")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("progress.independence")}</th>
+                <th className="pb-2 font-medium">{t("progress.transfer")}</th>
               </tr>
             </thead>
             <tbody>
@@ -99,7 +98,7 @@ export function ProgressClient() {
                 </tr>
               ))}
               {skills.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-sm text-text-faint">No competencies modeled yet — start learning.</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-sm text-text-faint">{t("progress.noSkills")}</td></tr>
               )}
             </tbody>
           </table>
@@ -110,7 +109,7 @@ export function ProgressClient() {
       {misconceptions.length > 0 && (
         <section className="card p-5">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
-            <AlertTriangle className="h-4 w-4 text-amber" /> Misconception states
+            <AlertTriangle className="h-4 w-4 text-amber" /> {t("progress.misconceptionStates")}
           </h2>
           <div className="mt-3 space-y-2">
             {misconceptions.map((m) => (
@@ -130,7 +129,7 @@ export function ProgressClient() {
       {/* Evidence timeline */}
       <section className="card p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
-          <ShieldCheck className="h-4 w-4 text-mint" /> Evidence lineage
+          <ShieldCheck className="h-4 w-4 text-mint" /> {t("progress.lineage")}
         </h2>
         <div className="mt-4 space-y-3">
           {summary.recentEvidence.map((e) => (
@@ -144,7 +143,7 @@ export function ProgressClient() {
               <span className="chip shrink-0">{e.kind}</span>
             </div>
           ))}
-          {summary.recentEvidence.length === 0 && <p className="text-sm text-text-faint">No evidence yet.</p>}
+          {summary.recentEvidence.length === 0 && <p className="text-sm text-text-faint">{t("progress.noEvidence")}</p>}
         </div>
       </section>
     </div>

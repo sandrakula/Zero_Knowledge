@@ -1,12 +1,13 @@
-import { prisma, LOCAL_LEARNER_ID } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { DOMAINS, SKILLS } from "@/lib/core/knowledge-graph";
-import { handle } from "@/lib/api";
+import { handle, requireUser } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return handle(async () => {
-    const states = await prisma.competencyState.findMany({ where: { learnerId: LOCAL_LEARNER_ID } });
+    const userId = await requireUser();
+    const states = await prisma.competencyState.findMany({ where: { learnerId: userId } });
     const byId = new Map(states.map((s) => [s.skillId, s]));
 
     const skills = SKILLS.map((s) => {

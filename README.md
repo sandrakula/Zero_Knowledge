@@ -15,7 +15,16 @@ and no AI provider, model, or API key is baked into the core.
 
 ## What it does (MVP)
 
-- **Cold start** — describe a goal ("I want to become an ML engineer") with zero materials.
+- **Accounts** — register / login (email + password, scrypt-hashed, signed session cookie).
+  Every user has a fully isolated learning twin, roadmap, tasks, evidence and materials.
+- **Russian / English** — the whole UI is switchable (EN ⇄ RU), and AI-generated lessons,
+  tasks, diagnostics, feedback and tutoring follow the selected language.
+- **Material upload** — `.txt`, `.md`, `.pdf`, `.docx` up to 100 MB (RU/EN auto-detected).
+  Files are text-extracted, chunked, and analyzed by AI into knowledge-graph skills + coverage.
+- **Grounded generation** — lessons are grounded in your uploaded materials where possible and
+  cite them inline (`[src: filename]`); anything not covered is generated and clearly marked `(AI)`.
+  Provenance is always explicit: *from your material* vs *AI-generated*.
+- **Cold start** — no materials? No problem: describe a goal and everything is generated.
 - **Goal compiler** — natural language → domain, target level, and target skills + prerequisites.
 - **Adaptive diagnostic** — seeds the learning twin with honest initial evidence (with uncertainty).
 - **Personalized roadmap** — generated as a *hypothesis*, ordered by prerequisites and learner state.
@@ -53,7 +62,11 @@ pnpm db:seed
 pnpm dev        # http://localhost:3100
 ```
 
-Open http://localhost:3100, describe a goal, complete the short diagnostic, and start learning.
+Open http://localhost:3100 → register (or log in) → optionally upload materials → describe your
+goal → complete the short diagnostic → start learning.
+
+> Smoke test: with the server running, `node scripts/smoke.mjs` exercises register → upload →
+> goal → grounded lesson → per-user isolation against the live API.
 
 ## Configuration
 
@@ -62,6 +75,7 @@ All provider details live in `.env.local` — nothing is hardcoded in business l
 | Variable | Meaning |
 | --- | --- |
 | `DATABASE_URL` | Prisma datasource (SQLite by default) |
+| `SESSION_SECRET` | HMAC secret for signed session cookies |
 | `LLM_PROVIDER` | adapter id (`openai-compatible`) |
 | `LLM_BASE_URL` | gateway base URL (e.g. `https://llm.azati.ai/v1`) |
 | `LLM_API_KEY` | API key (never committed) |

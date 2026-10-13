@@ -1,18 +1,19 @@
-import { LOCAL_LEARNER_ID } from "@/lib/db";
 import { tutor } from "@/lib/core/tutor";
-import { handle } from "@/lib/api";
+import { handle, requireUser } from "@/lib/api";
+import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   return handle(async () => {
+    const userId = await requireUser();
     const body = await req.json();
-    const result = await tutor({
-      learnerId: LOCAL_LEARNER_ID,
+    return tutor({
+      learnerId: userId,
       message: String(body.message ?? ""),
       roadmapItemId: body.roadmapItemId,
+      language: normalizeLang(body.lang),
     });
-    return result;
   });
 }

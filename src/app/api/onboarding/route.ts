@@ -1,25 +1,28 @@
-import { prisma, LOCAL_LEARNER_ID, getOrCreateLearner } from "@/lib/db";
+import { prisma, ensureLearner } from "@/lib/db";
 import { compileGoal } from "@/lib/core/goal-compiler";
 import { generateRoadmap } from "@/lib/core/roadmap";
-import { handle, fail } from "@/lib/api";
+import { handle, fail, requireUser } from "@/lib/api";
+import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   return handle(async () => {
+    const userId = await requireUser();
     const body = await req.json();
     const statement = String(body.statement ?? "").trim();
     const level = String(body.level ?? "beginner");
     const hoursPerWeek = Math.max(1, Math.min(40, Number(body.hoursPerWeek ?? 5)));
+    const lang = normalizeLang(body.lang);
 
     if (!statement) return fail("Please describe your learning goal.", 400);
 
-    await getOrCreateLearner();
-    const spec = await compileGoal({ statement, level });
+    await ensureLearner(userId);
+    const spec = await compileGoal({ statement, level, language: lang });
 
     const goal = await prisma.goal.create({
       data: {
-        learnerId: LOCAL_LEARNER_ID,
+        learnerId: userId,
         title: spec.title,
         statement,
         domain: spec.domain,
@@ -40,9 +43,10 @@ export async function POST(req: Request) {
 
     await generateRoadmap({
       goalId: goal.id,
-      learnerId: LOCAL_LEARNER_ID,
+      learnerId: userId,
       spec,
       competency: [],
+      language: lang,
     });
 
     const roadmap = await prisma.roadmap.findUnique({ where: { goalId: goal.id } });

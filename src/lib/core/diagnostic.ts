@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
+import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { createEvidence } from "./evidence";
 import { applyEvidence } from "./student-twin";
@@ -54,6 +55,7 @@ function levelFor(mastery: number): string {
 async function generateQuestion(
   skillId: string,
   level: string,
+  language?: string,
 ): Promise<DiagnosticQuestion> {
   const prompt = getPrompt("diagnostic-question")!;
   const skill = getSkill(skillId)!;
@@ -61,7 +63,7 @@ async function generateQuestion(
     QSchema,
     prompt.capability,
     prompt.system,
-    `Skill: ${skill.name} (${skill.id})\nDescription: ${skill.description}\nTarget difficulty: ${level}`,
+    `Skill: ${skill.name} (${skill.id})\nDescription: ${skill.description}\nTarget difficulty: ${level}\n${langInstruction(language)}`,
     { maxTokens: 2000 },
   );
   const id = `dq_${Math.random().toString(36).slice(2, 10)}`;
@@ -97,7 +99,7 @@ function pickSkills(goalSkills: string[]): string[] {
   return chosen;
 }
 
-export async function startDiagnostic(goalId: string) {
+export async function startDiagnostic(goalId: string, language?: string) {
   const goal = await prisma.goal.findUnique({ where: { id: goalId }, include: { targetSkills: true } });
   if (!goal) throw new Error("Goal not found");
 
@@ -105,7 +107,7 @@ export async function startDiagnostic(goalId: string) {
   const ladder = pickSkills(goalSkills);
   const first = ladder[0];
 
-  const q = await generateQuestion(first, "beginner");
+  const q = await generateQuestion(first, "beginner", language);
   return {
     ladder,
     index: 0,
@@ -122,6 +124,7 @@ export async function answerDiagnostic(input: {
   selectedIndex: number;
   confidence: number;
   learnerId: string;
+  language?: string;
 }) {
   const key = keyStore.get(input.questionId);
   if (!key) throw new Error("Question expired — please restart the diagnostic");
@@ -176,6 +179,6 @@ export async function answerDiagnostic(input: {
     return { done: true, correct, feedback, summary: "Diagnostic complete — your learning twin is initialized." };
   }
 
-  const nextQ = await generateQuestion(nextSkillId, nextLevel);
+  const nextQ = await generateQuestion(nextSkillId, nextLevel, input.language);
   return { done: false, correct, feedback, index: Math.min(nextIndex, input.ladder.length - 1), question: publicQuestion(nextQ) };
 }

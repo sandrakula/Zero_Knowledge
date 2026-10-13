@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
+import { langInstruction } from "@/lib/lang";
 import { SKILLS, getSkill } from "./knowledge-graph";
 import type { GoalSpec } from "./goal-compiler";
 import { skillCatalogForPrompt } from "./goal-compiler";
@@ -34,6 +35,7 @@ export async function generateRoadmap(input: {
   learnerId: string;
   spec: GoalSpec;
   competency: { skillId: string; mastery: number }[];
+  language?: string;
 }): Promise<void> {
   const prompt = getPrompt("roadmap")!;
   const catalog = skillCatalogForPrompt();
@@ -48,6 +50,7 @@ export async function generateRoadmap(input: {
     `Learner current mastery (0..1, where absent means unknown): ${JSON.stringify(competencySummary)}`,
     `Prerequisite map:\n${catalog}`,
     `Target level: ${input.spec.targetLevel}`,
+    langInstruction(input.language),
   ].join("\n\n");
 
   const result = await generateObject(RoadmapSchema, prompt.capability, prompt.system, user, {

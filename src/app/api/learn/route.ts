@@ -1,12 +1,13 @@
-import { LOCAL_LEARNER_ID } from "@/lib/db";
 import { openLearnItem } from "@/lib/core/learn";
-import { handle } from "@/lib/api";
+import { handle, requireUser } from "@/lib/api";
+import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   return handle(async () => {
-    const { itemId } = await req.json();
-    return openLearnItem({ learnerId: LOCAL_LEARNER_ID, itemId });
+    const userId = await requireUser();
+    const { itemId, lang } = await req.json();
+    return openLearnItem({ learnerId: userId, itemId, language: normalizeLang(lang) });
   });
 }

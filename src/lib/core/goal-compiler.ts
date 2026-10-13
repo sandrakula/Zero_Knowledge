@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
+import { langInstruction } from "@/lib/lang";
 import { SKILLS, getSkill } from "./knowledge-graph";
 
 // ─────────────────────────────────────────────────────────────
@@ -39,12 +40,14 @@ export function skillCatalogForPrompt(): string {
 export async function compileGoal(input: {
   statement: string;
   level: string;
+  language?: string;
 }): Promise<GoalSpec> {
   const prompt = getPrompt("goal-compiler")!;
   const catalog = skillCatalogForPrompt();
 
   const spec = await generateObject(GoalSchema, prompt.capability, prompt.system, [
     `Learner goal: "${input.statement}"\nStated level: ${input.level}\n\nSkill catalog (id, name, domain, difficulty, prerequisites):\n${catalog}`,
+    langInstruction(input.language),
   ].join("\n"), { maxTokens: 4096 });
 
   // Validate skill ids against the catalog; drop unknown ones and keep order.

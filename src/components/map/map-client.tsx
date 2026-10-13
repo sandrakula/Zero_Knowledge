@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, Loader2, Network, X } from "lucide-react";
 import { ProgressRing } from "@/components/ui/progress-ring";
+import { useI18n } from "@/components/i18n";
 import { cn } from "@/lib/utils";
 
 type Skill = {
@@ -33,6 +34,7 @@ function stateColor(s: Skill): string {
 }
 
 export function MapClient() {
+  const { t } = useI18n();
   const [domains, setDomains] = useState<Domain[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [activeDomain, setActiveDomain] = useState<string>("programming");
@@ -68,9 +70,9 @@ export function MapClient() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="eyebrow flex items-center gap-2"><Network className="h-3.5 w-3.5" /> Knowledge map</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">What you know — and what blocks you</h1>
-        <p className="mt-2 text-sm text-text-muted">Color shows mastery. Tap any node to see the full competency vector and its prerequisites.</p>
+        <p className="eyebrow flex items-center gap-2"><Network className="h-3.5 w-3.5" /> {t("map.title")}</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">{t("map.subtitle")}</h1>
+        <p className="mt-2 text-sm text-text-muted">{t("map.hint")}</p>
       </div>
 
       {/* Domain tabs */}
@@ -115,7 +117,7 @@ export function MapClient() {
                       <span className="hidden text-[10px] uppercase tracking-wide text-text-faint sm:inline">{s.category}</span>
                     </div>
                     {prereqNames.length > 0 && (
-                      <p className="mt-0.5 truncate text-[11px] text-text-faint">requires: {prereqNames.join(", ")}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-text-faint">{t("map.requires")}: {prereqNames.join(", ")}</p>
                     )}
                   </div>
                   {s.seen && s.mastery !== null ? (
@@ -123,7 +125,7 @@ export function MapClient() {
                       <div className="h-full rounded-full" style={{ width: `${s.mastery * 100}%`, background: color }} />
                     </div>
                   ) : (
-                    <span className="text-[10px] text-text-faint">unexplored</span>
+                    <span className="text-[10px] text-text-faint">{t("map.unexplored")}</span>
                   )}
                 </motion.button>
               );
@@ -149,16 +151,16 @@ export function MapClient() {
                 <div className="mt-4 flex items-center gap-4">
                   <ProgressRing value={selectedFull.mastery ?? 0} size={64} label={selectedFull.seen ? `${Math.round((selectedFull.mastery ?? 0) * 100)}` : "—"} color={stateColor(selectedFull)} />
                   <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    <Metric label="depth" value={selectedFull.depth ?? "—"} />
-                    <Metric label="independence" value={selectedFull.independence === null ? "—" : `${Math.round(selectedFull.independence * 100)}%`} />
-                    <Metric label="transfer" value={selectedFull.transfer === null ? "—" : `${Math.round(selectedFull.transfer * 100)}%`} />
-                    <Metric label="attempts" value={String(selectedFull.attempts)} />
+                    <Metric label={t("map.depth")} value={selectedFull.depth ?? "—"} />
+                    <Metric label={t("map.independence")} value={selectedFull.independence === null ? "—" : `${Math.round(selectedFull.independence * 100)}%`} />
+                    <Metric label={t("map.transfer")} value={selectedFull.transfer === null ? "—" : `${Math.round(selectedFull.transfer * 100)}%`} />
+                    <Metric label={t("map.attempts")} value={String(selectedFull.attempts)} />
                   </div>
                 </div>
 
                 {selectedFull.prerequisites.length > 0 && (
                   <div className="mt-4">
-                    <p className="eyebrow">Prerequisites</p>
+                    <p className="eyebrow">{t("map.prerequisites")}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {selectedFull.prerequisites.map((p) => (
                         <span key={p} className="chip">
@@ -171,13 +173,13 @@ export function MapClient() {
                 )}
 
                 <p className="mt-4 rounded-lg border border-white/[0.06] bg-ink-900/50 p-3 text-[11px] leading-relaxed text-text-faint">
-                  Mastery is estimated from evidence, with explicit uncertainty — a green node doesn&apos;t mean you&apos;ve merely seen the concept; it means you&apos;ve demonstrated it.
+                  {t("map.note")}
                 </p>
               </motion.div>
             ) : (
               <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-5 text-center">
                 <Network className="mx-auto h-6 w-6 text-text-faint" />
-                <p className="mt-3 text-sm text-text-faint">Select a skill to inspect its competency state.</p>
+                <p className="mt-3 text-sm text-text-faint">{t("map.select")}</p>
               </motion.div>
             )}
           </AnimatePresence>

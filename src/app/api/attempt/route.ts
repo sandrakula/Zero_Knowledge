@@ -1,21 +1,23 @@
-import { LOCAL_LEARNER_ID } from "@/lib/db";
 import { evaluateAttempt } from "@/lib/core/evaluation";
-import { handle } from "@/lib/api";
+import { handle, requireUser } from "@/lib/api";
+import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   return handle(async () => {
+    const userId = await requireUser();
     const body = await req.json();
     return evaluateAttempt({
-      learnerId: LOCAL_LEARNER_ID,
+      learnerId: userId,
       taskId: body.taskId,
       roadmapItemId: body.roadmapItemId,
       code: body.code ?? "",
       hintsUsed: body.hintsUsed ?? 0,
       confidence: body.confidence,
       timeSpentSeconds: body.timeSpentSeconds,
+      language: normalizeLang(body.lang),
     });
   });
 }

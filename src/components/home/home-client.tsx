@@ -14,13 +14,16 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Upload,
 } from "lucide-react";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { Reveal } from "@/components/ui/reveal";
+import { useI18n } from "@/components/i18n";
 import { cn, timeAgo } from "@/lib/utils";
 import type { StateResponse } from "@/lib/types";
 
 export function HomeClient() {
+  const { t } = useI18n();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
 
@@ -31,31 +34,15 @@ export function HomeClient() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error)
-    return (
-      <div className="card p-10 text-center">
-        <p className="text-rose">{error}</p>
-      </div>
-    );
-  if (!state)
-    return (
-      <div className="grid min-h-[60vh] place-items-center">
-        <Loader2 className="h-6 w-6 animate-spin text-accent-soft" />
-      </div>
-    );
+  if (error) return <div className="card p-10 text-center"><p className="text-rose">{error}</p></div>;
+  if (!state) return <div className="grid min-h-[60vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
 
-  const { goal, roadmap, summary, misconceptions, nextBest, domainStats } = state;
+  const { goal, roadmap, summary, misconceptions, nextBest, domainStats, materialCount } = state;
 
   const seenSkills = summary.skills;
-  const avgMastery = seenSkills.length
-    ? seenSkills.reduce((a, s) => a + s.mastery, 0) / seenSkills.length
-    : 0;
-  const avgIndependence = seenSkills.length
-    ? seenSkills.reduce((a, s) => a + s.independence, 0) / seenSkills.length
-    : 0;
-  const avgTransfer = seenSkills.length
-    ? seenSkills.reduce((a, s) => a + s.transfer, 0) / seenSkills.length
-    : 0;
+  const avgMastery = seenSkills.length ? seenSkills.reduce((a, s) => a + s.mastery, 0) / seenSkills.length : 0;
+  const avgIndependence = seenSkills.length ? seenSkills.reduce((a, s) => a + s.independence, 0) / seenSkills.length : 0;
+  const avgTransfer = seenSkills.length ? seenSkills.reduce((a, s) => a + s.transfer, 0) / seenSkills.length : 0;
 
   const readyItem = roadmap?.items.find((i) => i.status === "ready" || i.status === "active");
   const nextItemId = nextBest.next?.itemId?.includes(":") ? readyItem?.id : nextBest.next?.itemId;
@@ -63,7 +50,6 @@ export function HomeClient() {
 
   return (
     <div className="space-y-8">
-      {/* Hero / next best action */}
       <Reveal>
         <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-br from-ink-800/80 via-ink-850 to-accent/[0.06] p-6 sm:p-8">
           <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-accent/20 blur-[100px]" />
@@ -74,11 +60,7 @@ export function HomeClient() {
               <Sparkles className="h-3.5 w-3.5 text-accent-soft" /> {goal?.title ?? "Learning"}
             </p>
             <h1 className="mt-3 max-w-2xl text-2xl font-bold leading-tight tracking-tight text-text sm:text-4xl">
-              {nextBest.next ? (
-                <>What should I do next?</>
-              ) : (
-                <>Your roadmap is ready.</>
-              )}
+              {nextBest.next ? t("home.next") : t("home.roadmapReady")}
             </h1>
 
             <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -88,48 +70,60 @@ export function HomeClient() {
                     <div className="flex items-center gap-2 text-sm text-text-muted">
                       <Target className="h-4 w-4 text-accent-soft" />
                       <span className="font-medium text-accent-soft">{nextBest.next.title}</span>
-                      <span className="chip">{nextBest.next.type}</span>
+                      <span className="chip">{t(`type.${nextBest.next.type}`) ?? nextBest.next.type}</span>
                     </div>
                     <p className="mt-2 text-sm leading-relaxed text-text-faint">
-                      {nextBest.next.description} — chosen from {summary.evidenceCount} pieces of
-                      evidence, not a fixed sequence.
+                      {nextBest.next.description} — {t("home.chosenFrom")} {summary.evidenceCount} {t("home.evidence")}
                     </p>
                   </>
                 ) : (
-                  <p className="text-sm leading-relaxed text-text-muted">
-                    Head to your roadmap and start the first learning action.
-                  </p>
+                  <p className="text-sm leading-relaxed text-text-muted">{t("home.roadmapReady")}</p>
                 )}
 
                 <div className="mt-5 flex flex-wrap gap-3">
                   {ctaItemId && (
                     <Link href={`/learn/${ctaItemId}`} className="btn-primary">
-                      <Play className="h-4 w-4" /> Continue learning
+                      <Play className="h-4 w-4" /> {t("home.continue")}
                     </Link>
                   )}
                   <Link href="/roadmap" className="btn-ghost">
-                    View roadmap <ArrowRight className="h-4 w-4" />
+                    {t("home.viewRoadmap")} <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>
               </div>
 
               <div className="flex items-center gap-5">
-                <ProgressRing value={avgMastery} label={`${Math.round(avgMastery * 100)}`} sublabel="mastery" color="#7c6cff" />
-                <ProgressRing value={avgIndependence} label={`${Math.round(avgIndependence * 100)}`} sublabel="independence" color="#22d3ee" />
-                <ProgressRing value={avgTransfer} label={`${Math.round(avgTransfer * 100)}`} sublabel="transfer" color="#34d399" />
+                <ProgressRing value={avgMastery} label={`${Math.round(avgMastery * 100)}`} sublabel={t("progress.mastery").toLowerCase()} color="#7c6cff" />
+                <ProgressRing value={avgIndependence} label={`${Math.round(avgIndependence * 100)}`} sublabel={t("progress.independence").toLowerCase()} color="#22d3ee" />
+                <ProgressRing value={avgTransfer} label={`${Math.round(avgTransfer * 100)}`} sublabel={t("progress.transfer").toLowerCase()} color="#34d399" />
               </div>
             </div>
           </div>
         </section>
       </Reveal>
 
-      {/* Misconception alerts */}
+      {/* Materials CTA */}
+      <Reveal delay={0.03}>
+        <Link href="/materials" className="card card-hover flex items-center gap-4 p-4">
+          <div className="grid h-10 w-10 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
+            <Upload className="h-5 w-5 text-accent-soft" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-text">
+              {materialCount > 0 ? `${materialCount} ${t("home.materialsUploaded")}` : t("home.uploadMaterials")}
+            </p>
+            <p className="text-xs text-text-faint">{t("materials.subtitle")}</p>
+          </div>
+          <ArrowRight className="h-4 w-4 text-text-faint" />
+        </Link>
+      </Reveal>
+
       {misconceptions.length > 0 && (
         <Reveal delay={0.05}>
           <section className="card p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-text">
               <AlertTriangle className="h-4 w-4 text-amber" />
-              Active misconceptions
+              {t("home.misconceptions")}
               <span className="ml-1 rounded-full bg-amber/15 px-2 py-0.5 text-xs text-amber">{misconceptions.length}</span>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -139,9 +133,7 @@ export function HomeClient() {
                     <p className="text-sm font-medium text-text">{m.name}</p>
                     <p className="mt-0.5 text-xs leading-relaxed text-text-faint">{m.description}</p>
                   </div>
-                  <span className="ml-auto shrink-0 rounded-md bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
-                    {Math.round(m.confidence * 100)}%
-                  </span>
+                  <span className="ml-auto shrink-0 rounded-md bg-amber/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber">{Math.round(m.confidence * 100)}%</span>
                 </div>
               ))}
             </div>
@@ -150,11 +142,10 @@ export function HomeClient() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Domain coverage */}
         <Reveal delay={0.1} className="lg:col-span-2">
           <section className="card h-full p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-text">
-              <Layers className="h-4 w-4 text-accent-soft" /> Domain coverage
+              <Layers className="h-4 w-4 text-accent-soft" /> {t("home.domains")}
             </div>
             <div className="mt-4 space-y-3.5">
               {domainStats.map((d) => {
@@ -165,16 +156,10 @@ export function HomeClient() {
                       <span className="flex items-center gap-2 text-text-muted">
                         <span className="text-sm" style={{ color: d.color }}>{d.icon}</span> {d.name}
                       </span>
-                      <span className="text-text-faint">{d.mastered}/{d.total} mastered</span>
+                      <span className="text-text-faint">{d.mastered}/{d.total} {t("home.mastered")}</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ background: d.color }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct * 100}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                      />
+                      <motion.div className="h-full rounded-full" style={{ background: d.color }} initial={{ width: 0 }} animate={{ width: `${pct * 100}%` }} transition={{ duration: 0.8, ease: "easeOut" }} />
                     </div>
                   </div>
                 );
@@ -183,51 +168,39 @@ export function HomeClient() {
           </section>
         </Reveal>
 
-        {/* Evidence / activity */}
         <Reveal delay={0.15}>
           <section className="card h-full p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-text">
-                <ShieldCheck className="h-4 w-4 text-mint" /> Recent evidence
+                <ShieldCheck className="h-4 w-4 text-mint" /> {t("home.recentEvidence")}
               </div>
-              <span className="chip">{summary.evidenceCount} total</span>
+              <span className="chip">{summary.evidenceCount} {t("home.total")}</span>
             </div>
             <div className="mt-4 space-y-3">
               {summary.recentEvidence.slice(0, 6).map((e) => (
                 <div key={e.id} className="flex items-start gap-3">
-                  <span className={cn(
-                    "mt-1 h-2 w-2 shrink-0 rounded-full",
-                    e.method === "deterministic" ? "bg-mint" : "bg-cyan",
-                  )} />
+                  <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", e.method === "deterministic" ? "bg-mint" : "bg-cyan")} />
                   <div className="min-w-0">
                     <p className="truncate text-sm text-text/90">{e.summary}</p>
-                    <p className="text-[11px] text-text-faint">
-                      {e.method} · {timeAgo(e.createdAt)}
-                    </p>
+                    <p className="text-[11px] text-text-faint">{e.method} · {timeAgo(e.createdAt)}</p>
                   </div>
                 </div>
               ))}
-              {summary.recentEvidence.length === 0 && (
-                <p className="text-sm text-text-faint">No evidence yet — start a learning action to begin.</p>
-              )}
+              {summary.recentEvidence.length === 0 && <p className="text-sm text-text-faint">{t("home.noEvidence")}</p>}
             </div>
           </section>
         </Reveal>
       </div>
 
-      {/* Up next queue */}
       {nextBest.queue.length > 0 && (
         <Reveal delay={0.2}>
           <section className="card p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-text">
-              <Gauge className="h-4 w-4 text-cyan" /> What the system is considering next
+              <Gauge className="h-4 w-4 text-cyan" /> {t("home.considering")}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {nextBest.queue.map((q, i) => (
-                <span key={i} className="chip">
-                  {q.title}
-                  <span className="text-text-faint">· {q.reason}</span>
-                </span>
+                <span key={i} className="chip">{q.title}<span className="text-text-faint">· {q.reason}</span></span>
               ))}
             </div>
           </section>
@@ -235,8 +208,7 @@ export function HomeClient() {
       )}
 
       <p className="flex items-center justify-center gap-2 text-center text-[11px] text-text-faint">
-        <Brain className="h-3.5 w-3.5" />
-        Every number here is backed by evidence and can be explained. Nothing is invented.
+        <Brain className="h-3.5 w-3.5" /> {t("home.footer")}
       </p>
     </div>
   );

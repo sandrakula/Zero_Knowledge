@@ -10,9 +10,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  language     String   @default("en")
+  createdAt    DateTime @default(now())
+  learner      Learner?
+}
+
 model Learner {
   id           String   @id
   name         String
+  userId       String?  @unique
+  user         User?    @relation(fields: [userId], references: [id])
   createdAt    DateTime @default(now())
   goals        Goal[]
   competencies CompetencyState[]
@@ -23,6 +35,24 @@ model Learner {
   hints        HintUsage[]
   messages     Message[]
   recommendations Recommendation[]
+  materials    Material[]
+}
+
+model Material {
+  id         String   @id @default(cuid())
+  learnerId  String
+  learner    Learner  @relation(fields: [learnerId], references: [id])
+  filename   String
+  storedName String
+  mimeType   String
+  size       Int
+  language   String   @default("en")
+  status     String   @default("ready") // processing | ready | failed
+  skillIds   String   @default("[]") // JSON — covered skills
+  summary    String   @default("")
+  chunkCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  chunks     MaterialChunk[]
 }
 
 model Goal {
@@ -115,6 +145,16 @@ model Roadmap {
   items     RoadmapItem[]
 }
 
+model MaterialChunk {
+  id         String   @id @default(cuid())
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id])
+  learnerId  String
+  index      Int
+  heading    String   @default("")
+  text       String
+}
+
 model RoadmapItem {
   id        String  @id @default(cuid())
   roadmapId String
@@ -140,6 +180,8 @@ model ContentItem {
   provenance  String   @default("generated") // canonical | user-provided | teacher-provided | external | generated | enriched
   status      String   @default("generated") // draft | generated | validated | approved | deprecated
   sourceRef   String?
+  sourceIds   String   @default("[]") // JSON — material ids this content is grounded in
+  language    String   @default("en")
   version     Int      @default(1)
   meta        String   @default("{}")
   createdAt   DateTime @default(now())
@@ -162,6 +204,8 @@ model Task {
   hints         String   @default("[]") // JSON [hint...]
   status        String   @default("validated") // draft | generated | validated | deprecated
   provenance    String   @default("generated")
+  sourceIds     String   @default("[]") // JSON — material ids this task is grounded in
+  language      String   @default("en")
   createdAt     DateTime @default(now())
   attempts      TaskAttempt[]
 }
