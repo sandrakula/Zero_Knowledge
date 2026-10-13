@@ -59,6 +59,7 @@ export const en: Dict = {
 
   // diagnostic
   "diag.initializing": "Initial diagnosis",
+  "diag.subtitle": "A few adaptive questions to find your real level",
   "diag.calibrating": "Calibrating your starting point…",
   "diag.done.title": "Your learning twin is initialized",
   "diag.done.desc":
@@ -134,6 +135,10 @@ export const en: Dict = {
   "tutor.context": "Context",
   "tutor.placeholder": "Ask about your current concept, or paste a problem…",
   "tutor.thinking": "Thinking…",
+  "tutor.goal.title": "Tell me what you want to learn",
+  "tutor.goal.hint":
+    "Describe your goal in your own words — for example “I want to learn Python from zero”. I'll build your learning plan, then you'll pass a short level test.",
+  "tutor.goal.creating": "Building your learning plan…",
   "tutor.greeting":
     "Hi — I'm your tutor, and I know where you are in your learning path. Ask me anything about the current concept, or share a problem and I'll guide you to the answer rather than handing it over.",
 
@@ -265,6 +270,7 @@ export const ru: Dict = {
   "onboarding.upload": "Загрузить материалы",
 
   "diag.initializing": "Начальная диагностика",
+  "diag.subtitle": "Несколько адаптивных вопросов, чтобы определить ваш реальный уровень",
   "diag.calibrating": "Определяем вашу стартовую точку…",
   "diag.done.title": "Ваш учебный двойник инициализирован",
   "diag.done.desc":
@@ -336,6 +342,10 @@ export const ru: Dict = {
   "tutor.context": "Контекст",
   "tutor.placeholder": "Спросите о текущей теме или вставьте задачу…",
   "tutor.thinking": "Думаю…",
+  "tutor.goal.title": "Скажите, чему вы хотите научиться",
+  "tutor.goal.hint":
+    "Опишите цель своими словами — например «Хочу выучить Python с нуля». Я построю план обучения, а затем вы пройдёте короткий тест на уровень.",
+  "tutor.goal.creating": "Строим ваш план обучения…",
   "tutor.greeting":
     "Привет! Я ваш тьютор и знаю, где вы находитесь в обучении. Спросите о текущей теме или покажите задачу — я помогу найти ответ, а не выдам его.",
 

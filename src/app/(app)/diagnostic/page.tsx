@@ -9,7 +9,7 @@ export default async function DiagnosticPage() {
   const userId = await getSessionUserId();
   if (!userId) redirect("/login");
   return (
-    <Suspense fallback={<div className="grid min-h-screen place-items-center text-text-muted">Loading…</div>}>
+    <Suspense fallback={<div className="grid min-h-[40vh] place-items-center text-text-muted">Loading…</div>}>
       <DiagnosticFlow />
     </Suspense>
   );

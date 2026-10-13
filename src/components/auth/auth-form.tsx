@@ -29,7 +29,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("common.error"));
-      router.push(data.user?.role === "admin" ? "/admin" : "/onboarding");
+      router.push(data.user?.role === "admin" ? "/admin" : "/tutor");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.error"));

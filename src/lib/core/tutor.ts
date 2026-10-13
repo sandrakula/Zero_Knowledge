@@ -2,9 +2,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
-import { langInstruction } from "@/lib/lang";
+import { langInstruction, normalizeLang } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { createEvidence } from "./evidence";
+import { createGoalFromStatement } from "./goal";
 
 // ─────────────────────────────────────────────────────────────
 // Contextual tutor (§96–113). Intent-aware, grounded in the learner's
@@ -93,13 +94,58 @@ export async function tutor(input: {
   message: string;
   roadmapItemId?: string;
   language?: string;
-}): Promise<{ intent: string; actionType: string; reply: string; misconceptionCode: string | null }> {
-  const context = await buildTutorContext(input.learnerId, input.roadmapItemId);
+}): Promise<{ intent: string; actionType: string; reply: string; misconceptionCode: string | null; goalId?: string }> {
   const prompt = getPrompt("tutor")!;
 
   await prisma.message.create({
     data: { learnerId: input.learnerId, role: "user", content: input.message },
   });
+
+  // No goal yet? This conversation IS the goal-setting step: capture what the
+  // learner wants to learn, then send them to the level diagnostic.
+  const activeGoal = await prisma.goal.findFirst({
+    where: { learnerId: input.learnerId, status: "active" },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!activeGoal) {
+    // Too short to be a goal — ask for one instead of creating a junk goal.
+    if (input.message.trim().length < 12) {
+      const ask =
+        normalizeLang(input.language) === "ru"
+          ? "Расскажите чуть подробнее, чему вы хотите научиться? Например: «Хочу выучить Python с нуля» или «Хочу стать ML-инженером»."
+          : "Tell me a bit more about what you want to learn — for example: “I want to learn Python from zero” or “I want to become an ML engineer”.";
+      await prisma.message.create({
+        data: { learnerId: input.learnerId, role: "assistant", content: ask, intent: "clarify_goal", meta: JSON.stringify({ actionType: "ASK_QUESTION" }) },
+      });
+      return { intent: "clarify_goal", actionType: "ASK_QUESTION", reply: ask, misconceptionCode: null };
+    }
+
+    const { goalId, spec } = await createGoalFromStatement({
+      learnerId: input.learnerId,
+      statement: input.message,
+      language: normalizeLang(input.language),
+    });
+
+    const reply =
+      normalizeLang(input.language) === "ru"
+        ? `Отлично — фиксирую вашу цель: **${spec.title}**.\n\nПрежде чем начать, определим ваш реальный уровень коротким адаптивным тестом (около 4 вопросов). Отвечайте честно — это только настраивает ваш план под вас, а не оценивает вас.\n\nГотовы? Тогда проходим тест →`
+        : `Great — I'm setting your goal: **${spec.title}**.\n\nBefore we start, let's find your real level with a short adaptive test (about 4 questions). Answer honestly — it only shapes your roadmap; it doesn't judge you.\n\nReady? Take the test →`;
+
+    await prisma.message.create({
+      data: {
+        learnerId: input.learnerId,
+        role: "assistant",
+        content: reply,
+        intent: "goal_created",
+        meta: JSON.stringify({ goalId, actionType: "EXPLAIN" }),
+      },
+    });
+
+    return { intent: "goal_created", actionType: "EXPLAIN", reply, misconceptionCode: null, goalId };
+  }
+
+  const context = await buildTutorContext(input.learnerId, input.roadmapItemId);
 
   const result = await generateObject(
     TutorSchema,

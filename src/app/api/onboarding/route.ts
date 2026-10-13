@@ -1,6 +1,5 @@
-import { prisma, ensureLearner } from "@/lib/db";
-import { compileGoal } from "@/lib/core/goal-compiler";
 import { handle, fail, requireUser } from "@/lib/api";
+import { createGoalFromStatement } from "@/lib/core/goal";
 import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
@@ -16,35 +15,16 @@ export async function POST(req: Request) {
 
     if (!statement) return fail("Please describe your learning goal.", 400);
 
-    await ensureLearner(userId);
-    const spec = await compileGoal({ statement, level, language: lang });
-
-    const goal = await prisma.goal.create({
-      data: {
-        learnerId: userId,
-        title: spec.title,
-        statement,
-        domain: spec.domain,
-        targetLevel: spec.targetLevel,
-        hoursPerWeek,
-        deadline: body.deadline ? new Date(body.deadline) : null,
-      },
-    });
-
-    await prisma.goalSkill.createMany({
-      data: spec.targetSkills.map((skillId, i) => ({
-        goalId: goal.id,
-        skillId,
-        priority: i,
-        weight: 1,
-      })),
+    const { goalId, spec } = await createGoalFromStatement({
+      learnerId: userId,
+      statement,
+      level,
+      hoursPerWeek,
+      language: lang,
     });
 
     // The roadmap is generated AFTER the skill-level diagnostic, once we have
     // evidence about the learner — not from the goal alone.
-    return {
-      goalId: goal.id,
-      spec: { ...spec, targetSkills: spec.targetSkills.slice(0, 8) },
-    };
+    return { goalId, spec: { ...spec, targetSkills: spec.targetSkills.slice(0, 8) } };
   });
 }

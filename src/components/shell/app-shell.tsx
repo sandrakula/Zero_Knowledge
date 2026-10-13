@@ -22,10 +22,10 @@ import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 const NAV = [
+  { href: "/tutor", label: "nav.tutor", icon: MessageSquare },
   { href: "/home", label: "nav.home", icon: LayoutDashboard },
   { href: "/roadmap", label: "nav.roadmap", icon: Route },
   { href: "/map", label: "nav.map", icon: Network },
-  { href: "/tutor", label: "nav.tutor", icon: MessageSquare },
   { href: "/materials", label: "nav.materials", icon: FileText },
   { href: "/progress", label: "nav.progress", icon: Activity },
 ];
