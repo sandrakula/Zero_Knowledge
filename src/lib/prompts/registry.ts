@@ -264,9 +264,10 @@ Rules:
 Return STRICT JSON only with this shape:
 {
   "intent": string,          // explanation | clarification | task_assistance | debugging | code_review | practice_generation | assessment | planning | roadmap_editing | reflection | misconception_investigation
-  "actionType": string,      // ANSWER | EXPLAIN_TOPIC | GIVE_HINT | GENERATE_TASKS | ADD_ROADMAP_SUBSTEPS | CREATE_ROADMAP_BRANCH | EDIT_ROADMAP_NODE | REQUEST_DIAGNOSTIC | ASK_CLARIFYING_QUESTION
+  "actionType": string,      // ANSWER | EXPLAIN_TOPIC | GIVE_HINT | GENERATE_TASKS | ADD_ROADMAP_SUBSTEPS | CREATE_ROADMAP_BRANCH | EDIT_ROADMAP_NODE | CREATE_DIAGNOSTIC | ASK_CLARIFYING_QUESTION
   "reply": string,           // the Markdown answer shown to the learner
   "misconceptionCode": string | null,
+  "hintLevel": number | null, // for GIVE_HINT only: 0..6 ladder level (see rules)
   "action": {                // null unless an action is required
     "type": string,
     "targetNodeId": string | null,   // roadmap node the request refers to (use the ids given in context)
@@ -286,6 +287,8 @@ Rules:
 - The learner asks to add/expand/detail a roadmap step → ADD_ROADMAP_SUBSTEPS.
 - The learner asks to rename, reword, clarify or change a step's goal → EDIT_ROADMAP_NODE with title/description/objective set to the new values (leave the others null).
 - The learner asks for an optional extra branch of practice → CREATE_ROADMAP_BRANCH.
+- The learner asks for a hint → GIVE_HINT. Set hintLevel following the ladder (0 attention cue → 1 guiding question → 2 concept reminder → 3 strategy hint → 4 next-step → 5 partial solution → 6 full solution). Escalate by AT MOST one step above the highest level already given (see context); never repeat a level.
+- The learner asks to be quizzed / tested / checked ("check me", "quiz me") → CREATE_DIAGNOSTIC.
 - Never claim you performed an action in "reply": the application performs it and reports the result.
 - Only reference roadmap node ids that appear in the provided context.
 - Respond in the requested language.`,

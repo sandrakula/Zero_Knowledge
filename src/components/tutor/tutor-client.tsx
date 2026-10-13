@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Brain, Loader2, MessageSquare, Plus } from "lucide-react";
 import { useI18n } from "@/components/i18n";
-import { ChatComposer, ChatThread, GoalCta } from "@/components/tutor/chat-ui";
+import { ChatComposer, ChatThread, GoalCta, QuickActions } from "@/components/tutor/chat-ui";
 import { useTutor } from "@/components/tutor/use-tutor";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -90,6 +90,14 @@ export function TutorClient() {
                 void tutor.send(v);
               }}
             />
+            {tutor.hasGoal === true && (
+              <QuickActions
+                onPick={(text) => {
+                  setInput("");
+                  void tutor.send(text);
+                }}
+              />
+            )}
             {tutor.goalId && !tutor.context && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
                 <GoalCta goalId={tutor.goalId} />

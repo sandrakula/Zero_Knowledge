@@ -89,9 +89,16 @@ export function ChatThread({
                       <ArrowRight className="h-3.5 w-3.5 text-text-faint" />
                     </Link>
                   ))}
-                  <Link href="/roadmap" className="flex items-center gap-2 text-[11px] text-accent-soft hover:underline">
-                    <ListTree className="h-3.5 w-3.5" /> {t("roadmap.tutorBranch")} → {t("nav.roadmap")}
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    <Link href="/roadmap" className="flex items-center gap-1.5 text-[11px] text-accent-soft hover:underline">
+                      <ListTree className="h-3.5 w-3.5" /> {t("nav.roadmap")}
+                    </Link>
+                    {"parentItemId" in m.action && (
+                      <Link href={`/learn/${m.action.parentItemId}`} className="flex items-center gap-1.5 text-[11px] text-accent-soft hover:underline">
+                        <Target className="h-3.5 w-3.5" /> {t("tutor.openTopic")}
+                      </Link>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -103,9 +110,14 @@ export function ChatThread({
                       <span className="min-w-0 flex-1 truncate text-xs text-text">{title}</span>
                     </div>
                   ))}
-                  <Link href="/roadmap" className="flex items-center gap-2 text-[11px] text-accent-soft hover:underline">
-                    <ArrowRight className="h-3.5 w-3.5" /> {t("nav.roadmap")}
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    <Link href="/roadmap" className="flex items-center gap-1.5 text-[11px] text-accent-soft hover:underline">
+                      <ArrowRight className="h-3.5 w-3.5" /> {t("nav.roadmap")}
+                    </Link>
+                    <Link href={`/learn/${m.action.nodeId}`} className="flex items-center gap-1.5 text-[11px] text-accent-soft hover:underline">
+                      <Target className="h-3.5 w-3.5" /> {t("tutor.openStep")}
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
@@ -153,6 +165,25 @@ export function ChatComposer({
       <button onClick={onSend} disabled={sending || !value.trim()} className="btn-primary px-4" aria-label="Send">
         {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
       </button>
+    </div>
+  );
+}
+
+/** Quick intent chips — make the tutor discoverable without typing (§225). */
+export function QuickActions({ onPick }: { onPick: (text: string) => void }) {
+  const { t } = useI18n();
+  const items = ["hint", "example", "simpler", "practice", "quiz", "review"] as const;
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-2">
+      {items.map((k) => (
+        <button
+          key={k}
+          onClick={() => onPick(t(`tutor.chip.${k}`))}
+          className="rounded-full border border-white/[0.08] bg-white/[0.02] px-2.5 py-1 text-[11px] text-text-faint transition-colors hover:border-accent/40 hover:text-text-muted"
+        >
+          {t(`tutor.chip.${k}`)}
+        </button>
+      ))}
     </div>
   );
 }

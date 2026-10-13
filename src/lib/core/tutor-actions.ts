@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getSkill } from "./knowledge-graph";
+import { generateQuestion } from "./diagnostic";
 import { generateTask, persistTask } from "./taskgen";
 import { addChildNodes, createTutorBranch, generateSubsteps, getOwnedNode, updateNode } from "./roadmap";
 import { classifyActivity } from "./competency";
@@ -30,6 +31,7 @@ export type TutorAction = {
 export type TutorActionResult =
   | { type: "created_tasks"; branchKey: string; parentItemId: string; taskIds: string[]; nodeIds: string[]; titles: string[] }
   | { type: "roadmap_edit"; nodeId: string; added: number; titles: string[] }
+  | { type: "created_diagnostic"; questionId: string; skillId: string; skillName: string; question: string; code: string; options: string[] }
   | { type: "error"; message: string };
 
 type ResolvedNode = {
@@ -108,6 +110,9 @@ export async function executeTutorAction(input: {
 
       case "ADD_ROADMAP_SUBSTEPS":
         return await addSubsteps(input);
+
+      case "CREATE_DIAGNOSTIC":
+        return await createDiagnostic(input);
 
       default:
         return { type: "error", message: `Unsupported action: ${action.type}` };
@@ -196,6 +201,28 @@ async function generateTaskBranch(input: {
   };
 }
 
+/** Generate one targeted multiple-choice question for the node's skill (§108). */
+async function createDiagnostic(input: {
+  learnerId: string;
+  action: TutorAction;
+  fallbackItemId?: string | null;
+  language?: string;
+}): Promise<TutorActionResult> {
+  const node = await resolveNode(input.learnerId, input.action.targetNodeId, input.fallbackItemId);
+  if (!node) return { type: "error", message: "No roadmap step found to quiz." };
+  const skillId = node.skillIds[0] ?? "python.functions";
+  const q = await generateQuestion(input.learnerId, skillId, "beginner", input.language);
+  return {
+    type: "created_diagnostic",
+    questionId: q.id,
+    skillId,
+    skillName: q.skillName,
+    question: q.question,
+    code: q.code,
+    options: q.options,
+  };
+}
+
 /** Edit an existing roadmap node's wording in place (§37, §67). */
 async function editNode(input: {
   learnerId: string;
@@ -280,6 +307,13 @@ export function describeActionResult(result: TutorActionResult, lang: "en" | "ru
     return ru
       ? `**Готово:** создано ${result.titles.length} проверенных задач(и) и добавлена параллельная ветка практики в план.\n\n${list}`
       : `**Done:** created ${result.titles.length} validated task(s) and added a parallel practice branch to your roadmap.\n\n${list}`;
+  }
+  if (result.type === "created_diagnostic") {
+    const opts = result.options.map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`).join("\n");
+    const code = result.code ? `\n\n\`\`\`\n${result.code}\n\`\`\`` : "";
+    return ru
+      ? `**Проверка:** ${result.skillName}\n\n${result.question}${code}\n\n${opts}\n\nОтветьте буквой (A/B/C/D).`
+      : `**Quiz:** ${result.skillName}\n\n${result.question}${code}\n\n${opts}\n\nReply with a letter (A/B/C/D).`;
   }
   if (result.type === "roadmap_edit") {
     if (result.added === 0) {

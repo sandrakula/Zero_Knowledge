@@ -168,6 +168,14 @@ export const en: Dict = {
   "tutor.goal.creating": "Building your learning plan…",
   "tutor.greeting":
     "Hi — I'm your tutor, and I know where you are in your learning path. Ask me anything about the current concept, or share a problem and I'll guide you to the answer rather than handing it over.",
+  "tutor.chip.hint": "Give me a hint",
+  "tutor.chip.example": "Show an example",
+  "tutor.chip.simpler": "Explain more simply",
+  "tutor.chip.practice": "Generate practice",
+  "tutor.chip.quiz": "Quiz me",
+  "tutor.chip.review": "Review my code",
+  "tutor.openStep": "Open step",
+  "tutor.openTopic": "Open topic",
 
   // map
   "map.title": "Knowledge map",
@@ -478,6 +486,14 @@ export const ru: Dict = {
   "tutor.goal.creating": "Строим ваш план обучения…",
   "tutor.greeting":
     "Привет! Я ваш тьютор и знаю, где вы находитесь в обучении. Спросите о текущей теме или покажите задачу — я помогу найти ответ, а не выдам его.",
+  "tutor.chip.hint": "Дай подсказку",
+  "tutor.chip.example": "Покажи пример",
+  "tutor.chip.simpler": "Объясни проще",
+  "tutor.chip.practice": "Сгенерируй практику",
+  "tutor.chip.quiz": "Проверь меня",
+  "tutor.chip.review": "Разбери мой код",
+  "tutor.openStep": "Открыть шаг",
+  "tutor.openTopic": "Открыть тему",
 
   "map.title": "Карта знаний",
   "map.subtitle": "Что вы знаете — и что вас блокирует",

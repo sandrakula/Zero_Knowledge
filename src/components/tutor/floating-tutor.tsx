@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageSquare, Plus, X } from "lucide-react";
 import { useI18n } from "@/components/i18n";
-import { ChatComposer, ChatThread, GoalCta } from "@/components/tutor/chat-ui";
+import { ChatComposer, ChatThread, GoalCta, QuickActions } from "@/components/tutor/chat-ui";
 import { useTutor } from "@/components/tutor/use-tutor";
 import { cn } from "@/lib/utils";
 
@@ -129,7 +130,9 @@ export function FloatingTutor() {
               <MessageSquare className="h-4 w-4 shrink-0 text-accent-soft" />
               <span className="truncate text-sm font-semibold text-text">{t("tutor.title")}</span>
               {tutor.context && (
-                <span className="chip ml-1 hidden truncate text-[10px] sm:inline">{tutor.context.title}</span>
+                <Link href={`/learn/${tutor.context.itemId}`} className="chip ml-1 hidden truncate text-[10px] transition-colors hover:border-accent/40 sm:inline">
+                  {tutor.context.title}
+                </Link>
               )}
               <button onClick={tutor.newConversation} className="ml-auto rounded-lg p-1.5 text-text-faint transition-colors hover:text-text" aria-label={t("tutor.newChat")}>
                 <Plus className="h-4 w-4" />
@@ -164,6 +167,14 @@ export function FloatingTutor() {
                 }}
                 compact
               />
+              {tutor.hasGoal === true && (
+                <QuickActions
+                  onPick={(text) => {
+                    setInput("");
+                    void tutor.send(text);
+                  }}
+                />
+              )}
               {tutor.goalId && !tutor.context && <GoalCta goalId={tutor.goalId} />}
             </div>
 

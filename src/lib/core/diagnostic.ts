@@ -30,7 +30,7 @@ export type DiagnosticQuestion = z.infer<typeof QSchema> & {
 };
 
 /** Answer key is never sent to the client — only the question surface is. */
-function publicQuestion(q: DiagnosticQuestion) {
+export function publicQuestion(q: DiagnosticQuestion) {
   return {
     id: q.id,
     skillId: q.skillId,
@@ -48,7 +48,7 @@ function levelFor(mastery: number): string {
   return "advanced";
 }
 
-async function generateQuestion(
+export async function generateQuestion(
   learnerId: string,
   skillId: string,
   level: string,

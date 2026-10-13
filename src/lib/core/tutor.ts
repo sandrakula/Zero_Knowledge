@@ -48,6 +48,7 @@ const TutorSchema = z.object({
   actionType: z.string(),
   reply: z.string(),
   misconceptionCode: z.string().nullable().default(null),
+  hintLevel: z.number().int().min(0).max(6).nullable().default(null),
   action: TutorActionSchema,
 });
 
@@ -128,6 +129,10 @@ export async function buildTutorContext(input: {
           parts.push(`Latest verification: ${attempt.passed}/${attempt.total} tests passed, hints used: ${attempt.hintsUsed}.`);
         }
       }
+      if (node.contentId) {
+        const lesson = await prisma.contentItem.findUnique({ where: { id: node.contentId } });
+        if (lesson) parts.push(`Current lesson (excerpt the learner just read):\n${lesson.body.slice(0, 900)}`);
+      }
     }
   }
 
@@ -203,6 +208,32 @@ export async function buildTutorContext(input: {
     parts.push(`Available materials: ${materials.map((m) => `${m.filename}${m.scope === "global" ? " (shared)" : ""}`).join(", ")}`);
   }
 
+  // What the tutor already did in this conversation — avoid repeating itself.
+  const pastActions = await prisma.message.findMany({
+    where: {
+      learnerId: input.learnerId,
+      conversationId: input.conversationId,
+      role: "assistant",
+      actionType: { in: ["GENERATE_TASKS", "CREATE_ROADMAP_BRANCH", "ADD_ROADMAP_SUBSTEPS", "EDIT_ROADMAP_NODE", "CREATE_DIAGNOSTIC"] },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 4,
+  });
+  if (pastActions.length) {
+    parts.push(`What the tutor already did in this conversation: ${pastActions.map((m) => m.actionType).join(", ")}.`);
+  }
+
+  // Hint ladder state (§72): which levels were already given.
+  const hintMessages = await prisma.message.findMany({
+    where: { learnerId: input.learnerId, conversationId: input.conversationId, role: "assistant", actionType: "GIVE_HINT" },
+    orderBy: { createdAt: "desc" },
+    take: 3,
+  });
+  if (hintMessages.length) {
+    const levels = hintMessages.map((m) => safeJson<{ hintLevel?: number }>(m.meta, {}).hintLevel ?? -1);
+    parts.push(`Hints already given at ladder levels: ${levels.join(", ")} — escalate by at most one step, never repeat (§72).`);
+  }
+
   // Bounded recent conversation + targeted older retrieval (§60).
   const recent = await recentConversationContext(input.learnerId, input.conversationId, 8);
   if (recent.length) parts.push(`Recent conversation:\n${recent.join("\n")}`);
@@ -222,6 +253,77 @@ export async function buildTutorContext(input: {
 /** Short affirmative replies that confirm a previously offered goal reframing. */
 function isConfirmation(msg: string): boolean {
   return /^(да|давай|ага|ок|окей|ok|okay|yes|yeah|yep|go|готов|готово|согласен|согласна|продолжай|продолжим)$/i.test(msg.trim());
+}
+
+/** A/B/C/D or 1..4 → option index, else null. */
+function parseAnswerIndex(msg: string): number | null {
+  const m = msg.trim().toLowerCase();
+  if (/^[a-d]$/.test(m)) return m.charCodeAt(0) - 97;
+  if (/^[1-4]$/.test(m)) return Number(m) - 1;
+  return null;
+}
+
+/** Evaluate an answer to a pending tutor-created quiz (§108). */
+async function checkPendingDiagnosticAnswer(
+  learnerId: string,
+  conversationId: string,
+  message: string,
+  lang: "en" | "ru",
+): Promise<TutorResult | null> {
+  const last = await prisma.message.findFirst({
+    where: { conversationId, learnerId, role: "assistant" },
+    orderBy: { createdAt: "desc" },
+  });
+  const pending = last ? safeJson<{ pendingDiagnostic?: { questionId: string; skillId: string } }>(last.meta, {}) : {};
+  if (!pending.pendingDiagnostic) return null;
+
+  const idx = parseAnswerIndex(message);
+  if (idx === null) return null;
+
+  const q = await prisma.diagnosticQuestion.findUnique({ where: { id: pending.pendingDiagnostic.questionId } });
+  if (!q || q.learnerId !== learnerId) return null;
+  await prisma.diagnosticQuestion.delete({ where: { id: q.id } }).catch(() => {});
+
+  const correct = idx === q.correctIndex;
+  const strength = effectiveWeight({ method: "deterministic", role: "primary", taskValidity: TASK_VALIDITY.keyed });
+  const value = {
+    correct,
+    strength,
+    supportUsed: 0,
+    hintsUsed: 0,
+    cognitiveLevel: "apply",
+    transferLevel: 0,
+    integrationLevel: 0,
+    independenceRequired: 0,
+    integrated: false,
+    retentionCheck: false,
+    retentionDelayed: false,
+    taskFamily: "tutor-diagnostic",
+    kind: "diagnostic",
+    method: "deterministic",
+    misconceptions: correct ? [] : q.misconception ? [q.misconception] : [],
+  };
+  await applyEvidence({ learnerId, skillIds: [pending.pendingDiagnostic.skillId], primarySkillId: pending.pendingDiagnostic.skillId, value });
+  await createEvidence({
+    learnerId,
+    skillIds: [pending.pendingDiagnostic.skillId],
+    kind: "diagnostic",
+    method: "deterministic",
+    value,
+    strength,
+    summary: `Tutor quiz ${correct ? "correct" : "incorrect"} on ${getSkill(pending.pendingDiagnostic.skillId)?.name ?? ""}`,
+    lineage: { questionId: q.id, correct },
+  });
+
+  const reply = `${correct ? (lang === "ru" ? "Верно! " : "Correct! ") : lang === "ru" ? "Не совсем. " : "Not quite. "}${q.explanation}`;
+  await appendMessage({ learnerId, conversationId, role: "assistant", content: reply, intent: "assessment", actionType: "ANSWER" });
+  return {
+    conversationId,
+    intent: "assessment",
+    actionType: "ANSWER",
+    reply,
+    misconceptionCode: correct ? null : q.misconception || null,
+  };
 }
 
 export async function tutor(input: {
@@ -323,6 +425,10 @@ export async function tutor(input: {
     return { conversationId, intent: "goal_created", actionType: "EXPLAIN", reply, misconceptionCode: null, goalId };
   }
 
+  // Answer to a pending tutor quiz is evaluated deterministically first (§108).
+  const pendingAnswer = await checkPendingDiagnosticAnswer(input.learnerId, conversationId, input.message, lang);
+  if (pendingAnswer) return pendingAnswer;
+
   const context = await buildTutorContext({
     learnerId: input.learnerId,
     conversationId,
@@ -355,6 +461,16 @@ export async function tutor(input: {
 
   const reply = actionResult ? `${result.reply}\n\n${describeActionResult(actionResult, lang)}` : result.reply;
 
+  const meta: Record<string, unknown> = actionResult
+    ? { action: actionResult }
+    : { actionType: result.actionType };
+  if (actionResult?.type === "created_diagnostic") {
+    meta.pendingDiagnostic = { questionId: actionResult.questionId, skillId: actionResult.skillId };
+  }
+  if (result.actionType === "GIVE_HINT" && result.hintLevel !== null) {
+    meta.hintLevel = result.hintLevel;
+  }
+
   await appendMessage({
     learnerId: input.learnerId,
     conversationId,
@@ -364,7 +480,7 @@ export async function tutor(input: {
     actionType: result.actionType,
     taskId: actionResult?.type === "created_tasks" ? actionResult.taskIds[0] : null,
     roadmapItemId: actionResult && "parentItemId" in actionResult ? actionResult.parentItemId : actionResult?.type === "roadmap_edit" ? actionResult.nodeId : null,
-    meta: actionResult ? { action: actionResult } : { actionType: result.actionType },
+    meta,
   });
 
   // Conversation as micro-assessment (§107): only a clearly detected
