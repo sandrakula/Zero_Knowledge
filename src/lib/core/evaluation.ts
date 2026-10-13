@@ -7,7 +7,8 @@ import { createEvidence, effectiveWeight, TASK_VALIDITY } from "./evidence";
 import { applyEvidence, getCompetencyView } from "./student-twin";
 import { getOwnedNode, markItemCompleted, maybeRegenerateRoadmap } from "./roadmap";
 import { getSkill } from "./knowledge-graph";
-import { RULES } from "./competency";
+import { classifyFailureCause, RULES } from "./competency";
+import { retentionEstimate, RETENTION_DUE_THRESHOLD } from "./mastery";
 import { langInstruction } from "@/lib/lang";
 import { clamp } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ const ReviewSchema = z.object({
   feedback: z.string(),
   misconceptions: z.array(z.string()).default([]),
   hintLevel: z.number().int().min(0).max(6).default(0),
+  issues: z.array(z.object({ line: z.number().int().min(1), message: z.string() })).default([]),
 });
 
 export async function evaluateAttempt(input: {
@@ -55,6 +57,7 @@ export async function evaluateAttempt(input: {
 
   let feedback = "";
   let misconceptions: string[] = [];
+  let issues: { line: number; message: string }[] = [];
 
   if (passedAll) {
     const names = skillIds.map((id) => getSkill(id)?.name ?? id).join(" & ");
@@ -86,6 +89,7 @@ export async function evaluateAttempt(input: {
       );
       feedback = `### ${review.correct ? "Nearly there" : `${run.passed}/${run.total} tests passing`}\n\n${review.feedback}`;
       misconceptions = review.misconceptions ?? [];
+      issues = review.issues ?? [];
     } catch {
       feedback =
         `### ${run.passed}/${run.total} tests passing\n\n` +
@@ -94,9 +98,36 @@ export async function evaluateAttempt(input: {
     }
   }
 
+  // Diagnose the failure cause (§86) BEFORE the evidence moves the state.
+  let cause: string | null = null;
+  let calibration: { confidence: number; correct: boolean; direction: "overconfident" | "underconfident" | "calibrated" } | null = null;
+  const primarySkillId = skillIds[0];
+
+  if (!passedAll) {
+    const [before, raw] = await Promise.all([
+      primarySkillId ? getCompetencyView(input.learnerId, primarySkillId) : Promise.resolve(null),
+      primarySkillId
+        ? prisma.competencyState.findUnique({ where: { learnerId_skillId: { learnerId: input.learnerId, skillId: primarySkillId } } })
+        : Promise.resolve(null),
+    ]);
+    const retentionStale = Boolean(
+      raw && raw.retentionChecks > 0 && retentionEstimate(raw.retention, raw.lastRetrievedAt) < RETENTION_DUE_THRESHOLD,
+    );
+    cause = classifyFailureCause({
+      wasDemonstrated: before?.status === "demonstrated",
+      retentionStale,
+      activeMisconception: Boolean(before?.misconceptions?.length),
+    });
+  }
+
+  if (input.confidence !== undefined) {
+    const direction: "overconfident" | "underconfident" | "calibrated" =
+      input.confidence > 0.66 && !passedAll ? "overconfident" : input.confidence < 0.5 && passedAll ? "underconfident" : "calibrated";
+    calibration = { confidence: input.confidence, correct: passedAll, direction };
+  }
+
   // 3) Evidence → Student Learning Twin update (§22, §160).
   const supportUsed = clamp((input.hintsUsed ?? 0) / 3, 0, 1);
-  const primarySkillId = skillIds[0];
   const strength = effectiveWeight({
     method: "deterministic",
     role: "primary",
@@ -172,6 +203,17 @@ export async function evaluateAttempt(input: {
     });
   }
 
+  // Explain the diagnosis to the learner (§86, §100).
+  if (cause) {
+    const labels: Record<string, string> = {
+      misconception: input.language === "ru" ? "активное заблуждение — разберём его отдельно" : "an active misconception — we'll address it separately",
+      forgetting: input.language === "ru" ? "материал забылся — нужно повторение" : "forgetting — a review is due",
+      never_mastered: input.language === "ru" ? "тема ещё не освоена — вернёмся к основам" : "this was not yet mastered — let's revisit the foundations",
+      execution_error: input.language === "ru" ? "похоже на случайную ошибку — проверь детали" : "likely a slip — double-check the details",
+    };
+    feedback += `\n\n**${input.language === "ru" ? "Диагноз" : "Diagnosis"}:** ${labels[cause] ?? cause}.`;
+  }
+
   // Complete the roadmap item on full success with little support.
   if (passedAll && input.roadmapItemId && supportUsed <= 0.34) {
     await markItemCompleted(input.learnerId, input.roadmapItemId);
@@ -187,6 +229,9 @@ export async function evaluateAttempt(input: {
     passedAll,
     feedback,
     misconceptions,
+    issues,
+    cause,
+    calibration,
     method: "deterministic",
     testResults: run.results.map((r) => ({
       pass: r.pass,

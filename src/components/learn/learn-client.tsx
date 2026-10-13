@@ -46,6 +46,10 @@ export function LearnClient({ itemId }: { itemId: string }) {
   const [attempt, setAttempt] = useState<AttemptResponse | null>(null);
   const [error, setError] = useState("");
   const [lessonOpen, setLessonOpen] = useState(true);
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [explainText, setExplainText] = useState("");
+  const [explainSending, setExplainSending] = useState(false);
+  const [explainResult, setExplainResult] = useState<{ correct: boolean; feedback: string } | null>(null);
   const startTime = useRef(Date.now());
 
   const load = useCallback(async () => {
@@ -84,6 +88,26 @@ export function LearnClient({ itemId }: { itemId: string }) {
       setRunOutput({ ok: false, stdout: "", stderr: t("common.error"), timedOut: false });
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function submitExplanation() {
+    if (!data || !explainText.trim()) return;
+    setExplainSending(true);
+    setExplainResult(null);
+    try {
+      const res = await fetch("/api/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skillId: data.item.skillIds[0], answer: explainText, lang }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? t("common.error"));
+      setExplainResult({ correct: d.correct, feedback: d.feedback });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setExplainSending(false);
     }
   }
 
@@ -199,6 +223,7 @@ export function LearnClient({ itemId }: { itemId: string }) {
           <section className="card p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-text">
               <TerminalSquare className="h-4 w-4 text-accent-soft" /> {task.title}
+              <span className="chip">{t(`learn.format.${task.format}`)}</span>
             </div>
             <div className="mt-3">
               <Markdown>{task.statement}</Markdown>
@@ -321,9 +346,32 @@ export function LearnClient({ itemId }: { itemId: string }) {
                   {attempt.method === "deterministic" && <span className="chip ml-auto">{t("learn.verified")}</span>}
                 </div>
 
+                {attempt.calibration && (
+                  <span className={cn(
+                    "chip mt-2",
+                    attempt.calibration.direction === "overconfident" && "border-amber/40 text-amber",
+                    attempt.calibration.direction === "underconfident" && "border-cyan/40 text-cyan",
+                    attempt.calibration.direction === "calibrated" && "border-mint/40 text-mint",
+                  )}>
+                    {t(`learn.calibration.${attempt.calibration.direction}`)}
+                  </span>
+                )}
+
                 <div className="mt-3">
                   <Markdown>{attempt.feedback}</Markdown>
                 </div>
+
+                {attempt.issues?.length > 0 && (
+                  <div className="mt-4 space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-faint">{t("learn.issues")}</p>
+                    {attempt.issues.map((iss, i) => (
+                      <div key={i} className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-ink-900/60 p-2 text-xs">
+                        <span className="shrink-0 rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-accent-soft">L{iss.line}</span>
+                        <span className="text-text-muted">{iss.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {attempt.testResults.filter((x) => !x.pass).length > 0 && (
                   <div className="mt-4 space-y-2">
@@ -360,6 +408,30 @@ export function LearnClient({ itemId }: { itemId: string }) {
               </motion.section>
             )}
           </AnimatePresence>
+
+          {/* Teach-back (§95) — available after a successful attempt. */}
+          {attempt?.passedAll && (
+            <section className="card p-4">
+              <button onClick={() => setExplainOpen((o) => !o)} className="flex w-full items-center justify-between text-left">
+                <span className="text-sm font-medium text-text">{t("learn.teachback")}</span>
+                <ChevronDown className={cn("h-4 w-4 text-text-faint transition-transform", explainOpen && "rotate-180")} />
+              </button>
+              {explainOpen && (
+                <div className="mt-3">
+                  <p className="text-xs text-text-faint">{t("learn.teachback.hint")}</p>
+                  <textarea value={explainText} onChange={(e) => setExplainText(e.target.value)} rows={3} className="input mt-2 resize-none" />
+                  <button onClick={submitExplanation} disabled={explainSending || !explainText.trim()} className="btn-ghost mt-2 px-3 py-1.5 text-xs">
+                    {explainSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} {t("learn.teachback.submit")}
+                  </button>
+                  {explainResult && (
+                    <div className={cn("mt-3 rounded-xl border p-3 text-sm", explainResult.correct ? "border-mint/30 bg-mint/[0.05]" : "border-amber/30 bg-amber/[0.05]")}>
+                      <Markdown>{explainResult.feedback}</Markdown>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </div>
 

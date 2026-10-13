@@ -376,6 +376,46 @@ export function isDelayedRetrieval(lastAssessmentAt: Date | null, now: Date = ne
 
 export const ALL_STATUSES: SkillStatus[] = ["not_assessed", "needs_attention", "developing", "demonstrated"];
 
+// ─────────────────────────────────────────────────────────────
+// Failure diagnosis (§86) — distinguish forgetting from misunderstanding,
+// misconception from a one-off execution slip. Different causes need
+// different interventions.
+// ─────────────────────────────────────────────────────────────
+
+export type FailureCause = "misconception" | "forgetting" | "never_mastered" | "execution_error";
+
+/** Pure, testable failure-cause classification (§86). */
+export function classifyFailureCause(input: {
+  wasDemonstrated: boolean;
+  retentionStale: boolean;
+  activeMisconception: boolean;
+}): FailureCause {
+  if (input.activeMisconception) return "misconception";
+  if (input.wasDemonstrated && input.retentionStale) return "forgetting";
+  if (!input.wasDemonstrated) return "never_mastered";
+  return "execution_error";
+}
+
+// ─────────────────────────────────────────────────────────────
+// Adaptive instruction format (§70, §74) — fade support as mastery grows:
+// worked example → completion → guided → independent.
+// ─────────────────────────────────────────────────────────────
+
+export type InstructionFormat = {
+  format: "worked_example" | "completion" | "guided" | "independent";
+  independenceRequired: number;
+  blankStarter: boolean;
+};
+
+/** Pure, testable support-fading policy (§70, §74). */
+export function instructionFormat(mastery: number | null): InstructionFormat {
+  const m = mastery ?? 0.2;
+  if (m < 0.35) return { format: "worked_example", independenceRequired: 0.3, blankStarter: false };
+  if (m < 0.6) return { format: "completion", independenceRequired: 0.5, blankStarter: false };
+  if (m < 0.8) return { format: "guided", independenceRequired: 0.7, blankStarter: false };
+  return { format: "independent", independenceRequired: 0.9, blankStarter: true };
+}
+
 /** Posterior standard deviation is exposed for advanced detail views. */
 export function masteryStd(state: SkillState): number {
   return posteriorStd({ alpha: state.alpha, beta: state.beta });

@@ -145,6 +145,26 @@ export async function buildTutorContext(input: {
     }
   }
 
+  // Confidence calibration history (§100) — observable, labelled, bounded.
+  if (skillIds.length) {
+    const confEvents = await prisma.learningEvent.findMany({
+      where: { learnerId: input.learnerId, type: "confidence_submitted", skillId: { in: skillIds } },
+      orderBy: { createdAt: "desc" },
+      take: 4,
+    });
+    if (confEvents.length) {
+      parts.push(
+        `Confidence calibration (recent): ${confEvents
+          .map((e) => {
+            const p = safeJson<{ confidence?: number; correct?: boolean }>(e.payload, {});
+            const conf = Math.round((p.confidence ?? 0) * 100);
+            return `${p.correct ? "correct" : "missed"}@${conf}%`;
+          })
+          .join(", ")}`,
+      );
+    }
+  }
+
   const misconceptions = await prisma.misconception.findMany({
     where: { learnerId: input.learnerId, status: { in: ["active", "monitoring"] } },
     orderBy: { confidence: "desc" },
@@ -169,6 +189,8 @@ export async function buildTutorContext(input: {
         .map((a) => `- task "${a.task?.title ?? a.taskId}" — ${a.passed}/${a.total} passed, hints ${a.hintsUsed}, ${a.createdAt.toISOString().slice(0, 10)}`)
         .join("\n")}`,
     );
+    const hintTotal = attempts.reduce((n, a) => n + a.hintsUsed, 0);
+    parts.push(`Hint usage across recent attempts: ${hintTotal} hint(s) over ${attempts.length} attempt(s) — adjust support accordingly (§73).`);
   }
 
   // Available learning materials (titles only — content comes via grounding).

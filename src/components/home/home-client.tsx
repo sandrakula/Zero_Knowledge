@@ -11,6 +11,7 @@ import {
   Layers,
   Loader2,
   Play,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Target,
@@ -25,12 +26,16 @@ import type { StateResponse } from "@/lib/types";
 export function HomeClient() {
   const { t } = useI18n();
   const [state, setState] = useState<StateResponse | null>(null);
+  const [reviews, setReviews] = useState<{ skillId: string; name: string; retention: number; daysUntilDue: number }[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/state")
-      .then((r) => r.json())
-      .then((d) => (d.error ? setError(d.error) : setState(d)))
+    Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/review/queue").then((r) => r.json())])
+      .then(([d, r]) => {
+        if (d.error) setError(d.error);
+        else setState(d);
+        setReviews((r as { due?: typeof reviews }).due ?? []);
+      })
       .catch((e) => setError(e.message));
   }, []);
 
@@ -96,6 +101,44 @@ export function HomeClient() {
           </div>
         </section>
       </Reveal>
+
+      {/* Due reviews (§87–88) */}
+      {reviews.length > 0 && (
+        <Reveal delay={0.02}>
+          <section className="card p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-text">
+              <RefreshCw className="h-4 w-4 text-cyan" /> {t("home.reviewDue")}
+              <span className="ml-1 rounded-full bg-cyan/15 px-2 py-0.5 text-xs text-cyan">{reviews.length}</span>
+            </div>
+            <p className="mt-1 text-xs text-text-faint">{t("home.reviewHint")}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {reviews.slice(0, 8).map((r) => (
+                <span key={r.skillId} className="chip border-cyan/25 text-cyan">
+                  {r.name} · {Math.round(r.retention * 100)}%
+                </span>
+              ))}
+            </div>
+          </section>
+        </Reveal>
+      )}
+
+      {/* Content coverage (§45–46) */}
+      {state?.coverage && state.coverage.length > 0 && (
+        <Reveal delay={0.025}>
+          <section className="card p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-text">
+              <Layers className="h-4 w-4 text-accent-soft" /> {t("home.coverage")}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {state.coverage.map((c) => (
+                <span key={c.skillId} className={cn("chip", c.covered ? "border-mint/30 text-mint" : "border-amber/30 text-amber")}>
+                  {c.name} · {c.covered ? t("home.coverage.covered") : t("home.coverage.missing")}
+                </span>
+              ))}
+            </div>
+          </section>
+        </Reveal>
+      )}
 
       {/* Materials CTA */}
       <Reveal delay={0.03}>

@@ -1,7 +1,7 @@
 import type { CompetencyState } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getSkill, misconception } from "./knowledge-graph";
-import { posteriorMean, posteriorStd, retentionEstimate } from "./mastery";
+import { posteriorMean, posteriorStd, retentionEstimate, RETENTION_DUE_THRESHOLD, daysUntilRetentionDue } from "./mastery";
 import {
   applyEvidenceToSkill,
   classifySkill,
@@ -283,6 +283,24 @@ export async function getCompetencyView(
     attempts: state.attempts,
     misconceptions: misconceptions.map((x) => x.code),
   };
+}
+
+/** Skills currently due for spaced retrieval review (§87–88). */
+export async function getDueReviews(learnerId: string) {
+  const states = await prisma.competencyState.findMany({ where: { learnerId } });
+  const now = new Date();
+  const due = states
+    .filter((c) => c.retentionChecks > 0 && retentionEstimate(c.retention, c.lastRetrievedAt, now) < RETENTION_DUE_THRESHOLD)
+    .map((c) => ({
+      skillId: c.skillId,
+      name: getSkill(c.skillId)?.name ?? c.skillId,
+      mastery: c.mastery,
+      retention: retentionEstimate(c.retention, c.lastRetrievedAt, now),
+      daysUntilDue: daysUntilRetentionDue(c.retention, c.lastRetrievedAt, now) ?? 0,
+      lastRetrievedAt: c.lastRetrievedAt ? c.lastRetrievedAt.toISOString() : null,
+    }))
+    .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+  return due;
 }
 
 export async function getActiveMisconceptions(learnerId: string): Promise<MisconceptionView[]> {

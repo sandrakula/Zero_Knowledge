@@ -130,6 +130,31 @@ export async function generateTask(input: {
   return normalize(candidate, input);
 }
 
+/**
+ * Reuse a validated, generated task for the same primary skill before paying
+ * for a new generation (§129, §134). Tasks are shared educational content, so
+ * this also keeps the learner's practice more consistent across sessions.
+ */
+export async function findExistingValidatedTask(input: {
+  skillIds: string[];
+  family?: string;
+}): Promise<string | null> {
+  const primary = input.skillIds[0];
+  if (!primary) return null;
+  const rows = await prisma.task.findMany({
+    where: { status: "validated", provenance: "generated" },
+    orderBy: { createdAt: "desc" },
+    take: 80,
+  });
+  for (const t of rows) {
+    const skillIds = JSON.parse(t.skillIds) as string[];
+    if (skillIds[0] !== primary) continue;
+    if (input.family && t.family !== input.family) continue;
+    return t.id;
+  }
+  return null;
+}
+
 /** Persist a validated task (provenance = generated). */
 export async function persistTask(task: GeneratedTask): Promise<string> {
   const saved = await prisma.task.create({

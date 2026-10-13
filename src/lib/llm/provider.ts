@@ -16,6 +16,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   ) {}
 
   async complete(messages: Message[], opts: ChatOptions = {}): Promise<LLMResponse> {
+    const started = Date.now();
     const url = `${this.baseUrl.replace(/\/$/, "")}/chat/completions`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120_000);
@@ -80,6 +81,13 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     // that as a retryable failure rather than feeding empty text downstream.
     if (!content.trim()) {
       throw new ProviderError("AI returned an empty response", { retryable: true });
+    }
+
+    // Lightweight observability (§262) — model, latency, status, token use. No secrets.
+    if (process.env.NODE_ENV !== "test") {
+      console.log(
+        `[llm] model=${this.defaultModel} ok=${res.ok} status=${res.status} ms=${Date.now() - started} in=${data.usage?.prompt_tokens ?? "-"} out=${data.usage?.completion_tokens ?? "-"}`,
+      );
     }
 
     return {

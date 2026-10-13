@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
 import { getSkill } from "./knowledge-graph";
 import { ensureLessonForItem } from "./content";
-import { generateTask, persistTask } from "./taskgen";
+import { findExistingValidatedTask, generateTask, persistTask } from "./taskgen";
 import { getCompetencyView } from "./student-twin";
-import { classifyActivity } from "./competency";
+import { classifyActivity, instructionFormat } from "./competency";
 import { getOwnedNode, getFlattenedOrder } from "./roadmap";
 
 // ─────────────────────────────────────────────────────────────
@@ -44,6 +44,7 @@ export async function openLearnItem(input: {
     transferLevel: number;
     example: { input: string; expected: string };
     testCount: number;
+    format: string;
   };
   competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: string }>;
   nav: { prevId: string | null; nextId: string | null };
@@ -72,26 +73,40 @@ export async function openLearnItem(input: {
     ? await prisma.task.findUnique({ where: { id: item.taskId } })
     : null;
 
+  // Adaptive support fading (§70, §74): worked example → independent.
+  let format: string = "guided";
+
   if (!taskRecord) {
     const primary = skillIds[0];
     const comp = await getCompetencyView(input.learnerId, primary);
     const difficulty = clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3);
+    const fmt = instructionFormat(comp?.mastery ?? null);
+    format = fmt.format;
 
-    const activity = classifyActivity(item.type, skillIds.length);
-    const task = await generateTask({
-      skillIds,
-      difficulty,
-      cognitiveLevel: activity.cognitiveLevel,
-      transferLevel: activity.transferLevel,
-      integrationLevel: activity.integrationLevel,
-      independenceRequired: item.type === "assessment" ? 0.9 : 0.5,
-      misconceptions: comp?.misconceptions ?? [],
-      language: input.language,
-    });
+    // Prefer a validated existing task for the same skill before generating (§134).
+    const existingId = await findExistingValidatedTask({ skillIds });
+    if (existingId) {
+      taskRecord = await prisma.task.findUnique({ where: { id: existingId } });
+      if (taskRecord) await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId: existingId } });
+    }
 
-    const taskId = await persistTask(task);
-    await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId } });
-    taskRecord = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!taskRecord) {
+      const activity = classifyActivity(item.type, skillIds.length);
+      const task = await generateTask({
+        skillIds,
+        difficulty,
+        cognitiveLevel: activity.cognitiveLevel,
+        transferLevel: activity.transferLevel,
+        integrationLevel: activity.integrationLevel,
+        independenceRequired: item.type === "assessment" ? 0.9 : fmt.independenceRequired,
+        misconceptions: comp?.misconceptions ?? [],
+        language: input.language,
+      });
+
+      const taskId = await persistTask(task);
+      await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId } });
+      taskRecord = await prisma.task.findUnique({ where: { id: taskId } });
+    }
   }
 
   if (!taskRecord) throw new Error("Failed to produce a task");
@@ -125,7 +140,8 @@ export async function openLearnItem(input: {
       id: taskRecord.id,
       title: taskRecord.title,
       statement: taskRecord.statement,
-      starterCode: taskRecord.starterCode,
+      // Fade scaffolding: independent work starts from a blank editor.
+      starterCode: format === "independent" ? "" : taskRecord.starterCode,
       hints: JSON.parse(taskRecord.hints) as string[],
       family: taskRecord.family,
       difficulty: taskRecord.difficulty,
@@ -133,6 +149,7 @@ export async function openLearnItem(input: {
       transferLevel: taskRecord.transferLevel,
       example: tests[0] ?? { input: "", expected: "" },
       testCount: tests.length,
+      format,
     },
     competency,
     nav,

@@ -143,6 +143,8 @@ export type StateResponse = {
   nextBest: NextBest;
   domainStats: DomainStat[];
   materialCount: number;
+  /** Which goal target skills are covered by uploaded/shared materials (§45). */
+  coverage: { skillId: string; name: string; covered: boolean }[];
   /** Ring metrics for the topic currently being worked through; null = not assessed. */
   goalMetrics: {
     mastery: number | null;
@@ -182,6 +184,7 @@ export type LearnResponse = {
     transferLevel: number;
     example: { input: string; expected: string };
     testCount: number;
+    format: string;
   };
   competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: SkillStatus }>;
   nav: { prevId: string | null; nextId: string | null };
@@ -193,6 +196,9 @@ export type AttemptResponse = {
   passedAll: boolean;
   feedback: string;
   misconceptions: string[];
+  issues: { line: number; message: string }[];
+  cause: string | null;
+  calibration: { confidence: number; correct: boolean; direction: string } | null;
   method: string;
   testResults: {
     pass: boolean;

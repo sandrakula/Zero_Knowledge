@@ -3,6 +3,7 @@ import { getLearnerSummary, getActiveMisconceptions, recommendNext } from "@/lib
 import { getRoadmapView } from "@/lib/core/roadmap";
 import { handle, requireUser } from "@/lib/api";
 import { DOMAINS, SKILLS } from "@/lib/core/knowledge-graph";
+import { safeJson } from "@/lib/core/json";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,19 @@ export async function GET() {
 
     const materialCount = await prisma.material.count({ where: { learnerId: userId } });
 
+    // Content coverage map (§45–46): which target skills are covered by materials.
+    const goalSkillRows = goal ? await prisma.goalSkill.findMany({ where: { goalId: goal.id } }) : [];
+    const materialRows = await prisma.material.findMany({
+      where: { OR: [{ learnerId: userId }, { scope: "global" }], status: "ready" },
+      select: { skillIds: true },
+    });
+    const coveredSet = new Set<string>();
+    for (const m of materialRows) for (const id of safeJson<string[]>(m.skillIds, [])) coveredSet.add(id);
+    const coverage = goalSkillRows.map((g) => {
+      const def = SKILLS.find((s) => s.id === g.skillId);
+      return { skillId: g.skillId, name: def?.name ?? g.skillId, covered: coveredSet.has(g.skillId) };
+    });
+
     // Ring metrics follow the topic currently being worked through. Only
     // assessed values are averaged; if nothing is assessed the ring is null.
     const roots = roadmap?.items ?? [];
@@ -70,6 +84,7 @@ export async function GET() {
       nextBest,
       domainStats,
       materialCount,
+      coverage,
       goalMetrics: {
         mastery: avgOf((s) => s.mastery),
         independence: avgOf((s) => s.independence),

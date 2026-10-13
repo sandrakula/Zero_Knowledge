@@ -5,8 +5,10 @@ import {
   CLASSIFICATION,
   RULES,
   applyEvidenceToSkill,
+  classifyFailureCause,
   classifySkill,
   emptySkillState,
+  instructionFormat,
   skillMetrics,
   type EvidenceInput,
   type SkillState,
@@ -316,4 +318,54 @@ test("threshold constants are internally consistent", () => {
   assert.ok(CLASSIFICATION.misconceptionBlocksDemonstrated < CLASSIFICATION.needsAttentionMisconceptionConfidence);
   assert.ok(RULES.transferThreshold > 0.1, "ordinary transfer level must be below the threshold");
   assert.ok(RULES.integrationThreshold > 0.15, "single-skill integration must be below the threshold");
+});
+
+// ── Failure diagnosis (§86) ──────────────────────────────
+
+test("active misconception is diagnosed as misconception", () => {
+  assert.equal(
+    classifyFailureCause({ wasDemonstrated: true, retentionStale: true, activeMisconception: true }),
+    "misconception",
+  );
+});
+
+test("demonstrated + stale retention is diagnosed as forgetting", () => {
+  assert.equal(
+    classifyFailureCause({ wasDemonstrated: true, retentionStale: true, activeMisconception: false }),
+    "forgetting",
+  );
+});
+
+test("never demonstrated is diagnosed as never_mastered", () => {
+  assert.equal(
+    classifyFailureCause({ wasDemonstrated: false, retentionStale: false, activeMisconception: false }),
+    "never_mastered",
+  );
+});
+
+test("demonstrated + fresh + no misconception is an execution slip", () => {
+  assert.equal(
+    classifyFailureCause({ wasDemonstrated: true, retentionStale: false, activeMisconception: false }),
+    "execution_error",
+  );
+});
+
+// ── Adaptive instruction format (§70, §74) ────────────────
+
+test("low mastery gets a worked example with low independence", () => {
+  const f = instructionFormat(0.2);
+  assert.equal(f.format, "worked_example");
+  assert.equal(f.blankStarter, false);
+  assert.ok(f.independenceRequired <= 0.3);
+});
+
+test("high mastery fades to independent work with a blank starter", () => {
+  const f = instructionFormat(0.9);
+  assert.equal(f.format, "independent");
+  assert.equal(f.blankStarter, true);
+  assert.ok(f.independenceRequired >= 0.9);
+});
+
+test("null mastery falls back to worked example", () => {
+  assert.equal(instructionFormat(null).format, "worked_example");
 });
