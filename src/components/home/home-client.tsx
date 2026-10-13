@@ -37,12 +37,12 @@ export function HomeClient() {
   if (error) return <div className="card p-10 text-center"><p className="text-rose">{error}</p></div>;
   if (!state) return <div className="grid min-h-[60vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
 
-  const { goal, roadmap, summary, misconceptions, nextBest, domainStats, materialCount } = state;
+  const { goal, roadmap, summary, misconceptions, nextBest, domainStats, materialCount, goalMetrics } = state;
 
-  const seenSkills = summary.skills;
-  const avgMastery = seenSkills.length ? seenSkills.reduce((a, s) => a + s.mastery, 0) / seenSkills.length : 0;
-  const avgIndependence = seenSkills.length ? seenSkills.reduce((a, s) => a + s.independence, 0) / seenSkills.length : 0;
-  const avgTransfer = seenSkills.length ? seenSkills.reduce((a, s) => a + s.transfer, 0) / seenSkills.length : 0;
+  // Scoped to the active goal's target skills, not a lifetime average.
+  const avgMastery = goalMetrics.mastery;
+  const avgIndependence = goalMetrics.independence;
+  const avgTransfer = goalMetrics.transfer;
 
   const readyItem = roadmap?.items.find((i) => i.status === "ready" || i.status === "active");
   const nextItemId = nextBest.next?.itemId?.includes(":") ? readyItem?.id : nextBest.next?.itemId;

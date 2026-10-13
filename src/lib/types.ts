@@ -103,6 +103,14 @@ export type StateResponse = {
   domainStats: DomainStat[];
   skillsSeeded: number;
   materialCount: number;
+  /** Ring metrics, scoped to the topic currently being worked through. */
+  goalMetrics: {
+    mastery: number;
+    independence: number;
+    transfer: number;
+    touched: number;
+    total: number;
+  };
 };
 
 export type LearnResponse = {

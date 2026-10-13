@@ -92,6 +92,8 @@ export const en: Dict = {
   "home.footer": "Every number here is backed by evidence and can be explained. Nothing is invented.",
   "home.materialsUploaded": "materials uploaded",
   "home.uploadMaterials": "Upload materials",
+  "home.byGoal": "For your goal",
+  "home.skillsStarted": "skills started",
 
   // roadmap
   "roadmap.title": "Personalized roadmap",
@@ -310,6 +312,8 @@ export const ru: Dict = {
   "home.footer": "Каждое число здесь основано на доказательствах и может быть объяснено. Ничего не выдумано.",
   "home.materialsUploaded": "материалов загружено",
   "home.uploadMaterials": "Загрузить материалы",
+  "home.byGoal": "По вашей цели",
+  "home.skillsStarted": "навыков затронуто",
 
   "roadmap.title": "Персональный план",
   "roadmap.complete": "завершено",

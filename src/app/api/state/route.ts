@@ -38,6 +38,27 @@ export async function GET() {
 
     const materialCount = await prisma.material.count({ where: { learnerId: userId } });
 
+    // Ring metrics follow the topic the learner is currently working through:
+    // the active/ready roadmap item's skills (fallback to the goal's target
+    // skills only when the roadmap has no current item left).
+    const items = roadmap?.items ?? [];
+    const currentItem = items.find((i) => i.status === "active") ?? items.find((i) => i.status === "ready");
+    let scopeSet = new Set<string>(currentItem?.skillIds ?? []);
+    if (scopeSet.size === 0 && goal) {
+      const goalSkillRows = await prisma.goalSkill.findMany({ where: { goalId: goal.id } });
+      scopeSet = new Set(goalSkillRows.map((g) => g.skillId));
+    }
+    const scoped = scopeSet.size ? summary.skills.filter((s) => scopeSet.has(s.skillId)) : [];
+    const avg = (pick: (s: (typeof scoped)[number]) => number) =>
+      scoped.length ? scoped.reduce((a, s) => a + pick(s), 0) / scoped.length : 0;
+    const goalMetrics = {
+      mastery: avg((s) => s.mastery),
+      independence: avg((s) => s.independence),
+      transfer: avg((s) => s.transfer),
+      touched: scoped.length,
+      total: scopeSet.size,
+    };
+
     return {
       hasGoal: Boolean(goal),
       goal: goal
@@ -56,6 +77,7 @@ export async function GET() {
       nextBest,
       domainStats,
       materialCount,
+      goalMetrics,
     };
   });
 }
