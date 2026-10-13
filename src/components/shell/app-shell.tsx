@@ -12,7 +12,6 @@ import {
   Activity,
   FileText,
   ShieldCheck,
-  Sparkles,
   LogOut,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
@@ -97,15 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-white/[0.06] p-4">
-          <div className="rounded-xl border border-accent/20 bg-accent/[0.07] p-3">
-            <div className="flex items-center gap-2 text-[13px] font-semibold text-accent-soft">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t("shell.footer.title")}
-            </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{t("shell.footer.text")}</p>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-text">{user?.name ?? "…"}</p>
               <p className="truncate text-[10px] text-text-faint">{user?.email ?? ""}</p>
