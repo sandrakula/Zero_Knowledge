@@ -1,6 +1,5 @@
 import { prisma, ensureLearner } from "@/lib/db";
 import { compileGoal } from "@/lib/core/goal-compiler";
-import { generateRoadmap } from "@/lib/core/roadmap";
 import { handle, fail, requireUser } from "@/lib/api";
 import { normalizeLang } from "@/lib/lang";
 
@@ -41,21 +40,11 @@ export async function POST(req: Request) {
       })),
     });
 
-    await generateRoadmap({
-      goalId: goal.id,
-      learnerId: userId,
-      spec,
-      competency: [],
-      language: lang,
-    });
-
-    const roadmap = await prisma.roadmap.findUnique({ where: { goalId: goal.id } });
-
+    // The roadmap is generated AFTER the skill-level diagnostic, once we have
+    // evidence about the learner — not from the goal alone.
     return {
       goalId: goal.id,
       spec: { ...spec, targetSkills: spec.targetSkills.slice(0, 8) },
-      roadmapId: roadmap?.id,
-      roadmapSummary: roadmap?.summary,
     };
   });
 }

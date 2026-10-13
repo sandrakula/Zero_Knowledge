@@ -103,7 +103,7 @@ export async function analyzeMaterial(input: {
       `${langInstruction(input.language)}`,
       `MATERIAL EXCERPT (first ~18k chars):\n${sample}`,
     ].join("\n\n"),
-    { maxTokens: 3000 },
+    { maxTokens: 6000 },
   );
 
   const valid = new Set(SKILLS.map((s) => s.id));
@@ -127,8 +127,9 @@ export async function retrieveChunks(input: {
   );
   if (queryTerms.size === 0) return [];
 
+  // Include the learner's own chunks AND admin-shared (global) materials.
   const chunks = await prisma.materialChunk.findMany({
-    where: { learnerId: input.learnerId },
+    where: { OR: [{ learnerId: input.learnerId }, { material: { scope: "global" } }] },
     include: { material: true },
   });
 
@@ -164,7 +165,9 @@ function tokenize(s: string): Set<string> {
 
 /** Which materials cover a given set of skills (for provenance display). */
 export async function materialSourcesForSkills(learnerId: string, skillIds: string[]): Promise<{ id: string; filename: string; skillIds: string[] }[]> {
-  const materials = await prisma.material.findMany({ where: { learnerId, status: "ready" } });
+  const materials = await prisma.material.findMany({
+    where: { OR: [{ learnerId, status: "ready" }, { scope: "global", status: "ready" }] },
+  });
   const target = new Set(skillIds);
   return materials
     .map((m) => ({ id: m.id, filename: m.filename, skillIds: JSON.parse(m.skillIds) as string[] }))

@@ -10,6 +10,7 @@ export const en: Dict = {
   "nav.tutor": "Tutor",
   "nav.progress": "Progress",
   "nav.materials": "Materials",
+  "nav.admin": "Admin",
   "nav.logout": "Log out",
   "shell.footer.title": "Learning Intelligence",
   "shell.footer.text": "Your next step is chosen from evidence — not a fixed sequence.",
@@ -181,11 +182,34 @@ export const en: Dict = {
   "materials.covers": "covers skills",
   "materials.delete": "Delete",
   "materials.back": "Back",
+  "materials.shared": "shared",
+  "materials.own": "yours",
 
   // shared
   "common.loading": "Loading…",
   "common.error": "Something went wrong",
   "common.retry": "Retry",
+
+  // admin
+  "admin.title": "Administration",
+  "admin.subtitle": "Students, their progress, knowledge level and study activity",
+  "admin.students": "Students",
+  "admin.globalMaterials": "Shared materials (visible to all students)",
+  "admin.uploadGlobal": "Upload shared material",
+  "admin.dropGlobal": "Drop a file here or click to upload (for all students)",
+  "admin.col.student": "Student",
+  "admin.col.goal": "Goal",
+  "admin.col.progress": "Roadmap",
+  "admin.col.mastery": "Knowledge",
+  "admin.col.activity": "Activity",
+  "admin.col.lastSeen": "Last active",
+  "admin.col.misconceptions": "Misc.",
+  "admin.none": "No students registered yet.",
+  "admin.attempts7d": "attempts this week",
+  "admin.globalCount": "shared",
+  "admin.totalAttempts": "Total attempts",
+  "admin.totalEvidence": "Total evidence",
+  "admin.materials": "Materials",
 };
 
 export const ru: Dict = {
@@ -195,6 +219,7 @@ export const ru: Dict = {
   "nav.tutor": "Тьютор",
   "nav.progress": "Прогресс",
   "nav.materials": "Материалы",
+  "nav.admin": "Админ",
   "nav.logout": "Выйти",
   "shell.footer.title": "Интеллект обучения",
   "shell.footer.text": "Следующий шаг выбирается на основе доказательств, а не по фиксированной последовательности.",
@@ -356,10 +381,32 @@ export const ru: Dict = {
   "materials.covers": "покрывает навыков",
   "materials.delete": "Удалить",
   "materials.back": "Назад",
+  "materials.shared": "общий",
+  "materials.own": "ваш",
 
   "common.loading": "Загрузка…",
   "common.error": "Что-то пошло не так",
   "common.retry": "Повторить",
+
+  "admin.title": "Администрирование",
+  "admin.subtitle": "Ученики, их прогресс, уровень знаний и активность",
+  "admin.students": "Ученики",
+  "admin.globalMaterials": "Общие материалы (видны всем ученикам)",
+  "admin.uploadGlobal": "Загрузить общий материал",
+  "admin.dropGlobal": "Перетащите файл или нажмите для загрузки (для всех учеников)",
+  "admin.col.student": "Ученик",
+  "admin.col.goal": "Цель",
+  "admin.col.progress": "План",
+  "admin.col.mastery": "Знания",
+  "admin.col.activity": "Активность",
+  "admin.col.lastSeen": "Был(а) активен",
+  "admin.col.misconceptions": "Ошибки",
+  "admin.none": "Учеников пока нет.",
+  "admin.attempts7d": "попыток за неделю",
+  "admin.globalCount": "общих",
+  "admin.totalAttempts": "Всего попыток",
+  "admin.totalEvidence": "Всего доказательств",
+  "admin.materials": "Материалы",
 };
 
 export const dicts: Record<Lang, Dict> = { en, ru };

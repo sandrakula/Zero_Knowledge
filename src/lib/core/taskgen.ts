@@ -94,7 +94,7 @@ export async function generateTask(input: {
   ].join("\n");
 
   const task = await generateObject(TaskSchema, prompt.capability, prompt.system, user, {
-    maxTokens: 6000,
+    maxTokens: 12000,
   });
 
   // Deterministic validation before publishing (§126).
@@ -106,7 +106,7 @@ export async function generateTask(input: {
       prompt.capability,
       prompt.system,
       user + `\n\nYour previous task failed its own tests. Fix the reference solution and/or tests so they are internally consistent.\nFailures: ${JSON.stringify(validation.failures)}`,
-      { maxTokens: 6000 },
+      { maxTokens: 12000 },
     );
     const retryValidation = await validateTask(retry);
     if (!retryValidation.valid) {

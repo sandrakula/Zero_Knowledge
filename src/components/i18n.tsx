@@ -22,19 +22,19 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
 
   useEffect(() => {
-    const saved = localStorage.getItem("cognos_lang");
+    const saved = localStorage.getItem("zk_lang");
     if (saved === "ru" || saved === "en") setLangState(saved);
   }, []);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
-    localStorage.setItem("cognos_lang", l);
+    localStorage.setItem("zk_lang", l);
   }, []);
 
   const toggle = useCallback(() => {
     setLangState((prev) => {
       const next: Lang = prev === "en" ? "ru" : "en";
-      localStorage.setItem("cognos_lang", next);
+      localStorage.setItem("zk_lang", next);
       return next;
     });
   }, []);

@@ -1,104 +1,113 @@
-// End-to-end smoke test: auth → isolation → material upload → goal → grounded lesson.
+// End-to-end smoke test for ZeroKnowledge.
 // Run: node scripts/smoke.mjs   (requires the server on :3100)
 
 const BASE = "http://localhost:3100";
 
 function cookieFrom(res) {
-  const sc = res.headers.getSetCookie?.() ?? res.headers.get("set-cookie") ?? "";
+  const sc = res.headers.getSetCookie?.() ?? [];
   return (Array.isArray(sc) ? sc : [sc]).map((c) => c.split(";")[0]).join("; ");
 }
 
-async function api(path, { method = "GET", body, cookie } = {}) {
+async function api(path, { method = "GET", body, cookie, form } = {}) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
   if (cookie) headers.Cookie = cookie;
   const res = await fetch(BASE + path, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: form ?? (body ? JSON.stringify(body) : undefined),
   });
   const data = await res.json().catch(() => ({}));
   return { status: res.status, data, cookie: cookieFrom(res) || cookie };
 }
 
-const book = `Python Fundamentals Handbook
+const book = `Advanced Algorithms Reference
 
-Chapter 1: Variables and Types
-In Python, a variable holds a value. Types include int, float, str, bool, and None.
+Chapter: Binary Search
+Binary search finds a target in a sorted array in O(log n).
+The key detail is the boundary condition: use inclusive low and high pointers
+and compute mid = low + (high - low) // 2 to avoid overflow.
 
-Chapter 2: Functions and Return Values
-A function is defined with def. It returns a value with return.
-If a function has no return statement, it implicitly returns None.
-Printing is different from returning: print only displays a value.
+Chapter: Two Pointers
+The two-pointers technique reduces a nested O(n^2) scan to O(n) by moving
+left and right pointers inward.
 
-Example:
-    def add(a, b):
-        return a + b
-    result = add(2, 3)
-
-Chapter 3: Control Flow
-Use if, elif, else for branching, and for/while for loops.
-
-Chapter 4: Lists and Dictionaries
-A list is ordered and indexed by integer position. A dictionary maps keys to values.
+Chapter: Complexity
+Big-O describes how runtime grows with input size. Nested loops are usually
+O(n^2); halving each step is O(log n).
 `;
 
 async function main() {
-  const email = `alice_${Date.now()}@test.com`;
+  // ── 1. Admin login ─────────────────────────────────────────
+  let r = await api("/api/auth/login", { method: "POST", body: { email: "admin", password: "admin" } });
+  console.log("admin login:", r.status, r.data.user?.role ?? r.data);
+  const adminCookie = r.cookie;
 
-  // 1. Register
-  let r = await api("/api/auth/register", { method: "POST", body: { email, password: "secret123", name: "Alice" } });
-  console.log("register:", r.status, r.data.user?.email ?? r.data);
-  const aliceCookie = r.cookie;
+  r = await api("/api/admin/overview", { cookie: adminCookie });
+  console.log("admin overview:", r.status, "| students:", r.data.totals?.students);
 
-  // 2. Unauthenticated state must be 401
-  r = await api("/api/state");
-  console.log("state (no auth):", r.status);
-
-  // 3. Upload material (multipart)
+  // ── 2. Admin uploads a GLOBAL material ─────────────────────
   const fd = new FormData();
-  fd.append("file", new Blob([book], { type: "text/plain" }), "python-handbook.txt");
-  const upRes = await fetch(BASE + "/api/materials", {
-    method: "POST",
-    headers: { Cookie: aliceCookie },
-    body: fd,
-  });
-  const up = await upRes.json();
-  console.log("upload:", upRes.status, up.filename ?? up, "| chunks:", up.chunkCount, "| lang:", up.language);
-  console.log("  covered skills:", (up.skillIds ?? []).join(", "));
+  fd.append("file", new Blob([book], { type: "text/plain" }), "algorithms-reference.txt");
+  fd.append("scope", "global");
+  const up = await fetch(BASE + "/api/materials", { method: "POST", headers: { Cookie: adminCookie }, body: fd });
+  const upData = await up.json();
+  console.log("admin upload (global):", up.status, upData.filename, "| scope:", upData.scope, "| skills:", (upData.skillIds ?? []).join(","));
 
-  // 4. List materials
-  r = await api("/api/materials", { cookie: aliceCookie });
-  console.log("materials list:", r.status, r.data.materials?.length, "material(s)");
+  // ── 3. Register student ────────────────────────────────────
+  const email = `stud_${Date.now()}@test.com`;
+  r = await api("/api/auth/register", { method: "POST", body: { email, password: "secret123", name: "Student" } });
+  const studentCookie = r.cookie;
+  console.log("student register:", r.status);
 
-  // 5. Onboarding (goal)
-  r = await api("/api/onboarding", { method: "POST", cookie: aliceCookie, body: { statement: "I want to learn Python from zero.", level: "beginner", hoursPerWeek: 6, lang: "en" } });
+  // ── 4. Onboarding (goal) — roadmap must NOT exist yet ──────
+  r = await api("/api/onboarding", { method: "POST", cookie: studentCookie, body: { statement: "I want to learn algorithms for interviews.", level: "beginner", hoursPerWeek: 5, lang: "en" } });
   console.log("onboarding:", r.status, r.data.spec?.title ?? r.data);
   const goalId = r.data.goalId;
 
-  // 6. State → roadmap
-  r = await api("/api/state", { cookie: aliceCookie });
-  const ready = r.data.roadmap?.items?.find((i) => i.status === "ready" || i.status === "active");
-  console.log("roadmap items:", r.data.roadmap?.items?.length, "| ready:", ready?.id ? ready.title : "none");
+  r = await api("/api/state", { cookie: studentCookie });
+  console.log("after onboarding — roadmap:", r.data.roadmap ? "EXISTS (unexpected)" : "none (correct, waits for diagnostic)");
 
-  // 7. Learn first item → check grounding/provenance
+  // ── 5. Mandatory diagnostic → roadmap generated on completion ──
+  r = await api("/api/diagnostic/start", { method: "POST", cookie: studentCookie, body: { goalId, lang: "en" } });
+  console.log("diagnostic start:", r.status, "| ladder:", (r.data.ladder ?? []).length, "skills");
+  let q = r.data.question;
+  let idx = r.data.index;
+  const ladder = r.data.ladder;
+  let answered = 0;
+  while (!r.data.done && answered < 20) {
+    const ans = await api("/api/diagnostic/answer", { method: "POST", cookie: studentCookie, body: { goalId, ladder, index: idx, questionId: q.id, skillId: q.skillId, selectedIndex: 0, confidence: 0.5, lang: "en" } });
+    answered++;
+    r = ans;
+    q = ans.data.question;
+    idx = ans.data.index ?? idx;
+  }
+  console.log("diagnostic done:", r.data.done, "| questions answered:", answered);
+
+  r = await api("/api/state", { cookie: studentCookie });
+  console.log("after diagnostic — roadmap items:", r.data.roadmap?.items?.length, "| evidence:", r.data.summary?.evidenceCount);
+
+  // ── 6. Learn first item → grounded in the GLOBAL material ──
+  const ready = r.data.roadmap?.items?.find((i) => i.status === "ready" || i.status === "active");
   if (ready) {
-    r = await api("/api/learn", { method: "POST", cookie: aliceCookie, body: { itemId: ready.id, lang: "en" } });
-    console.log("learn:", r.status);
-    console.log("  lesson grounded:", r.data.lesson?.grounded, "| sources:", (r.data.lesson?.sources ?? []).map((s) => s.materialName).join(", "));
-    console.log("  lesson body (first 300):", (r.data.lesson?.body ?? "").slice(0, 300).replace(/\n/g, " "));
+    const lr = await api("/api/learn", { method: "POST", cookie: studentCookie, body: { itemId: ready.id, lang: "en" } });
+    console.log("learn:", lr.status, "| grounded:", lr.data.lesson?.grounded, "| sources:", (lr.data.lesson?.sources ?? []).map((s) => s.materialName).join(", "));
   }
 
-  // 8. Isolation: register a second user, must not see Alice's materials/goal
-  r = await api("/api/auth/register", { method: "POST", body: { email: `bob_${Date.now()}@test.com`, password: "secret123", name: "Bob" } });
-  const bobCookie = r.cookie;
-  r = await api("/api/state", { cookie: bobCookie });
-  console.log("isolation — bob state:", r.status, "| hasGoal:", r.data.hasGoal, "| materialCount:", r.data.materialCount, "| evidence:", r.data.summary?.evidenceCount);
+  // ── 7. Student sees the global material in their library ──
+  r = await api("/api/materials", { cookie: studentCookie });
+  console.log("student materials:", r.data.materials?.length, "| global visible:", r.data.materials?.some((m) => m.scope === "global"));
+
+  // ── 8. Admin overview now shows the student ────────────────
+  r = await api("/api/admin/overview", { cookie: adminCookie });
+  const s = r.data.students?.find((x) => x.email === email);
+  console.log("admin sees student:", s ? `${s.name} | goal: ${s.goalTitle} | mastery: ${Math.round(s.avgMastery * 100)}% | 7d attempts: ${s.attempts7d}` : "NOT FOUND");
+
+  // ── 9. Isolation: student cannot access admin overview ─────
+  r = await api("/api/admin/overview", { cookie: studentCookie });
+  console.log("student → admin overview (expect 403):", r.status);
 
   console.log("\nDONE");
 }
 
-main().catch((e) => {
-  console.error("SMOKE FAILED:", e.message);
-  process.exit(1);
-});
+main().catch((e) => { console.error("SMOKE FAILED:", e.message); process.exit(1); });

@@ -54,7 +54,7 @@ export async function generateRoadmap(input: {
   ].join("\n\n");
 
   const result = await generateObject(RoadmapSchema, prompt.capability, prompt.system, user, {
-    maxTokens: 8192,
+    maxTokens: 12000,
   });
 
   const validIds = new Set(SKILLS.map((s) => s.id));
@@ -103,6 +103,33 @@ export async function generateRoadmap(input: {
   if (first) {
     await prisma.roadmapItem.update({ where: { id: first.id }, data: { status: "ready" } });
   }
+}
+
+/** Build the personalized roadmap once the diagnostic has seeded the learner model. */
+export async function buildRoadmapFromGoal(input: {
+  goalId: string;
+  learnerId: string;
+  language?: string;
+}): Promise<void> {
+  const goal = await prisma.goal.findUnique({ where: { id: input.goalId }, include: { targetSkills: true } });
+  if (!goal) return;
+  const spec: GoalSpec = {
+    title: goal.title,
+    domain: goal.domain,
+    targetLevel: goal.targetLevel,
+    targetSkills: goal.targetSkills.map((g) => g.skillId),
+    summary: "",
+  };
+  const comps = await prisma.competencyState.findMany({
+    where: { learnerId: input.learnerId, skillId: { in: spec.targetSkills } },
+  });
+  await generateRoadmap({
+    goalId: input.goalId,
+    learnerId: input.learnerId,
+    spec,
+    competency: comps.map((c) => ({ skillId: c.skillId, mastery: c.mastery })),
+    language: input.language,
+  });
 }
 
 export async function getRoadmapView(goalId: string) {

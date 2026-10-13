@@ -111,7 +111,7 @@ export async function tutor(input: {
       `Return JSON with fields: intent, actionType, reply (Markdown), misconceptionCode (or null).`,
       langInstruction(input.language),
     ].join("\n\n"),
-    { maxTokens: 2500 },
+    { maxTokens: 6000 },
   );
 
   await prisma.message.create({

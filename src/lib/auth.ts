@@ -1,24 +1,12 @@
 import { cookies } from "next/headers";
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { hashPassword, verifyPassword } from "./password";
 
-const SESSION_SECRET = process.env.SESSION_SECRET || "cognos-dev-secret-change-me";
-const SESSION_COOKIE = "cognos_session";
+export { hashPassword, verifyPassword };
+
+const SESSION_SECRET = process.env.SESSION_SECRET || "zeroknowledge-dev-secret-change-me";
+const SESSION_COOKIE = "zk_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
-
-// ── Password hashing (scrypt, no external deps) ─────────────
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 64).toString("hex");
-  return `${salt}:${hash}`;
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(":");
-  if (!salt || !hash) return false;
-  const test = scryptSync(password, salt, 64);
-  const expected = Buffer.from(hash, "hex");
-  return test.length === expected.length && timingSafeEqual(test, expected);
-}
 
 // ── Signed session token (HMAC, no external deps) ───────────
 function sign(body: string): string {

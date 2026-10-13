@@ -10,5 +10,10 @@ export default async function HomePage() {
   if (!userId) redirect("/login");
   const goal = await prisma.goal.findFirst({ where: { learnerId: userId, status: "active" } });
   if (!goal) redirect("/onboarding");
+  // Learning only starts after the skill-level diagnostic, which also generates
+  // the roadmap from the resulting evidence.
+  const roadmap = await prisma.roadmap.findUnique({ where: { goalId: goal.id } });
+  const diagnosed = await prisma.evidence.findFirst({ where: { learnerId: userId, kind: "diagnostic" } });
+  if (!roadmap || !diagnosed) redirect(`/diagnostic?goalId=${goal.id}`);
   return <HomeClient />;
 }

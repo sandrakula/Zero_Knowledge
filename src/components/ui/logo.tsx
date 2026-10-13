@@ -13,8 +13,8 @@ export function Logo({ className, compact = false }: { className?: string; compa
         </svg>
       </div>
       {!compact && (
-        <span className="text-[17px] font-semibold tracking-tight text-text">
-          Cognos
+        <span className="text-[16px] font-semibold tracking-tight text-text">
+          Zero<span className="gradient-text">Knowledge</span>
           <span className="ml-1.5 rounded-md border border-white/[0.1] bg-white/[0.04] px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-[0.14em] text-text-faint">
             β
           </span>

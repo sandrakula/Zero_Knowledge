@@ -16,7 +16,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cognos — Learning Intelligence Platform",
+  title: "ZeroKnowledge — Learning Intelligence Platform",
   description:
     "An adaptive learning intelligence system: a living model of what you know, a roadmap built for you, and evidence-driven next steps.",
 };

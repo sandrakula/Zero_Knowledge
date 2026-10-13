@@ -1,8 +1,8 @@
-# Cognos — Learning Intelligence Platform
+# ZeroKnowledge — Learning Intelligence Platform
 
 An adaptive **learning intelligence** system, not an LMS, not a chatbot, not a course generator.
 
-Cognos builds a persistent, evidence-based model of each learner (the **Student Learning Twin**),
+ZeroKnowledge builds a persistent, evidence-based model of each learner (the **Student Learning Twin**),
 maps the domain with a **Knowledge Graph**, and turns a goal into a personalized, evolving roadmap.
 Every learning action produces **evidence**, which updates the learner's competency state — and the
 system uses that state to choose the *next best action*. It works from a goal alone (cold start) or
@@ -17,6 +17,9 @@ and no AI provider, model, or API key is baked into the core.
 
 - **Accounts** — register / login (email + password, scrypt-hashed, signed session cookie).
   Every user has a fully isolated learning twin, roadmap, tasks, evidence and materials.
+- **Admin account** — seeded as `admin` / `admin`. The admin dashboard shows a per-student
+  digest (goal, roadmap progress, knowledge level, weekly activity, misconceptions) and can upload
+  **shared materials** that every student's lessons are grounded in.
 - **Russian / English** — the whole UI is switchable (EN ⇄ RU), and AI-generated lessons,
   tasks, diagnostics, feedback and tutoring follow the selected language.
 - **Material upload** — `.txt`, `.md`, `.pdf`, `.docx` up to 100 MB (RU/EN auto-detected).
@@ -62,11 +65,15 @@ pnpm db:seed
 pnpm dev        # http://localhost:3100
 ```
 
-Open http://localhost:3100 → register (or log in) → optionally upload materials → describe your
-goal → complete the short diagnostic → start learning.
+Open http://localhost:3100 → register (or log in) → describe your goal → pass the adaptive
+**skill-level diagnostic** (which builds the personalized roadmap from the resulting evidence) →
+start learning. Upload materials any time to ground your lessons in them.
 
-> Smoke test: with the server running, `node scripts/smoke.mjs` exercises register → upload →
-> goal → grounded lesson → per-user isolation against the live API.
+> **Admin:** log in as `admin` / `admin` to open the administration dashboard (students overview +
+> shared materials for all students).
+>
+> Smoke test: with the server running, `node scripts/smoke.mjs` exercises admin login → shared
+> material upload → register → goal → diagnostic → roadmap → grounded lesson → isolation.
 
 ## Configuration
 

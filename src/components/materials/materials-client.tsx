@@ -12,6 +12,8 @@ type Material = {
   size: number;
   language: string;
   status: string;
+  scope: string;
+  isOwner: boolean;
   chunkCount: number;
   summary: string;
   skillIds: string[];
@@ -130,6 +132,9 @@ export function MaterialsClient() {
                     <p className="truncate font-medium text-text">{m.filename}</p>
                     <span className="chip">{fmtSize(m.size)}</span>
                     <span className="chip uppercase">{m.language}</span>
+                    <span className={cn("chip", m.scope === "global" ? "border-cyan/30 text-cyan" : "text-text-faint")}>
+                      {m.scope === "global" ? t("materials.shared") : t("materials.own")}
+                    </span>
                     <span className="chip">{m.chunkCount} {t("materials.chunks")}</span>
                   </div>
                   {m.summary && <p className="mt-1.5 text-xs leading-relaxed text-text-muted">{m.summary}</p>}
@@ -142,9 +147,11 @@ export function MaterialsClient() {
                     </div>
                   )}
                 </div>
-                <button onClick={() => remove(m.id)} className="rounded-lg p-2 text-text-faint transition-colors hover:bg-white/[0.05] hover:text-rose" title={t("materials.delete")}>
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {m.isOwner && (
+                  <button onClick={() => remove(m.id)} className="rounded-lg p-2 text-text-faint transition-colors hover:bg-white/[0.05] hover:text-rose" title={t("materials.delete")}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}

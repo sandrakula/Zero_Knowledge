@@ -48,7 +48,7 @@ export async function compileGoal(input: {
   const spec = await generateObject(GoalSchema, prompt.capability, prompt.system, [
     `Learner goal: "${input.statement}"\nStated level: ${input.level}\n\nSkill catalog (id, name, domain, difficulty, prerequisites):\n${catalog}`,
     langInstruction(input.language),
-  ].join("\n"), { maxTokens: 4096 });
+  ].join("\n"), { maxTokens: 6000 });
 
   // Validate skill ids against the catalog; drop unknown ones and keep order.
   const valid = new Set(SKILLS.map((s) => s.id));

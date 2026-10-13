@@ -52,7 +52,7 @@ export async function complete(
   opts?: ChatOptions,
 ): Promise<LLMResponse> {
   const { adapter } = route(capability);
-  const maxRetries = 2;
+  const maxRetries = 3;
   let lastErr: ProviderError | null = null;
   for (let i = 0; i <= maxRetries; i++) {
     try {
@@ -61,8 +61,8 @@ export async function complete(
     } catch (e) {
       lastErr = e instanceof ProviderError ? e : new ProviderError(String(e));
       if (!lastErr.retryable || i === maxRetries) throw lastErr;
-      // simple backoff before retrying rate-limit / 5xx / timeouts
-      await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+      // simple backoff before retrying rate-limit / 5xx / timeouts / empty content
+      await new Promise((r) => setTimeout(r, 800 * (i + 1)));
     }
   }
   throw lastErr ?? new ProviderError("AI unavailable");

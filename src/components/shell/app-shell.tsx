@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Activity,
   FileText,
+  ShieldCheck,
   Sparkles,
   LogOut,
 } from "lucide-react";
@@ -33,7 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string; role?: string } | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -41,6 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       .then((d) => d.user && setUser(d.user))
       .catch(() => {});
   }, []);
+
+  const navItems = user?.role === "admin"
+    ? [{ href: "/admin", label: "nav.admin", icon: ShieldCheck }, ...NAV]
+    : NAV;
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -59,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {NAV.map((item) => {
+          {navItems.map((item) => {
             const active = pathname.startsWith(item.href);
             const Icon = item.icon;
             return (
@@ -119,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2 border-b border-white/[0.06] bg-ink-900/70 px-4 backdrop-blur-xl md:hidden">
         <Logo />
         <nav className="ml-auto flex items-center gap-1">
-          {NAV.map((item) => {
+          {navItems.map((item) => {
             const active = pathname.startsWith(item.href);
             const Icon = item.icon;
             return (

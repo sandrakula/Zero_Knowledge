@@ -1,17 +1,36 @@
-// Seed the knowledge graph (domains/skills/prerequisites) and a local learner.
+// Seed the knowledge graph (domains/skills/prerequisites), a local learner, and the admin account.
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { SKILLS, LOCAL_LEARNER_ID } from "../src/lib/seed-shared";
+import { hashPassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  // Local learner (no auth in MVP).
+  // Local learner (legacy seed row).
   await prisma.learner.upsert({
     where: { id: LOCAL_LEARNER_ID },
     update: {},
     create: { id: LOCAL_LEARNER_ID, name: "Learner" },
   });
+
+  // Admin account: email "admin", password "admin".
+  const admin = await prisma.user.upsert({
+    where: { email: "admin" },
+    update: { role: "admin" },
+    create: {
+      email: "admin",
+      name: "Administrator",
+      passwordHash: hashPassword("admin"),
+      role: "admin",
+    },
+  });
+  await prisma.learner.upsert({
+    where: { id: admin.id },
+    update: {},
+    create: { id: admin.id, userId: admin.id, name: admin.name },
+  });
+  console.log(`Admin account ready (email: admin, password: admin).`);
 
   // Knowledge graph skills.
   for (const s of SKILLS) {

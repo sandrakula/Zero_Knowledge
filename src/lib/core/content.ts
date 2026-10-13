@@ -65,7 +65,7 @@ export async function generateLesson(input: {
   ].join("\n");
 
   const result = await generateObject(LessonSchema, prompt.capability, prompt.system, user, {
-    maxTokens: 3000,
+    maxTokens: 8000,
   });
 
   const usedIds = new Set(result.sourceIds);

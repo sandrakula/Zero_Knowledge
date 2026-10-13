@@ -74,7 +74,7 @@ export async function evaluateAttempt(input: {
           `Test results (${run.passed}/${run.total} passed):\n${failing}`,
           langInstruction(input.language),
         ].join("\n\n"),
-        { maxTokens: 3000 },
+        { maxTokens: 6000 },
       );
       feedback = `### ${review.correct ? "Nearly there" : `${run.passed}/${run.total} tests passing`}\n\n${review.feedback}`;
       misconceptions = review.misconceptions ?? [];

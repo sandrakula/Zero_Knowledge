@@ -53,27 +53,35 @@ export async function generateObject<T>(
   user: string,
   opts?: { temperature?: number; maxTokens?: number },
 ): Promise<T> {
-  const res = await complete(
-    capability,
-    [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    { temperature: opts?.temperature ?? 0.3, maxTokens: opts?.maxTokens ?? 8192, json: true },
-  );
+  // Reasoning models intermittently return empty or malformed JSON. Retry the
+  // whole operation (empty content, parse failure, or schema mismatch).
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await complete(
+        capability,
+        [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        { temperature: opts?.temperature ?? 0.3, maxTokens: opts?.maxTokens ?? 16000, json: true },
+      );
 
-  const text = extractJsonObject(res.content);
+      const text = extractJsonObject(res.content);
+      if (!text.trim()) throw new ProviderError("empty output", { retryable: true });
 
-  try {
-    const parsed = JSON.parse(text);
-    return schema.parse(parsed);
-  } catch (e) {
-    const snippet = text.slice(0, 400).replace(/\n/g, " ");
-    throw new ProviderError(
-      `Structured output failed validation: ${(e as Error).message} — snippet: ${snippet}`,
-      { retryable: false },
-    );
+      const parsed = JSON.parse(text);
+      return schema.parse(parsed);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+    }
   }
+
+  const msg = lastErr?.message ?? "structured output failed";
+  throw lastErr instanceof ProviderError
+    ? new ProviderError(`Structured output failed: ${msg}`, { retryable: false })
+    : new ProviderError(`Structured output failed validation: ${msg}`, { retryable: false });
 }
 
 export async function generateText(
@@ -88,7 +96,7 @@ export async function generateText(
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    { temperature: opts?.temperature ?? 0.5, maxTokens: opts?.maxTokens ?? 4096 },
+    { temperature: opts?.temperature ?? 0.5, maxTokens: opts?.maxTokens ?? 8000 },
   );
   return res.content.trim();
 }

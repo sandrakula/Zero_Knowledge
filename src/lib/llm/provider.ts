@@ -75,7 +75,10 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 
     const choice = data.choices?.[0]?.message;
     const content = choice?.content ?? "";
-    if (!content && !choice?.reasoning_content) {
+    // Some reasoning models intermittently return empty `content` (leaving the
+    // answer only in `reasoning_content`, which is not usable output). Treat
+    // that as a retryable failure rather than feeding empty text downstream.
+    if (!content.trim()) {
       throw new ProviderError("AI returned an empty response", { retryable: true });
     }
 

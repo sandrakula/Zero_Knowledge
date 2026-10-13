@@ -15,6 +15,7 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
+  role         String   @default("student") // student | admin
   language     String   @default("en")
   createdAt    DateTime @default(now())
   learner      Learner?
@@ -46,6 +47,7 @@ model Material {
   storedName String
   mimeType   String
   size       Int
+  scope      String   @default("user") // user | global
   language   String   @default("en")
   status     String   @default("ready") // processing | ready | failed
   skillIds   String   @default("[]") // JSON — covered skills

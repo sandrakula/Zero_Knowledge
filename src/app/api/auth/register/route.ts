@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     await prisma.learner.create({ data: { id: user.id, userId: user.id, name } });
 
     const token = createSessionToken(user.id);
-    const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, language: user.language } });
+    const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, language: user.language, role: user.role } });
     res.cookies.set(SESSION_COOKIE_NAME, token, SESSION_COOKIE_OPTS);
     return res;
   } catch (e) {

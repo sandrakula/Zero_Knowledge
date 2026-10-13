@@ -6,6 +6,7 @@ import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { createEvidence } from "./evidence";
 import { applyEvidence } from "./student-twin";
+import { buildRoadmapFromGoal } from "./roadmap";
 
 // ─────────────────────────────────────────────────────────────
 // Adaptive diagnostic assessment (§66–67). Probes the learner's starting
@@ -64,7 +65,7 @@ async function generateQuestion(
     prompt.capability,
     prompt.system,
     `Skill: ${skill.name} (${skill.id})\nDescription: ${skill.description}\nTarget difficulty: ${level}\n${langInstruction(language)}`,
-    { maxTokens: 2000 },
+    { maxTokens: 8000 },
   );
   const id = `dq_${Math.random().toString(36).slice(2, 10)}`;
   keyStore.set(id, { correctIndex: q.correctIndex, explanation: q.explanation, misconception: q.misconception ?? "" });
@@ -166,19 +167,24 @@ export async function answerDiagnostic(input: {
     },
   });
 
-  // Adaptive next step: correct → advance; wrong → reinforce same skill one notch down.
-  const nextIndex = correct ? input.index + 1 : input.index;
-  const nextSkillId = input.ladder[Math.min(nextIndex, input.ladder.length - 1)];
-  const nextLevel = correct ? levelFor(0.5) : "beginner";
-
-  const done = correct ? nextIndex >= input.ladder.length : nextIndex >= input.ladder.length - 1;
-
+  // Advance to the next ladder skill (foundational → advanced). The answer
+  // adjusts the difficulty of the next question and seeds the learning twin;
+  // the ladder always terminates after one pass.
+  const nextIndex = input.index + 1;
+  const done = nextIndex >= input.ladder.length;
   const feedback = key.explanation;
 
   if (done) {
+    // With the learner model now seeded by the diagnostic, build the roadmap.
+    await buildRoadmapFromGoal({ goalId: input.goalId, learnerId: input.learnerId, language: input.language });
+    await prisma.learningEvent.create({
+      data: { learnerId: input.learnerId, type: "diagnostic_completed", payload: JSON.stringify({ goalId: input.goalId }) },
+    });
     return { done: true, correct, feedback, summary: "Diagnostic complete — your learning twin is initialized." };
   }
 
+  const nextSkillId = input.ladder[nextIndex];
+  const nextLevel = correct ? levelFor(0.6) : "beginner";
   const nextQ = await generateQuestion(nextSkillId, nextLevel, input.language);
-  return { done: false, correct, feedback, index: Math.min(nextIndex, input.ladder.length - 1), question: publicQuestion(nextQ) };
+  return { done: false, correct, feedback, index: nextIndex, question: publicQuestion(nextQ) };
 }
