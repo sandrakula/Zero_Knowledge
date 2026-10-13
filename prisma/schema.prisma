@@ -1,0 +1,246 @@
+// Learning Intelligence Platform — data model
+// SQLite for the local MVP; the shape is portable to PostgreSQL (add pgvector later).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Learner {
+  id           String   @id
+  name         String
+  createdAt    DateTime @default(now())
+  goals        Goal[]
+  competencies CompetencyState[]
+  misconceptions Misconception[]
+  evidence     Evidence[]
+  events       LearningEvent[]
+  attempts     TaskAttempt[]
+  hints        HintUsage[]
+  messages     Message[]
+  recommendations Recommendation[]
+}
+
+model Goal {
+  id           String    @id @default(cuid())
+  learnerId    String
+  learner      Learner   @relation(fields: [learnerId], references: [id])
+  title        String
+  statement    String
+  domain       String
+  targetLevel  String
+  hoursPerWeek Int       @default(5)
+  deadline     DateTime?
+  status       String    @default("active") // active | achieved | archived
+  createdAt    DateTime  @default(now())
+  roadmap      Roadmap?
+  targetSkills GoalSkill[]
+}
+
+model GoalSkill {
+  id        String @id @default(cuid())
+  goalId    String
+  goal      Goal   @relation(fields: [goalId], references: [id])
+  skillId   String
+  weight    Float  @default(1)
+  priority  Int    @default(0)
+  @@unique([goalId, skillId])
+}
+
+model Skill {
+  id           String  @id
+  name         String
+  description  String
+  domain       String
+  category     String  @default("skill") // concept | skill | subskill
+  difficulty   Float   @default(0.5)
+  cognitiveLevel String @default("understand") // recognize | understand | apply | analyze | evaluate | create
+  prerequisites Skill[] @relation("Prerequisite")
+  prereqOf     Skill[] @relation("Prerequisite")
+  competency   CompetencyState[]
+}
+
+model CompetencyState {
+  id            String   @id @default(cuid())
+  learnerId     String
+  learner       Learner  @relation(fields: [learnerId], references: [id])
+  skillId       String
+  skill         Skill    @relation(fields: [skillId], references: [id])
+  mastery       Float    @default(0)
+  masteryUncertainty Float @default(1)
+  depth         String   @default("recognition") // recognition..transfer
+  independence  Float    @default(0)
+  application   Float    @default(0)
+  transfer      Float    @default(0)
+  retention     Float    @default(1)
+  attempts      Int      @default(0)
+  successes     Int      @default(0)
+  hintDependence Float   @default(0)
+  lastSeenAt    DateTime @default(now())
+  lastRetrievedAt DateTime?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([learnerId, skillId])
+}
+
+model Misconception {
+  id          String   @id @default(cuid())
+  learnerId   String
+  learner     Learner  @relation(fields: [learnerId], references: [id])
+  skillId     String
+  code        String
+  description String
+  confidence  Float    @default(0.5)
+  status      String   @default("active") // active | monitoring | resolved
+  evidenceIds String   @default("[]") // JSON array
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  @@unique([learnerId, skillId, code])
+}
+
+model Roadmap {
+  id        String   @id @default(cuid())
+  goalId    String   @unique
+  goal      Goal     @relation(fields: [goalId], references: [id])
+  summary   String
+  status    String   @default("active") // active | recalculated | archived
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items     RoadmapItem[]
+}
+
+model RoadmapItem {
+  id        String  @id @default(cuid())
+  roadmapId String
+  roadmap   Roadmap @relation(fields: [roadmapId], references: [id])
+  index     Int
+  phase     String
+  title     String
+  description String
+  skillIds  String  @default("[]") // JSON array
+  type      String  @default("lesson") // lesson | diagnostic | task | project | assessment | retention | transfer
+  status    String  @default("locked") // locked | ready | active | completed
+  contentId String?
+  taskId    String?
+  estimatedMinutes Int @default(20)
+}
+
+model ContentItem {
+  id          String   @id @default(cuid())
+  skillId     String?
+  title       String
+  body        String   // markdown
+  kind        String   @default("lesson") // lesson | example | exercise | project | explanation | glossary
+  provenance  String   @default("generated") // canonical | user-provided | teacher-provided | external | generated | enriched
+  status      String   @default("generated") // draft | generated | validated | approved | deprecated
+  sourceRef   String?
+  version     Int      @default(1)
+  meta        String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id            String   @id @default(cuid())
+  skillIds      String   @default("[]")
+  family        String
+  title         String
+  statement     String   // markdown
+  difficulty    Float    @default(0.5)
+  cognitiveLevel String  @default("apply")
+  independenceRequired Float @default(0.5)
+  transferLevel Float    @default(0)
+  starterCode   String   @default("")
+  referenceSolution String @default("")
+  tests         String   @default("[]") // JSON [{input, expected, hidden}]
+  hints         String   @default("[]") // JSON [hint...]
+  status        String   @default("validated") // draft | generated | validated | deprecated
+  provenance    String   @default("generated")
+  createdAt     DateTime @default(now())
+  attempts      TaskAttempt[]
+}
+
+model TaskAttempt {
+  id           String   @id @default(cuid())
+  learnerId    String
+  learner      Learner  @relation(fields: [learnerId], references: [id])
+  taskId       String?
+  task         Task?    @relation(fields: [taskId], references: [id])
+  roadmapItemId String?
+  code         String   @default("")
+  answer       String   @default("")
+  passed       Int      @default(0)
+  total        Int      @default(0)
+  passedAll    Boolean  @default(false)
+  hintsUsed    Int      @default(0)
+  supportUsed  Float    @default(0)
+  confidence   Float?
+  timeSpentSeconds Int  @default(0)
+  verification String   @default("{}") // JSON
+  feedback     String   @default("")
+  evidenceId   String?
+  createdAt    DateTime @default(now())
+}
+
+model Evidence {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id])
+  skillIds  String   @default("[]")
+  kind      String   // diagnostic | attempt | transfer | retention | explanation | tutor | project
+  method    String   // deterministic | rubric | ai-interpretation | trace
+  strength  Float    @default(0.5) // 0..1 reliability of this evidence
+  value     String   @default("{}") // JSON payload
+  summary   String
+  lineage   String   @default("{}") // JSON provenance
+  taskId    String?
+  attemptId String?
+  createdAt DateTime @default(now())
+}
+
+model LearningEvent {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id])
+  type      String
+  skillId   String?
+  payload   String   @default("{}")
+  createdAt DateTime @default(now())
+}
+
+model Recommendation {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id])
+  action    String   @default("{}") // JSON {type, title, reason, ...}
+  reason    String
+  priority  Float    @default(0)
+  status    String   @default("pending") // pending | acted | dismissed
+  createdAt DateTime @default(now())
+}
+
+model HintUsage {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id])
+  taskId    String
+  level     Int
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  learnerId String
+  learner   Learner  @relation(fields: [learnerId], references: [id])
+  role      String   // user | assistant | system
+  content   String
+  intent    String?
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+}

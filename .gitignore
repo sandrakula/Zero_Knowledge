@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# env — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# database
+*.db
+*.db-journal
+/prisma/*.db
+/prisma/*.db-journal
+
+# misc
+.DS_Store
+*.pem
+*.log
+/coverage
+/.vscode
+.vercel
+*.tsbuildinfo
+next-env.d.ts

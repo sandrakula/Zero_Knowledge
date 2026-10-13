@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #08080d;
+  --surface: #101019;
+  --surface-2: #14141f;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #e8e8f0;
+  --text-muted: #9a9ab0;
+  --text-faint: #63637a;
+  --accent: #7c6cff;
+  --accent-soft: #a79bff;
+  --cyan: #22d3ee;
+  --mint: #34d399;
+  --amber: #fbbf24;
+  --rose: #fb7185;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+  overflow-x: hidden;
+}
+
+/* Ambient background glow */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(900px 520px at 18% -8%, rgba(124, 108, 255, 0.16), transparent 60%),
+    radial-gradient(720px 420px at 88% 6%, rgba(34, 211, 238, 0.10), transparent 55%),
+    radial-gradient(900px 600px at 50% 115%, rgba(91, 75, 240, 0.12), transparent 60%),
+    #08080d;
+}
+.app-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
+  pointer-events: none;
+}
+
+::selection {
+  background: rgba(124, 108, 255, 0.35);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+  background-clip: padding-box;
+}
+
+@layer components {
+  .glass {
+    @apply bg-ink-850/70 backdrop-blur-xl border border-white/[0.07];
+  }
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-ink-850/60 backdrop-blur-md;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:border-white/[0.14] hover:bg-ink-800/70;
+  }
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent-soft via-accent to-cyan bg-clip-text text-transparent;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white
+      shadow-glow transition-all duration-200 hover:bg-accent-deep hover:shadow-[0_8px_50px_-6px_rgba(124,108,255,0.7)]
+      active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-2.5 text-sm font-medium
+      text-text/90 transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.14] active:scale-[0.98] disabled:opacity-50;
+  }
+  .input {
+    @apply w-full rounded-xl border border-white/[0.08] bg-ink-900/70 px-3.5 py-2.5 text-sm text-text
+      placeholder:text-text-faint outline-none transition-all duration-200
+      focus:border-accent/60 focus:ring-2 focus:ring-accent/20;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-xs font-medium text-text-muted;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-text-faint;
+  }
+  .shimmer-text {
+    background: linear-gradient(110deg, rgba(255,255,255,0.25) 20%, rgba(255,255,255,0.85) 45%, rgba(255,255,255,0.25) 70%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 2.2s linear infinite;
+  }
+}
+
+/* Markdown prose (used for lessons, feedback, tutor) */
+.prose-lip {
+  @apply text-[15px] leading-7 text-text/90;
+}
+.prose-lip h1 { @apply mt-6 mb-3 text-2xl font-bold tracking-tight text-text; }
+.prose-lip h2 { @apply mt-6 mb-2 text-xl font-bold tracking-tight text-text; }
+.prose-lip h3 { @apply mt-5 mb-2 text-lg font-semibold text-text; }
+.prose-lip p { @apply my-3; }
+.prose-lip ul { @apply my-3 list-disc space-y-1.5 pl-6; }
+.prose-lip ol { @apply my-3 list-decimal space-y-1.5 pl-6; }
+.prose-lip li::marker { @apply text-accent-soft; }
+.prose-lip a { @apply text-accent-soft underline underline-offset-4; }
+.prose-lip strong { @apply font-semibold text-text; }
+.prose-lip em { @apply italic text-text-muted; }
+.prose-lip blockquote { @apply my-4 border-l-2 border-accent/50 pl-4 italic text-text-muted; }
+.prose-lip code {
+  @apply rounded-md border border-white/[0.08] bg-ink-900 px-1.5 py-0.5 font-mono text-[0.85em] text-cyan;
+}
+.prose-lip pre {
+  @apply my-4 overflow-x-auto rounded-xl border border-white/[0.08] bg-ink-950 p-4 text-sm leading-6;
+}
+.prose-lip pre code { @apply border-0 bg-transparent p-0 text-text; }
+.prose-lip table { @apply my-4 w-full border-collapse text-sm; }
+.prose-lip th, .prose-lip td { @apply border border-white/[0.08] px-3 py-2 text-left; }
+.prose-lip th { @apply bg-ink-900 font-semibold; }
+.prose-lip hr { @apply my-6 border-white/[0.08]; }
