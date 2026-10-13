@@ -4,7 +4,7 @@ import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
 import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
-import { createEvidence } from "./evidence";
+import { createEvidence, effectiveWeight, TASK_VALIDITY } from "./evidence";
 import { applyEvidence } from "./student-twin";
 import { buildRoadmapFromGoal } from "./roadmap";
 
@@ -143,28 +143,39 @@ export async function answerDiagnostic(input: {
   await prisma.diagnosticQuestion.delete({ where: { id: key.id } }).catch(() => {});
 
   const correct = input.selectedIndex === key.correctIndex;
+  // A keyed diagnostic question is deterministic but authored, so its validity
+  // multiplier is slightly below an executed test suite (see evidence.ts).
+  const strength = effectiveWeight({
+    method: "deterministic",
+    role: "primary",
+    taskValidity: TASK_VALIDITY.keyed,
+  });
   const value = {
     correct,
-    strength: 0.85,
+    strength,
     supportUsed: 0,
     hintsUsed: 0,
     cognitiveLevel: "apply",
     transferLevel: 0,
+    integrationLevel: 0,
     independenceRequired: 0,
     integrated: false,
     retentionCheck: false,
+    retentionDelayed: false,
+    taskFamily: "diagnostic",
     kind: "diagnostic",
     method: "deterministic",
     misconceptions: correct ? [] : key.misconception ? [key.misconception] : [],
   };
 
-  await applyEvidence({ learnerId: input.learnerId, skillIds: [input.skillId], value });
+  await applyEvidence({ learnerId: input.learnerId, skillIds: [input.skillId], primarySkillId: input.skillId, value });
   await createEvidence({
     learnerId: input.learnerId,
     skillIds: [input.skillId],
     kind: "diagnostic",
     method: "deterministic",
     value,
+    strength,
     summary: `Diagnostic ${correct ? "correct" : "incorrect"} on ${getSkill(input.skillId)?.name}`,
     lineage: { questionId: input.questionId, confidence: input.confidence, correct },
   });

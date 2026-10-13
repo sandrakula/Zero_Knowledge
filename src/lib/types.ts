@@ -1,45 +1,64 @@
 // Client-safe API response types (no server-only imports).
+// Mirrors the read models produced by src/lib/core (student-twin.ts, roadmap.ts).
 
+export type SkillStatus = "not_assessed" | "needs_attention" | "developing" | "demonstrated";
+export type EvidenceSufficiency = "none" | "insufficient" | "moderate" | "strong";
+
+/** Null metric values mean NOT ASSESSED — never fabricate a number (§7, §22). */
 export type CompetencySummarySkill = {
   skillId: string;
   name: string;
   domain: string;
-  mastery: number;
-  uncertainty: number;
-  support: string;
-  depth: string;
-  independence: number;
-  transfer: number;
-  retention: number;
+  status: SkillStatus;
+  mastery: number | null;
+  masteryInterval: { lower: number; upper: number } | null;
+  sufficiency: EvidenceSufficiency;
+  evidenceCount: number;
+  independentSuccesses: number;
+  taskFamilies: number;
+  depth: string | null;
+  independence: number | null;
+  application: number | null;
+  transfer: number | null;
+  retention: number | null;
+  supportDependence: number | null;
   attempts: number;
   successes: number;
-};
-
-export type RecentEvidence = {
-  id: string;
-  kind: string;
-  method: string;
-  summary: string;
-  strength: number;
-  createdAt: string;
-  skillIds: string[];
-};
-
-export type LearningEventView = {
-  type: string;
-  skillId: string | null;
-  createdAt: string;
-  payload: Record<string, unknown>;
+  lastAssessmentAt: string | null;
+  retentionDue: boolean;
 };
 
 export type StateSummary = {
   skills: CompetencySummarySkill[];
+  counts: {
+    assessed: number;
+    demonstrated: number;
+    developing: number;
+    needsAttention: number;
+    notAssessed: number;
+  };
   misconceptionCount: number;
   evidenceCount: number;
   attemptCount: number;
-  recentEvidence: RecentEvidence[];
+  recentEvidence: {
+    id: string;
+    kind: string;
+    method: string;
+    summary: string;
+    strength: number;
+    createdAt: string;
+    skillIds: string[];
+  }[];
+  recentAttempts: {
+    id: string;
+    passed: number;
+    total: number;
+    passedAll: boolean;
+    hintsUsed: number;
+    createdAt: string;
+  }[];
   recommendations: { action: Record<string, unknown>; reason: string; priority: number; createdAt: string }[];
-  events: LearningEventView[];
+  events: { type: string; skillId: string | null; createdAt: string; payload: Record<string, unknown> }[];
 };
 
 export type MisconceptionView = {
@@ -58,11 +77,32 @@ export type RoadmapItemView = {
   phase: string;
   title: string;
   description: string;
+  objective: string;
   skillIds: string[];
   type: string;
   status: string;
   contentId: string | null;
+  taskId: string | null;
   estimatedMinutes: number;
+  parentId: string | null;
+  optional: boolean;
+  origin: string;
+  /** Groups a tutor-created parallel practice branch (null for main path). */
+  branchKey: string | null;
+  depth: number;
+  completedAt: string | null;
+  /** Skill-rollup status, computed by the core (never by the component). */
+  skillStatus: SkillStatus;
+  /** How many of the item's skills are demonstrated. */
+  demonstratedSkills: number;
+  children: RoadmapItemView[];
+};
+
+export type TutorBranchView = {
+  branchKey: string;
+  parentItemId: string;
+  parentTitle: string;
+  nodes: RoadmapItemView[];
 };
 
 export type DomainStat = {
@@ -95,19 +135,19 @@ export type StateResponse = {
     id: string;
     summary: string;
     items: RoadmapItemView[];
+    tutorBranches: TutorBranchView[];
     progress: { total: number; completed: number };
   } | null;
   summary: StateSummary;
   misconceptions: MisconceptionView[];
   nextBest: NextBest;
   domainStats: DomainStat[];
-  skillsSeeded: number;
   materialCount: number;
-  /** Ring metrics, scoped to the topic currently being worked through. */
+  /** Ring metrics for the topic currently being worked through; null = not assessed. */
   goalMetrics: {
-    mastery: number;
-    independence: number;
-    transfer: number;
+    mastery: number | null;
+    independence: number | null;
+    transfer: number | null;
     touched: number;
     total: number;
   };
@@ -143,7 +183,8 @@ export type LearnResponse = {
     example: { input: string; expected: string };
     testCount: number;
   };
-  competency: Record<string, { mastery: number; depth: string; independence: number }>;
+  competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: SkillStatus }>;
+  nav: { prevId: string | null; nextId: string | null };
 };
 
 export type AttemptResponse = {
@@ -164,11 +205,41 @@ export type AttemptResponse = {
   competency: {
     skillId: string;
     name: string;
-    mastery: number;
-    uncertainty: number;
-    depth: string;
-    independence: number;
-    transfer: number;
-    support: string;
+    status: SkillStatus;
+    mastery: number | null;
+    masteryInterval: { lower: number; upper: number } | null;
+    sufficiency: EvidenceSufficiency;
+    evidenceCount: number;
+    independentSuccesses: number;
+    depth: string | null;
+    independence: number | null;
+    transfer: number | null;
   } | null;
 };
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  summary: string;
+  messageCount: number;
+  createdAt: string;
+  lastMessageAt: string;
+  archivedAt: string | null;
+};
+
+export type TutorMessage = {
+  id: string;
+  role: string;
+  content: string;
+  intent: string | null;
+  actionType: string | null;
+  skillIds: string[];
+  taskId: string | null;
+  roadmapItemId: string | null;
+  createdAt: string;
+};
+
+export type TutorActionResult =
+  | { type: "created_tasks"; branchKey: string; parentItemId: string; taskIds: string[]; titles: string[] }
+  | { type: "roadmap_edit"; nodeId: string; added: number; titles: string[] }
+  | { type: "error"; message: string };

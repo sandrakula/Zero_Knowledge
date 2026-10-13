@@ -1,5 +1,6 @@
-import { ProgressClient } from "@/components/progress/progress-client";
+import { redirect } from "next/navigation";
 
-export default function ProgressPage() {
-  return <ProgressClient />;
+/** Compatibility: Progress is now a tab of the unified Learning hub. */
+export default function ProgressRedirect() {
+  redirect("/learning?tab=progress");
 }

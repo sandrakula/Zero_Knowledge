@@ -40,7 +40,11 @@ export async function generateLesson(input: {
   const comps = [];
   for (const id of input.skillIds) {
     const c = await getCompetencyView(input.learnerId, id);
-    if (c) comps.push(`${c.name}: mastery ${c.mastery.toFixed(2)}, depth ${c.depth}, independence ${c.independence.toFixed(2)}`);
+    if (c) {
+      comps.push(
+        `${c.name}: status ${c.status}, mastery ${c.mastery === null ? "not assessed" : c.mastery.toFixed(2)}, depth ${c.depth ?? "n/a"}, independence ${c.independence === null ? "n/a" : c.independence.toFixed(2)}`,
+      );
+    }
   }
   const mis = await prisma.misconception.findMany({
     where: { learnerId: input.learnerId, status: { in: ["active", "monitoring"] }, skillId: { in: input.skillIds } },

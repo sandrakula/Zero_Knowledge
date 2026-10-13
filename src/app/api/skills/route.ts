@@ -1,32 +1,42 @@
-import { prisma } from "@/lib/db";
 import { DOMAINS, SKILLS } from "@/lib/core/knowledge-graph";
+import { getAllSkillMetrics } from "@/lib/core/student-twin";
 import { handle, requireUser } from "@/lib/api";
+import { emptySkillState, skillMetrics } from "@/lib/core/competency";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return handle(async () => {
     const userId = await requireUser();
-    const states = await prisma.competencyState.findMany({ where: { learnerId: userId } });
-    const byId = new Map(states.map((s) => [s.skillId, s]));
+    const metrics = await getAllSkillMetrics(userId);
+    const blank = skillMetrics(emptySkillState());
 
     const skills = SKILLS.map((s) => {
-      const st = byId.get(s.id);
+      const m = metrics.get(s.id) ?? blank;
       return {
         id: s.id,
         name: s.name,
         domain: s.domain,
+        description: s.description,
         difficulty: s.difficulty,
         category: s.category,
+        cognitiveLevel: s.cognitiveLevel,
         prerequisites: s.prerequisites,
-        mastery: st?.mastery ?? null,
-        uncertainty: st?.masteryUncertainty ?? 1,
-        depth: st?.depth ?? null,
-        independence: st?.independence ?? null,
-        transfer: st?.transfer ?? null,
-        retention: st?.retention ?? null,
-        attempts: st?.attempts ?? 0,
-        seen: Boolean(st),
+        // Null means NOT ASSESSED — the UI must never invent a percentage.
+        status: m.status,
+        mastery: m.mastery.value,
+        masteryInterval: m.masteryInterval,
+        sufficiency: m.sufficiency,
+        evidenceCount: m.evidenceCount,
+        independentSuccesses: m.independentSuccesses,
+        taskFamilies: m.taskFamilies,
+        depth: m.depth,
+        independence: m.independence.value,
+        application: m.application.value,
+        transfer: m.transfer.value,
+        retention: m.retention.value,
+        supportDependence: m.supportDependence.value,
+        lastAssessmentAt: m.lastAssessmentAt,
       };
     });
 

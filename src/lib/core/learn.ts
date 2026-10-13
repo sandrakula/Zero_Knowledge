@@ -3,6 +3,8 @@ import { getSkill } from "./knowledge-graph";
 import { ensureLessonForItem } from "./content";
 import { generateTask, persistTask } from "./taskgen";
 import { getCompetencyView } from "./student-twin";
+import { classifyActivity } from "./competency";
+import { getOwnedNode, getFlattenedOrder } from "./roadmap";
 
 // ─────────────────────────────────────────────────────────────
 // Learning session orchestration (§8, §238). Opens a roadmap item into
@@ -43,10 +45,20 @@ export async function openLearnItem(input: {
     example: { input: string; expected: string };
     testCount: number;
   };
-  competency: Record<string, { mastery: number; depth: string; independence: number }>;
+  competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: string }>;
+  nav: { prevId: string | null; nextId: string | null };
 }> {
-  const item = await prisma.roadmapItem.findUnique({ where: { id: input.itemId } });
+  // Ownership check (§64): a learner may only open their own roadmap nodes.
+  const item = await getOwnedNode(input.learnerId, input.itemId);
   if (!item) throw new Error("Roadmap item not found");
+
+  // Sequential full-cycle navigation: roots followed by their substeps, in order.
+  const order = await getFlattenedOrder(item.roadmapId);
+  const pos = order.indexOf(item.id);
+  const nav = {
+    prevId: pos > 0 ? order[pos - 1] : null,
+    nextId: pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null,
+  };
 
   const skillIds = JSON.parse(item.skillIds) as string[];
 
@@ -65,13 +77,15 @@ export async function openLearnItem(input: {
     const comp = await getCompetencyView(input.learnerId, primary);
     const difficulty = clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3);
 
+    const activity = classifyActivity(item.type, skillIds.length);
     const task = await generateTask({
       skillIds,
       difficulty,
-      cognitiveLevel: item.type === "transfer" ? "analyze" : "apply",
-      transferLevel: item.type === "transfer" ? 0.8 : item.type === "project" ? 0.5 : 0.15,
+      cognitiveLevel: activity.cognitiveLevel,
+      transferLevel: activity.transferLevel,
+      integrationLevel: activity.integrationLevel,
       independenceRequired: item.type === "assessment" ? 0.9 : 0.5,
-      misconceptions: comp?.misconceptions,
+      misconceptions: comp?.misconceptions ?? [],
       language: input.language,
     });
 
@@ -84,10 +98,10 @@ export async function openLearnItem(input: {
 
   const tests = JSON.parse(taskRecord.tests) as { input: string; expected: string }[];
 
-  const competency: Record<string, { mastery: number; depth: string; independence: number }> = {};
+  const competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: string }> = {};
   for (const id of skillIds) {
     const c = await getCompetencyView(input.learnerId, id);
-    if (c) competency[id] = { mastery: c.mastery, depth: c.depth, independence: c.independence };
+    if (c) competency[id] = { mastery: c.mastery, depth: c.depth, independence: c.independence, status: c.status };
   }
 
   return {
@@ -121,6 +135,7 @@ export async function openLearnItem(input: {
       testCount: tests.length,
     },
     competency,
+    nav,
   };
 }
 

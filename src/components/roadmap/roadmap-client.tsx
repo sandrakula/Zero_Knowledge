@@ -2,42 +2,98 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Check, Loader2, Lock, Play, Route, Target } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Route, Sparkles, Target } from "lucide-react";
 import { useI18n } from "@/components/i18n";
+import { StatusDot, StatusLegend } from "@/components/learning/status";
 import { cn } from "@/lib/utils";
-import type { StateResponse, RoadmapItemView } from "@/lib/types";
+import type { StateResponse, RoadmapItemView, TutorBranchView } from "@/lib/types";
 
 const TYPE_COLOR: Record<string, string> = {
   lesson: "#7c6cff",
+  concept: "#7c6cff",
+  example: "#a79bff",
+  practice: "#22d3ee",
   task: "#22d3ee",
   project: "#34d399",
   assessment: "#fbbf24",
+  diagnostic: "#fbbf24",
   retention: "#a79bff",
   transfer: "#fb7185",
 };
 
 export function RoadmapClient() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     fetch("/api/state")
       .then((r) => r.json())
       .then((d) => (d.error ? setError(d.error) : setState(d)))
       .catch((e) => setError(e.message));
+  };
+
+  useEffect(load, []);
+
+  // Reflect tutor-made roadmap edits immediately (§ — tutor changes the plan in place).
+  useEffect(() => {
+    const reload = () => load();
+    window.addEventListener("zk:roadmap-changed", reload);
+    return () => window.removeEventListener("zk:roadmap-changed", reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const phases = useMemo(() => {
     if (!state?.roadmap) return [];
     const map = new Map<string, RoadmapItemView[]>();
     for (const item of state.roadmap.items) {
-      if (!map.has(item.phase)) map.set(item.phase, []);
-      map.get(item.phase)!.push(item);
+      const key = item.phase.split(" · ")[0];
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
     }
     return [...map.entries()];
   }, [state]);
+
+  async function rebuild() {
+    if (!state?.goal) return;
+    setRebuilding(true);
+    setError("");
+    try {
+      const res = await fetch("/api/roadmap/regenerate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goalId: state.goal.id, lang }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? t("common.error"));
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setRebuilding(false);
+    }
+  }
+
+  async function breakDown(nodeId: string) {
+    setBusy(nodeId);
+    try {
+      const res = await fetch("/api/roadmap/substeps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodeId, lang }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? t("common.error"));
+      setExpanded((e) => ({ ...e, [nodeId]: true }));
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   if (error) return <p className="text-rose">{error}</p>;
   if (!state) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
@@ -47,22 +103,32 @@ export function RoadmapClient() {
   const total = roadmap?.progress.total ?? 1;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="eyebrow flex items-center gap-2"><Route className="h-3.5 w-3.5" /> {t("roadmap.title")}</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">{goal?.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-muted">{roadmap?.summary}</p>
-
-        <div className="mt-5 max-w-md">
-          <div className="mb-1.5 flex justify-between text-xs text-text-faint">
-            <span>{done} {t("home.total")} {total}</span>
-            <span>{Math.round((done / total) * 100)}%</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
-            <motion.div className="h-full rounded-full bg-gradient-to-r from-accent to-cyan" initial={{ width: 0 }} animate={{ width: `${(done / total) * 100}%` }} transition={{ duration: 1, ease: "easeOut" }} />
-          </div>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0 space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="eyebrow flex items-center gap-2"><Route className="h-3.5 w-3.5" /> {t("roadmap.title")}</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">{goal?.title}</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-muted">{roadmap?.summary}</p>
         </div>
-        <p className="mt-3 text-xs text-text-faint">{t("roadmap.hypothesis")}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={rebuild} disabled={rebuilding} className="btn-ghost px-3 py-1.5 text-xs">
+            {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {rebuilding ? t("roadmap.rebuilding") : t("roadmap.rebuild")}
+          </button>
+          <StatusLegend />
+        </div>
+      </div>
+
+      <div className="max-w-md">
+        <div className="mb-1.5 flex justify-between text-xs text-text-faint">
+          <span>{done} / {total}</span>
+          <span>{Math.round((done / total) * 100)}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+          <motion.div className="h-full rounded-full bg-gradient-to-r from-accent to-cyan" initial={{ width: 0 }} animate={{ width: `${(done / total) * 100}%` }} transition={{ duration: 1, ease: "easeOut" }} />
+        </div>
+        <p className="mt-2 text-xs text-text-faint">{t("hub.roadmapNote")}</p>
       </div>
 
       <div className="space-y-8">
@@ -72,47 +138,17 @@ export function RoadmapClient() {
               <span className="grid h-6 w-6 place-items-center rounded-md bg-white/[0.05] text-xs text-accent-soft">{pi + 1}</span>
               {phase}
             </h2>
-            <div className="mt-3 space-y-2.5">
-              {items.map((item, i) => {
-                const color = TYPE_COLOR[item.type] ?? TYPE_COLOR.lesson;
-                const locked = item.status === "locked";
-                const doneItem = item.status === "completed";
-                const clickable = item.status === "ready" || item.status === "active";
-                const Inner = (
-                  <div className={cn(
-                    "group relative flex items-start gap-4 rounded-2xl border p-4 transition-all",
-                    locked ? "border-white/[0.04] bg-white/[0.01] opacity-50" : "border-white/[0.08] bg-ink-850/60 hover:border-white/[0.16] hover:bg-ink-800/70",
-                    doneItem && "border-mint/25 bg-mint/[0.04]",
-                    clickable && "border-accent/30",
-                  )}>
-                    <div className="mt-0.5">
-                      {doneItem ? (
-                        <span className="grid h-7 w-7 place-items-center rounded-full bg-mint/15 text-mint"><Check className="h-4 w-4" /></span>
-                      ) : locked ? (
-                        <span className="grid h-7 w-7 place-items-center rounded-full bg-white/[0.04] text-text-faint"><Lock className="h-3.5 w-3.5" /></span>
-                      ) : (
-                        <span className="grid h-7 w-7 place-items-center rounded-full border border-accent/40 bg-accent/10 text-accent-soft"><Play className="h-3.5 w-3.5" /></span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-text">{item.title}</p>
-                        <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color, background: `${color}1a` }}>
-                          {t(`type.${item.type}`)}
-                        </span>
-                        <span className="text-[11px] text-text-faint">{item.estimatedMinutes}m</span>
-                      </div>
-                      <p className="mt-1 text-sm leading-relaxed text-text-muted">{item.description}</p>
-                    </div>
-                    {clickable && <span className="text-xs font-medium text-accent-soft opacity-0 transition-opacity group-hover:opacity-100">{t("roadmap.start")} →</span>}
-                  </div>
-                );
-                return (
-                  <motion.div key={item.id} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: i * 0.04 }}>
-                    {clickable ? <Link href={`/learn/${item.id}`}>{Inner}</Link> : Inner}
-                  </motion.div>
-                );
-              })}
+            <div className="mt-3 space-y-2">
+              {items.map((item) => (
+                <NodeRow
+                  key={item.id}
+                  node={item}
+                  expanded={Boolean(expanded[item.id])}
+                  onToggle={() => setExpanded((e) => ({ ...e, [item.id]: !e[item.id] }))}
+                  onBreakDown={() => breakDown(item.id)}
+                  busy={busy === item.id}
+                />
+              ))}
             </div>
           </div>
         ))}
@@ -124,6 +160,131 @@ export function RoadmapClient() {
           <p className="mt-3 text-sm text-text-muted">{t("roadmap.none")}</p>
         </div>
       )}
+      </div>
+
+      <aside className="h-fit space-y-4 xl:sticky xl:top-8">
+        <TutorPracticePanel branches={roadmap?.tutorBranches ?? []} />
+      </aside>
     </div>
+  );
+}
+
+/** Side panel listing every tutor-generated practice branch, kept out of the main path. */
+function TutorPracticePanel({ branches }: { branches: TutorBranchView[] }) {
+  const { t } = useI18n();
+  if (branches.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-cyan/20 bg-cyan/[0.03] p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-cyan">
+        <Sparkles className="h-4 w-4" /> {t("roadmap.tutorBranch")}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-text-faint">{t("roadmap.tutorBranchHint")}</p>
+      <div className="mt-3 space-y-4">
+        {branches.map((b) => (
+          <div key={b.branchKey}>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-text-muted">
+              {t("roadmap.forTopic")} · {b.parentTitle}
+            </p>
+            <div className="mt-1.5 space-y-1.5">
+              {b.nodes.map((n) => (
+                <Link key={n.id} href={`/learn/${n.id}`} className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-ink-900/50 px-3 py-2 text-xs text-text transition-colors hover:border-cyan/40">
+                  <Play className="h-3 w-3 shrink-0 text-cyan" />
+                  <span className="min-w-0 flex-1 truncate">{n.title}</span>
+                  <StatusDot status={n.skillStatus} />
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NodeRow({
+  node,
+  expanded,
+  onToggle,
+  onBreakDown,
+  busy,
+  child = false,
+}: {
+  node: RoadmapItemView;
+  expanded: boolean;
+  onToggle: () => void;
+  onBreakDown: () => void;
+  busy: boolean;
+  child?: boolean;
+}) {
+  const { t } = useI18n();
+  const color = TYPE_COLOR[node.type] ?? TYPE_COLOR.lesson;
+  const locked = node.status === "locked";
+  const doneItem = node.status === "completed";
+  // All topics are always open (§ "все темы открыты всегда") — any node may be
+  // opened, including legacy "locked" rows and completed steps.
+  const clickable = node.status === "ready" || node.status === "active" || node.status === "completed" || node.status === "locked";
+  const hasChildren = node.children.length > 0;
+
+  const body = (
+    <div className={cn(
+      "group relative flex items-start gap-3 rounded-2xl border p-4 transition-all",
+      child ? "ml-4 sm:ml-8" : "",
+      locked ? "border-white/[0.04] bg-white/[0.01] opacity-60" : "border-white/[0.08] bg-ink-850/60 hover:border-white/[0.16]",
+      doneItem && "border-mint/25 bg-mint/[0.04]",
+      node.status === "active" && "border-accent/40",
+    )}>
+      <div className="mt-0.5">
+        <StatusDot status={node.skillStatus} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {doneItem && <Check className="h-3.5 w-3.5 text-mint" />}
+          {locked && <Lock className="h-3 w-3 text-text-faint" />}
+          {!locked && !doneItem && <Play className="h-3 w-3 text-accent-soft" />}
+          <p className={cn("font-medium", child ? "text-sm text-text/90" : "text-text")}>{node.title}</p>
+          <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color, background: `${color}1a` }}>
+            {t(`type.${node.type}`) === `type.${node.type}` ? node.type : t(`type.${node.type}`)}
+          </span>
+          {node.optional && <span className="chip">{t("roadmap.optional")}</span>}
+          {node.origin === "tutor" && <span className="chip border-cyan/30 text-cyan"><Sparkles className="h-3 w-3" /> {t("roadmap.tutorBranch")}</span>}
+          <span className="text-[11px] text-text-faint">{node.estimatedMinutes}m</span>
+          <span className="text-[11px] text-text-faint">· {t(`status.${node.skillStatus}`)}</span>
+        </div>
+        {node.objective && <p className="mt-1 text-xs text-text-muted">{node.objective}</p>}
+        {node.description && <p className="mt-1 text-sm leading-relaxed text-text-muted">{node.description}</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }}>
+      {clickable ? <Link href={`/learn/${node.id}`}>{body}</Link> : body}
+
+      {!child && hasChildren && (
+        <button onClick={onToggle} className="ml-4 mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-text-faint transition-colors hover:text-accent-soft sm:ml-8">
+          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {expanded ? t("roadmap.collapse") : t("roadmap.expand")}
+        </button>
+      )}
+
+      {!child && !hasChildren && (
+        <button onClick={onBreakDown} disabled={busy} className="ml-4 mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-text-faint transition-colors hover:text-accent-soft sm:ml-8">
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} {t("roadmap.breakDown")}
+        </button>
+      )}
+
+      <AnimatePresence initial={false}>
+        {expanded && hasChildren && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="mt-2 space-y-2">
+              {node.children.map((ch) => (
+                <NodeRow key={ch.id} node={ch} expanded={false} onToggle={() => {}} onBreakDown={() => {}} busy={false} child />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

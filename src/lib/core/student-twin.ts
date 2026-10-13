@@ -1,101 +1,162 @@
+import type { CompetencyState } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { clamp } from "@/lib/utils";
 import { getSkill, misconception } from "./knowledge-graph";
-import { initialMastery, promoteDepth, supportTier, updateMastery } from "./mastery";
+import { posteriorMean, posteriorStd, retentionEstimate } from "./mastery";
+import {
+  applyEvidenceToSkill,
+  classifySkill,
+  emptySkillState,
+  skillMetrics,
+  RULES,
+  type SkillState,
+} from "./competency";
+import { effectiveWeight, observedScore, TASK_VALIDITY } from "./evidence";
 import type { CompetencyView, EvidencePayload, MisconceptionView } from "./types";
 
 // ─────────────────────────────────────────────────────────────
 // Student Learning Twin (§10–21).
-// A persistent, evidence-based competency model. Not a personality
-// profile — an educational state model that can always be explained.
+//
+// This module does ONE thing: it loads the persisted state, delegates every
+// rule to the pure competency core, and writes the result back. All metric
+// mathematics lives in mastery.ts / competency.ts / evidence.ts.
 // ─────────────────────────────────────────────────────────────
+
+const DEFAULT_VALIDITY: Record<string, number> = {
+  diagnostic: TASK_VALIDITY.keyed,
+  attempt: TASK_VALIDITY.validated,
+  tutor: TASK_VALIDITY.unvalidated,
+};
+
+function toSkillState(s: CompetencyState): SkillState {
+  return {
+    alpha: s.masteryAlpha,
+    beta: s.masteryBeta,
+    depth: s.depth,
+    independence: s.independence,
+    application: s.application,
+    transfer: s.transfer,
+    retention: s.retention,
+    evidenceCount: s.evidenceCount,
+    attempts: s.attempts,
+    independentSuccesses: s.independentSuccesses,
+    integrationAttempts: s.integrationAttempts,
+    transferAttempts: s.transferAttempts,
+    retentionChecks: s.retentionChecks,
+    retentionSuccesses: s.retentionSuccesses,
+    supportDependence: s.supportDependence,
+    taskFamilies: safeJson<string[]>(s.taskFamilies, []),
+    depthCounts: safeJson<Record<string, number>>(s.depthCounts, {}),
+    lastRetrievedAt: s.lastRetrievedAt,
+    lastAssessmentAt: s.lastAssessmentAt,
+  };
+}
+
+function safeJson<T>(raw: string, fallback: T): T {
+  try {
+    const v = JSON.parse(raw);
+    return (v ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 async function ensureCompetency(learnerId: string, skillId: string) {
   const existing = await prisma.competencyState.findUnique({
     where: { learnerId_skillId: { learnerId, skillId } },
   });
   if (existing) return existing;
-  const init = initialMastery();
   return prisma.competencyState.create({
     data: {
       learnerId,
       skillId,
-      mastery: init.mastery,
-      masteryUncertainty: init.uncertainty,
-      depth: "recognition",
-      independence: 0,
-      application: 0,
-      transfer: 0,
-      retention: 1,
+      masteryAlpha: 1,
+      masteryBeta: 3,
+      mastery: 0.25,
+      masteryUncertainty: 0.5,
+      retention: 0,
     },
   });
 }
 
-/** Apply one piece of evidence to every affected skill's competency vector. */
+function roleFor(skillId: string, primarySkillId: string | undefined, skillIds: string[]): "primary" | "supporting" {
+  const primary = primarySkillId ?? skillIds[0];
+  return skillId === primary ? "primary" : "supporting";
+}
+
+/**
+ * Apply one piece of evidence to every affected skill's competency vector.
+ *
+ * The primary target skill receives full evidence weight; supporting skills
+ * receive a reduced weight (§14). Every dimension has an explicit trigger in
+ * the competency core — nothing moves merely because something happened.
+ */
 export async function applyEvidence(input: {
   learnerId: string;
   skillIds: string[];
+  primarySkillId?: string;
   value: EvidencePayload;
 }): Promise<void> {
   const { learnerId, skillIds, value } = input;
+  if (skillIds.length === 0) return;
+
+  const taskValidity = value.taskValidity ?? DEFAULT_VALIDITY[value.kind] ?? TASK_VALIDITY.validated;
+  const q = observedScore({
+    correct: value.correct,
+    passedRatio: value.passedRatio,
+    supportUsed: value.supportUsed,
+  });
+  const at = new Date();
 
   for (const skillId of skillIds) {
-    const state = await ensureCompetency(learnerId, skillId);
-    const supportWeight = clamp(value.supportUsed, 0, 1);
+    const row = await ensureCompetency(learnerId, skillId);
+    const role = roleFor(skillId, input.primarySkillId, skillIds);
+    const weight = effectiveWeight({
+      method: value.method,
+      role,
+      taskValidity,
+      relevance: role === "primary" ? 1 : 0.6,
+    });
 
-    const m = updateMastery(
-      { mastery: state.mastery, uncertainty: state.masteryUncertainty },
-      value.correct,
-      value.strength,
-    );
-
-    // Independence: grows on unsupported success, shrinks on help reliance.
-    const independenceTarget = value.correct
-      ? clamp(1 - supportWeight)
-      : clamp(state.independence - 0.15, 0, 1);
-    const independence = clamp(state.independence + 0.25 * (independenceTarget - state.independence));
-
-    // Application/integration: only integration tasks move it (§16).
-    let application = state.application;
-    if (value.integrated) {
-      application = clamp(state.application + (value.correct ? 0.18 : -0.12));
-    }
-
-    // Transfer: distinct from repetition (§17).
-    let transfer = state.transfer;
-    if (value.transferLevel > 0) {
-      transfer = clamp(state.transfer + (value.correct ? 0.2 : -0.08));
-    }
-
-    // Retention: retrieval success raises it, failures decay it (§18).
-    let retention = state.retention;
-    if (value.retentionCheck) {
-      retention = clamp(state.retention + (value.correct ? 0.25 : -0.35));
-    } else {
-      retention = clamp(retention * 0.99 + 0.01);
-    }
-
-    // Cognitive depth only advances on genuinely independent success.
-    const depth =
-      value.correct && supportWeight < 0.5
-        ? promoteDepth(state.depth, value.cognitiveLevel)
-        : state.depth;
+    const next = applyEvidenceToSkill(toSkillState(row), {
+      q,
+      weight,
+      correct: value.correct,
+      supportUsed: value.supportUsed,
+      integrationLevel: value.integrationLevel ?? 0,
+      transferLevel: value.transferLevel ?? 0,
+      retentionCheck: value.retentionCheck,
+      retentionDelayed: value.retentionDelayed ?? false,
+      cognitiveLevel: value.cognitiveLevel,
+      taskFamily: value.taskFamily ?? "",
+      at,
+    });
 
     await prisma.competencyState.update({
-      where: { id: state.id },
+      where: { id: row.id },
       data: {
-        mastery: m.mastery,
-        masteryUncertainty: m.uncertainty,
-        depth,
-        independence,
-        application,
-        transfer,
-        retention,
-        attempts: { increment: 1 },
+        masteryAlpha: next.alpha,
+        masteryBeta: next.beta,
+        mastery: posteriorMean({ alpha: next.alpha, beta: next.beta }),
+        masteryUncertainty: posteriorStd({ alpha: next.alpha, beta: next.beta }),
+        depth: next.depth,
+        independence: next.independence,
+        application: next.application,
+        transfer: next.transfer,
+        retention: next.retention,
+        evidenceCount: next.evidenceCount,
+        attempts: next.attempts,
         successes: value.correct ? { increment: 1 } : undefined,
-        hintDependence: clamp(state.hintDependence + (value.hintsUsed > 0 ? 0.12 : -0.05)),
-        lastSeenAt: new Date(),
-        lastRetrievedAt: value.retentionCheck ? new Date() : undefined,
+        independentSuccesses: next.independentSuccesses,
+        integrationAttempts: next.integrationAttempts,
+        transferAttempts: next.transferAttempts,
+        retentionChecks: next.retentionChecks,
+        retentionSuccesses: next.retentionSuccesses,
+        supportDependence: next.supportDependence,
+        taskFamilies: JSON.stringify(next.taskFamilies),
+        depthCounts: JSON.stringify(next.depthCounts),
+        lastSeenAt: at,
+        lastAssessmentAt: next.lastAssessmentAt,
+        lastRetrievedAt: next.lastRetrievedAt,
       },
     });
   }
@@ -104,11 +165,15 @@ export async function applyEvidence(input: {
   const detected = value.misconceptions ?? [];
   for (const skillId of skillIds) {
     for (const code of detected) {
-      const def = misconception(code);
+      const def = misconceptionOf(code);
       if (!def || !def.affectedSkills.includes(skillId)) continue;
       await applyMisconceptionSignal(learnerId, skillId, code, value);
     }
   }
+}
+
+function misconceptionOf(code: string) {
+  return misconception(code);
 }
 
 async function applyMisconceptionSignal(
@@ -121,7 +186,7 @@ async function applyMisconceptionSignal(
     where: { learnerId_skillId_code: { learnerId, skillId, code } },
   });
 
-  if (value.correct && value.supportUsed < 0.5) {
+  if (value.correct && value.supportUsed < RULES.independenceThreshold) {
     // Contradicting evidence: resolve only after sustained independent success.
     if (!existing) return;
     if (existing.status === "monitoring") {
@@ -132,50 +197,68 @@ async function applyMisconceptionSignal(
     } else {
       await prisma.misconception.update({
         where: { id: existing.id },
-        data: { status: "monitoring", confidence: clamp(existing.confidence - 0.35) },
+        data: { status: "monitoring", confidence: Math.max(0, existing.confidence - 0.35) },
       });
     }
     return;
   }
 
-  const def = misconception(code);
+  const def = misconceptionOf(code);
   if (!existing) {
     await prisma.misconception.create({
-      data: {
-        learnerId,
-        skillId,
-        code,
-        description: def?.name ?? code,
-        confidence: 0.5,
-        status: "active",
-      },
+      data: { learnerId, skillId, code, description: def?.name ?? code, confidence: 0.5, status: "active" },
     });
   } else {
     await prisma.misconception.update({
       where: { id: existing.id },
       data: {
-        confidence: clamp(existing.confidence + 0.25),
+        confidence: Math.min(1, existing.confidence + 0.25),
         status: existing.status === "resolved" ? "monitoring" : "active",
       },
     });
   }
 }
 
+/** All skills' metrics in one pass — used by the knowledge map and hub. */
+export async function getAllSkillMetrics(learnerId: string) {
+  const [states, misconceptions] = await Promise.all([
+    prisma.competencyState.findMany({ where: { learnerId } }),
+    prisma.misconception.findMany({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
+  ]);
+  const miscBySkill = new Map<string, { status: string; confidence: number }[]>();
+  for (const m of misconceptions) {
+    const arr = miscBySkill.get(m.skillId) ?? [];
+    arr.push({ status: m.status, confidence: m.confidence });
+    miscBySkill.set(m.skillId, arr);
+  }
+  const now = new Date();
+  const map = new Map<string, ReturnType<typeof skillMetrics>>();
+  for (const row of states) {
+    map.set(row.skillId, skillMetrics(toSkillState(row), miscBySkill.get(row.skillId) ?? [], now));
+  }
+  return map;
+}
+
+/** Read one skill's competency view — the only shape the UI may consume. */
 export async function getCompetencyView(
   learnerId: string,
   skillId: string,
 ): Promise<CompetencyView | null> {
-  const state = await prisma.competencyState.findUnique({
-    where: { learnerId_skillId: { learnerId, skillId } },
-  });
   const skill = getSkill(skillId);
   if (!skill) return null;
-
-  const misconceptions = state
+  const row = await prisma.competencyState.findUnique({
+    where: { learnerId_skillId: { learnerId, skillId } },
+  });
+  const misconceptions = row
     ? await prisma.misconception.findMany({
         where: { learnerId, skillId, status: { in: ["active", "monitoring"] } },
       })
     : [];
+  const state = row ? toSkillState(row) : emptySkillState();
+  const m = skillMetrics(
+    state,
+    misconceptions.map((x) => ({ status: x.status, confidence: x.confidence })),
+  );
 
   return {
     skillId,
@@ -183,19 +266,22 @@ export async function getCompetencyView(
     domain: skill.domain,
     category: skill.category,
     difficulty: skill.difficulty,
-    mastery: state?.mastery ?? initialMastery().mastery,
-    uncertainty: state?.masteryUncertainty ?? 1,
-    support: supportTier(state?.masteryUncertainty ?? 1),
-    depth: state?.depth ?? "recognition",
-    independence: state?.independence ?? 0,
-    application: state?.application ?? 0,
-    transfer: state?.transfer ?? 0,
-    retention: state?.retention ?? 1,
-    attempts: state?.attempts ?? 0,
-    successes: state?.successes ?? 0,
-    hintDependence: state?.hintDependence ?? 0,
-    lastSeenAt: state?.lastSeenAt?.toISOString() ?? null,
-    misconceptions: misconceptions.map((m) => m.code),
+    status: m.status,
+    mastery: m.mastery.value,
+    masteryInterval: m.masteryInterval,
+    sufficiency: m.sufficiency,
+    evidenceCount: m.evidenceCount,
+    independentSuccesses: m.independentSuccesses,
+    taskFamilies: m.taskFamilies,
+    lastAssessmentAt: m.lastAssessmentAt,
+    depth: m.depth,
+    independence: m.independence.value,
+    application: m.application.value,
+    transfer: m.transfer.value,
+    retention: m.retention.value,
+    supportDependence: m.supportDependence.value,
+    attempts: state.attempts,
+    misconceptions: misconceptions.map((x) => x.code),
   };
 }
 
@@ -204,60 +290,82 @@ export async function getActiveMisconceptions(learnerId: string): Promise<Miscon
     where: { learnerId, status: { in: ["active", "monitoring"] } },
     orderBy: { confidence: "desc" },
   });
-  return rows
-    .map((r) => {
-      const def = misconception(r.code);
-      return {
-        code: r.code,
-        name: def?.name ?? r.description,
-        description: def?.description ?? r.description,
-        skillId: r.skillId,
-        confidence: r.confidence,
-        status: r.status,
-        correction: def?.correction ?? "",
-      };
-    })
-    .filter((x) => x !== null) as MisconceptionView[];
+  return rows.map((r) => {
+    const def = misconceptionOf(r.code);
+    return {
+      code: r.code,
+      name: def?.name ?? r.description,
+      description: def?.description ?? r.description,
+      skillId: r.skillId,
+      confidence: r.confidence,
+      status: r.status,
+      correction: def?.correction ?? "",
+    };
+  });
 }
 
+/** Aggregate learner summary used by the home page and the Learning hub. */
 export async function getLearnerSummary(learnerId: string) {
-  const [competencies, misconceptions, evidence, recommendations, events] = await Promise.all([
+  const [competencies, misconceptions, evidence, recommendations, events, attempts] = await Promise.all([
     prisma.competencyState.findMany({ where: { learnerId } }),
     prisma.misconception.findMany({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
-    prisma.evidence.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 30 }),
-    prisma.recommendation.findMany({
-      where: { learnerId, status: "pending" },
-      orderBy: { priority: "desc" },
-      take: 5,
-    }),
-    prisma.learningEvent.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 20 }),
+    prisma.evidence.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 40 }),
+    prisma.recommendation.findMany({ where: { learnerId, status: "pending" }, orderBy: { priority: "desc" }, take: 5 }),
+    prisma.learningEvent.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 25 }),
+    prisma.taskAttempt.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 50 }),
   ]);
 
-  const seen = new Set<string>();
+  const now = new Date();
+  const miscBySkill = new Map<string, { status: string; confidence: number }[]>();
+  for (const m of misconceptions) {
+    const arr = miscBySkill.get(m.skillId) ?? [];
+    arr.push({ status: m.status, confidence: m.confidence });
+    miscBySkill.set(m.skillId, arr);
+  }
+
   const skills = competencies.map((c) => {
     const skill = getSkill(c.skillId);
-    seen.add(c.skillId);
+    const state = toSkillState(c);
+    const mk = skillMetrics(state, miscBySkill.get(c.skillId) ?? [], now);
     return {
       skillId: c.skillId,
       name: skill?.name ?? c.skillId,
       domain: skill?.domain ?? "",
-      mastery: c.mastery,
-      uncertainty: c.masteryUncertainty,
-      support: supportTier(c.masteryUncertainty),
-      depth: c.depth,
-      independence: c.independence,
-      transfer: c.transfer,
-      retention: c.retention,
+      status: mk.status,
+      mastery: mk.mastery.value,
+      masteryInterval: mk.masteryInterval,
+      sufficiency: mk.sufficiency,
+      evidenceCount: mk.evidenceCount,
+      independentSuccesses: mk.independentSuccesses,
+      taskFamilies: mk.taskFamilies,
+      depth: mk.depth,
+      independence: mk.independence.value,
+      application: mk.application.value,
+      transfer: mk.transfer.value,
+      retention: mk.retention.value,
+      supportDependence: mk.supportDependence.value,
       attempts: c.attempts,
       successes: c.successes,
+      lastAssessmentAt: mk.lastAssessmentAt,
+      retentionDue:
+        c.retentionChecks > 0 && retentionEstimate(c.retention, c.lastRetrievedAt, now) < 0.6,
     };
   });
 
+  const counts = {
+    assessed: skills.filter((s) => s.status !== "not_assessed").length,
+    demonstrated: skills.filter((s) => s.status === "demonstrated").length,
+    developing: skills.filter((s) => s.status === "developing").length,
+    needsAttention: skills.filter((s) => s.status === "needs_attention").length,
+    notAssessed: skills.filter((s) => s.status === "not_assessed").length,
+  };
+
   return {
     skills,
+    counts,
     misconceptionCount: misconceptions.length,
     evidenceCount: await prisma.evidence.count({ where: { learnerId } }),
-    attemptCount: await prisma.taskAttempt.count({ where: { learnerId } }),
+    attemptCount: attempts.length,
     recentEvidence: evidence.map((e) => ({
       id: e.id,
       kind: e.kind,
@@ -265,10 +373,18 @@ export async function getLearnerSummary(learnerId: string) {
       summary: e.summary,
       strength: e.strength,
       createdAt: e.createdAt.toISOString(),
-      skillIds: JSON.parse(e.skillIds) as string[],
+      skillIds: safeJson<string[]>(e.skillIds, []),
+    })),
+    recentAttempts: attempts.slice(0, 15).map((a) => ({
+      id: a.id,
+      passed: a.passed,
+      total: a.total,
+      passedAll: a.passedAll,
+      hintsUsed: a.hintsUsed,
+      createdAt: a.createdAt.toISOString(),
     })),
     recommendations: recommendations.map((r) => ({
-      action: JSON.parse(r.action),
+      action: safeJson<Record<string, unknown>>(r.action, {}),
       reason: r.reason,
       priority: r.priority,
       createdAt: r.createdAt.toISOString(),
@@ -277,25 +393,28 @@ export async function getLearnerSummary(learnerId: string) {
       type: e.type,
       skillId: e.skillId,
       createdAt: e.createdAt.toISOString(),
-      payload: JSON.parse(e.payload),
+      payload: safeJson<Record<string, unknown>>(e.payload, {}),
     })),
   };
 }
 
-/** Compute "what should I do next?" — the recommendation engine (§236, §211). */
+/**
+ * "What should I do next?" (§11.13). Candidates are scored from evidence and
+ * retention state — never from a mysterious global number.
+ */
 export async function recommendNext(learnerId: string, roadmapId?: string) {
-  const [competencies, roadmapItems] = await Promise.all([
+  const now = new Date();
+  const [competencies, roadmapItems, activeMisconceptions] = await Promise.all([
     prisma.competencyState.findMany({ where: { learnerId } }),
     roadmapId
-      ? prisma.roadmapItem.findMany({ where: { roadmapId }, orderBy: { index: "asc" } })
+      ? prisma.roadmapItem.findMany({ where: { roadmapId, origin: "main" }, orderBy: { index: "asc" } })
       : Promise.resolve([]),
+    prisma.misconception.findMany({ where: { learnerId, status: "active" }, orderBy: { confidence: "desc" }, take: 3 }),
   ]);
 
   const comp = new Map(competencies.map((c) => [c.skillId, c]));
 
-  // Candidates: the earliest not-yet-completed roadmap item whose
-  // prerequisites are sufficiently covered by learner state.
-  let candidates: {
+  const candidates: {
     item: { id: string; index: number; phase: string; title: string; skillIds: string[]; type: string; status: string };
     score: number;
     reason: string;
@@ -303,20 +422,25 @@ export async function recommendNext(learnerId: string, roadmapId?: string) {
 
   for (const item of roadmapItems) {
     if (item.status === "completed") continue;
-    const skills = JSON.parse(item.skillIds) as string[];
+    const skills = safeJson<string[]>(item.skillIds, []);
+    if (skills.length === 0) continue;
     const ready = skills.every((sid) => {
-      const c = comp.get(sid);
       const def = getSkill(sid);
-      const prereqsOk = (def?.prerequisites ?? []).every((p) => {
+      return (def?.prerequisites ?? []).every((p) => {
         const pc = comp.get(p);
         return pc && pc.mastery >= 0.5;
       });
-      return prereqsOk;
     });
     if (!ready) continue;
-    // score = weakest skill (lower mastery → higher priority), plus retention decay
+
     const weakest = Math.min(...skills.map((sid) => comp.get(sid)?.mastery ?? 0));
-    const retentionUrgency = Math.min(...skills.map((sid) => 1 - (comp.get(sid)?.retention ?? 1)));
+    const retentionUrgency = Math.min(
+      ...skills.map((sid) => {
+        const c = comp.get(sid);
+        if (!c || c.retentionChecks === 0) return 0;
+        return 1 - retentionEstimate(c.retention, c.lastRetrievedAt, now);
+      }),
+    );
     const score = (1 - weakest) * 0.7 + retentionUrgency * 0.3 + (skills.length > 1 ? 0.05 : 0);
     candidates.push({
       item: { id: item.id, index: item.index, phase: item.phase, title: item.title, skillIds: skills, type: item.type, status: item.status },
@@ -325,30 +449,38 @@ export async function recommendNext(learnerId: string, roadmapId?: string) {
     });
   }
 
-  // Retention review candidates: mastered skills whose retention is decaying.
+  // Retention review candidates: measured retention that has decayed below the bar.
   const retentionCandidates = competencies
-    .filter((c) => c.mastery >= 0.55 && c.retention < 0.5)
+    .filter((c) => c.mastery >= 0.55 && c.retentionChecks > 0 && retentionEstimate(c.retention, c.lastRetrievedAt, now) < 0.6)
     .map((c) => ({
-      item: { id: `retention:${c.skillId}`, index: 999, phase: "Retention", title: `Review: ${getSkill(c.skillId)?.name ?? c.skillId}`, skillIds: [c.skillId], type: "retention", status: "ready" },
-      score: (1 - c.retention) * 0.9,
+      item: {
+        id: `retention:${c.skillId}`,
+        index: 999,
+        phase: "Retention",
+        title: getSkill(c.skillId)?.name ?? c.skillId,
+        skillIds: [c.skillId],
+        type: "retention",
+        status: "ready",
+      },
+      score: (1 - retentionEstimate(c.retention, c.lastRetrievedAt, now)) * 0.9,
       reason: "due for retrieval practice",
     }));
 
-  // Active misconceptions get an intervention candidate.
-  const mis = await prisma.misconception.findMany({
-    where: { learnerId, status: "active" },
-    orderBy: { confidence: "desc" },
-    take: 3,
-  });
-  const misCandidates = mis.map((m) => ({
-    item: { id: `intervention:${m.skillId}:${m.code}`, index: 500, phase: "Intervention", title: `Fix: ${misconception(m.code)?.name ?? m.code}`, skillIds: [m.skillId], type: "assessment", status: "ready" },
+  const misCandidates = activeMisconceptions.map((m) => ({
+    item: {
+      id: `intervention:${m.skillId}:${m.code}`,
+      index: 500,
+      phase: "Intervention",
+      title: misconceptionOf(m.code)?.name ?? m.code,
+      skillIds: [m.skillId],
+      type: "assessment",
+      status: "ready",
+    },
     score: 0.75 + m.confidence * 0.2,
     reason: "active misconception detected",
   }));
 
-  const all = [...candidates, ...retentionCandidates, ...misCandidates].sort(
-    (a, b) => b.score - a.score,
-  );
+  const all = [...candidates, ...retentionCandidates, ...misCandidates].sort((a, b) => b.score - a.score);
   const top = all[0];
 
   return {
@@ -366,3 +498,5 @@ export async function recommendNext(learnerId: string, roadmapId?: string) {
     queue: all.slice(0, 6).map((c) => ({ title: c.item.title, reason: c.reason, score: c.score })),
   };
 }
+
+export { classifySkill };

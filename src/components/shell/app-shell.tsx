@@ -9,13 +9,12 @@ import {
   Route,
   Network,
   MessageSquare,
-  Activity,
-  FileText,
   ShieldCheck,
   LogOut,
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { LanguageToggle } from "@/components/ui/language-toggle";
+import { FloatingTutor } from "@/components/tutor/floating-tutor";
 import { useI18n } from "@/components/i18n";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -24,9 +23,8 @@ const NAV = [
   { href: "/tutor", label: "nav.tutor", icon: MessageSquare },
   { href: "/home", label: "nav.home", icon: LayoutDashboard },
   { href: "/roadmap", label: "nav.roadmap", icon: Route },
-  { href: "/map", label: "nav.map", icon: Network },
-  { href: "/materials", label: "nav.materials", icon: FileText },
-  { href: "/progress", label: "nav.progress", icon: Activity },
+  // One unified entry for Knowledge Map + Materials + Progress (§4).
+  { href: "/learning", label: "hub.title", icon: Network },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -135,6 +133,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="min-h-screen flex-1 md:pl-60">
         <div className="mx-auto max-w-6xl px-4 pb-24 pt-14 md:px-8 md:pt-8">{children}</div>
       </main>
+
+      {/* Persistent floating tutor — available on every authenticated page (§48) */}
+      <FloatingTutor />
     </div>
   );
 }

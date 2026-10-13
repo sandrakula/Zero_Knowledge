@@ -13,6 +13,6 @@ export async function GET(req: Request) {
       ? await prisma.goal.findFirst({ where: { id: goalId, learnerId: userId } })
       : await prisma.goal.findFirst({ where: { learnerId: userId, status: "active" }, orderBy: { createdAt: "desc" } });
     if (!goal) return { roadmap: null };
-    return { roadmap: await getRoadmapView(goal.id) };
+    return { roadmap: await getRoadmapView(goal.id, userId) };
   });
 }

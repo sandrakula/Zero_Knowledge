@@ -15,16 +15,25 @@ export async function POST(req: Request) {
 
     if (!statement) return fail("Please describe your learning goal.", 400);
 
-    const { goalId, spec } = await createGoalFromStatement({
+    const result = await createGoalFromStatement({
       learnerId: userId,
       statement,
       level,
       hoursPerWeek,
       language: lang,
+      confirmed: Boolean(body.confirmed),
     });
+
+    if (!result.ok) {
+      return {
+        needsConfirmation: true,
+        notice: result.notice,
+        reframedStatement: result.reframedStatement,
+      };
+    }
 
     // The roadmap is generated AFTER the skill-level diagnostic, once we have
     // evidence about the learner — not from the goal alone.
-    return { goalId, spec: { ...spec, targetSkills: spec.targetSkills.slice(0, 8) } };
+    return { goalId: result.goalId, spec: { ...result.spec, targetSkills: result.spec.targetSkills.slice(0, 8) } };
   });
 }

@@ -209,11 +209,16 @@ export function HomeClient() {
   );
 }
 
-/** Ring + caption underneath (captions stay outside so long words never overlap). */
-function RingStat({ value, color, caption, hint }: { value: number; color: string; caption: string; hint?: string }) {
+/** Ring + caption underneath. A null value means NOT ASSESSED — never 0%. */
+function RingStat({ value, color, caption, hint }: { value: number | null; color: string; caption: string; hint?: string }) {
   return (
     <div className="flex cursor-help flex-col items-center gap-2" title={hint}>
-      <ProgressRing value={value} size={68} color={color} />
+      <ProgressRing
+        value={value ?? 0}
+        size={68}
+        color={color}
+        label={value === null ? "—" : `${Math.round(value * 100)}`}
+      />
       <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-text-faint">{caption}</span>
     </div>
   );

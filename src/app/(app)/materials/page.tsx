@@ -1,5 +1,6 @@
-import { MaterialsClient } from "@/components/materials/materials-client";
+import { redirect } from "next/navigation";
 
-export default function MaterialsPage() {
-  return <MaterialsClient />;
+/** Compatibility: Materials are now a tab of the unified Learning hub. */
+export default function MaterialsRedirect() {
+  redirect("/learning?tab=materials");
 }

@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -140,8 +141,15 @@ export function LearnClient({ itemId }: { itemId: string }) {
         <div className="ml-auto flex items-center gap-3">
           {Object.entries(competency).map(([id, c]) => (
             <div key={id} className="hidden items-center gap-2 sm:flex">
-              <ProgressRing value={c.mastery} size={40} stroke={3.5} label={`${Math.round(c.mastery * 100)}`} />
-              <span className="max-w-[90px] text-[11px] leading-tight text-text-faint">{item.skillIds.length > 1 ? t("learn.multiSkill") : t("learn.mastery")}</span>
+              <ProgressRing
+                value={c.mastery ?? 0}
+                size={40}
+                stroke={3.5}
+                label={c.mastery === null ? "—" : `${Math.round(c.mastery * 100)}`}
+              />
+              <span className="max-w-[110px] text-[11px] leading-tight text-text-faint">
+                {t(`status.${c.status}`)}
+              </span>
             </div>
           ))}
         </div>
@@ -331,10 +339,21 @@ export function LearnClient({ itemId }: { itemId: string }) {
 
                 {attempt.competency && (
                   <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-ink-900/50 p-3">
-                    <ProgressRing value={attempt.competency.mastery} size={44} stroke={4} label={`${Math.round(attempt.competency.mastery * 100)}`} />
+                    <ProgressRing
+                      value={attempt.competency.mastery ?? 0}
+                      size={44}
+                      stroke={4}
+                      label={attempt.competency.mastery === null ? "—" : `${Math.round(attempt.competency.mastery * 100)}`}
+                    />
                     <div className="text-xs leading-relaxed text-text-muted">
-                      <p><span className="text-text">{attempt.competency.name}</span> {t("learn.updated")}</p>
-                      <p className="text-text-faint">depth: {attempt.competency.depth} · independence: {Math.round(attempt.competency.independence * 100)}% · support: {attempt.competency.support}</p>
+                      <p>
+                        <span className="text-text">{attempt.competency.name}</span> — {t(`status.${attempt.competency.status}`)}
+                      </p>
+                      <p className="text-text-faint">
+                        {t("metric.evidence")}: {attempt.competency.evidenceCount} {t("metric.observations")} ·{" "}
+                        {attempt.competency.independentSuccesses} {t("metric.independentSuccesses")} · depth{" "}
+                        {attempt.competency.depth ?? t("metric.notAssessed")}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -342,6 +361,24 @@ export function LearnClient({ itemId }: { itemId: string }) {
             )}
           </AnimatePresence>
         </div>
+      </div>
+
+      {/* Sequential full-cycle navigation: same content as the roadmap tree. */}
+      <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+        {data.nav.prevId ? (
+          <Link href={`/learn/${data.nav.prevId}`} className="btn-ghost px-4 py-2 text-xs">
+            <ArrowLeft className="h-3.5 w-3.5" /> {t("learn.prev")}
+          </Link>
+        ) : (
+          <span />
+        )}
+        {data.nav.nextId ? (
+          <Link href={`/learn/${data.nav.nextId}`} className="btn-primary px-4 py-2 text-xs">
+            {t("learn.next")} <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <span />
+        )}
       </div>
     </div>
   );

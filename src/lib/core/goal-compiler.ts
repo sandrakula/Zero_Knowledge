@@ -15,6 +15,10 @@ export type GoalSpec = {
   targetLevel: string;
   targetSkills: string[];
   summary: string;
+  /** True when the subject itself is outside the teachable domains. */
+  outOfScope: boolean;
+  /** In-scope restatement that uses the subject as a project theme. */
+  reframedStatement: string;
 };
 
 const GoalSchema = z.object({
@@ -23,6 +27,8 @@ const GoalSchema = z.object({
   targetLevel: z.string(),
   targetSkills: z.array(z.string()),
   summary: z.string(),
+  outOfScope: z.boolean().default(false),
+  reframedStatement: z.string().default(""),
 });
 
 export function skillCatalogForPrompt(): string {
@@ -76,5 +82,7 @@ export async function compileGoal(input: {
     targetLevel: spec.targetLevel,
     targetSkills: [...closure],
     summary: spec.summary,
+    outOfScope: spec.outOfScope,
+    reframedStatement: spec.reframedStatement,
   };
 }

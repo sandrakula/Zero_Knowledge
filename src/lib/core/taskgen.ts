@@ -36,11 +36,15 @@ export type GeneratedTask = {
   skillIds: string[];
   difficulty: number;
   transferLevel: number;
+  integrationLevel: number;
   independenceRequired: number;
   language?: string;
 };
 
-function normalize(t: z.infer<typeof TaskSchema>, input: { skillIds: string[]; difficulty: number; transferLevel: number; independenceRequired: number; language?: string }): GeneratedTask {
+function normalize(
+  t: z.infer<typeof TaskSchema>,
+  input: { skillIds: string[]; difficulty: number; transferLevel: number; integrationLevel: number; independenceRequired: number; language?: string },
+): GeneratedTask {
   return {
     ...t,
     starterCode: t.starterCode ?? "",
@@ -49,6 +53,7 @@ function normalize(t: z.infer<typeof TaskSchema>, input: { skillIds: string[]; d
     skillIds: input.skillIds,
     difficulty: input.difficulty,
     transferLevel: input.transferLevel,
+    integrationLevel: input.integrationLevel,
     independenceRequired: input.independenceRequired,
     language: input.language,
   };
@@ -75,6 +80,7 @@ export async function generateTask(input: {
   difficulty: number;
   cognitiveLevel: string;
   transferLevel: number;
+  integrationLevel: number;
   independenceRequired: number;
   misconceptions?: string[];
   language?: string;
@@ -93,31 +99,35 @@ export async function generateTask(input: {
     langInstruction(input.language),
   ].join("\n");
 
-  const task = await generateObject(TaskSchema, prompt.capability, prompt.system, user, {
+  // Deterministic validation before publishing (§126). The reference solution
+  // MUST pass its own tests — otherwise the task is never shown to a learner.
+  // Keep the same concept across retries and only fix internal consistency.
+  let candidate = await generateObject(TaskSchema, prompt.capability, prompt.system, user, {
     maxTokens: 12000,
   });
+  let validation = await validateTask(candidate);
 
-  // Deterministic validation before publishing (§126).
-  const validation = await validateTask(task);
-  if (!validation.valid) {
-    // One retry with the validation feedback before giving up.
-    const retry = await generateObject(
-      TaskSchema,
-      prompt.capability,
-      prompt.system,
-      user + `\n\nYour previous task failed its own tests. Fix the reference solution and/or tests so they are internally consistent.\nFailures: ${JSON.stringify(validation.failures)}`,
-      { maxTokens: 12000 },
-    );
-    const retryValidation = await validateTask(retry);
-    if (!retryValidation.valid) {
-      throw new Error(
-        `Task validation failed after retry: ${JSON.stringify(retryValidation.failures)}`,
-      );
-    }
-    return normalize(retry, input);
+  for (let attempt = 0; attempt < 2 && !validation.valid; attempt++) {
+    const fixPrompt = [
+      user,
+      `Your previous task failed its own tests. Keep the SAME title and statement, but fix the reference solution and/or the expected outputs so they are exactly consistent.`,
+      `Mind whitespace: the expected output is compared EXACTLY against stdout (trimmed), and the reference solution must read stdin via input() and print() only the answer.`,
+      `Failures:\n${JSON.stringify(validation.failures, null, 2)}`,
+      `Previous reference solution:\n\`\`\`python\n${candidate.referenceSolution}\n\`\`\``,
+      `Previous tests:\n${JSON.stringify(candidate.tests)}`,
+    ].join("\n\n");
+
+    candidate = await generateObject(TaskSchema, prompt.capability, prompt.system, fixPrompt, {
+      maxTokens: 12000,
+    });
+    validation = await validateTask(candidate);
   }
 
-  return normalize(task, input);
+  if (!validation.valid) {
+    throw new Error(`Task validation failed: ${JSON.stringify(validation.failures)}`);
+  }
+
+  return normalize(candidate, input);
 }
 
 /** Persist a validated task (provenance = generated). */
@@ -132,6 +142,7 @@ export async function persistTask(task: GeneratedTask): Promise<string> {
       cognitiveLevel: task.cognitiveLevel,
       independenceRequired: task.independenceRequired,
       transferLevel: task.transferLevel,
+      integrationLevel: task.integrationLevel,
       starterCode: task.starterCode,
       referenceSolution: task.referenceSolution,
       tests: JSON.stringify(task.tests),

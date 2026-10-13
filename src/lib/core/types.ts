@@ -1,39 +1,62 @@
 // Shared educational-core types (independent of DB and UI).
 
+import type { EvidenceSufficiency, SkillStatus } from "./competency";
+
 export type EvidencePayload = {
   correct: boolean;
-  strength: number; // 0..1 — reliability weight of this observation
-  supportUsed: number; // 0..1 — how much assistance was consumed
+  /** Recorded weight of this observation (effective weight, see evidence.ts). */
+  strength: number;
+  /** Fraction of assistance used, 0..1. */
+  supportUsed: number;
   hintsUsed: number;
-  cognitiveLevel: string; // of the task that produced it
-  transferLevel: number; // 0..1
-  independenceRequired: number; // 0..1
-  integrated: boolean; // combines multiple skills
+  cognitiveLevel: string;
+  /** Explicit transfer classification of the activity, 0..1. */
+  transferLevel: number;
+  /** Explicit integration classification of the activity, 0..1. */
+  integrationLevel: number;
+  independenceRequired: number;
+  integrated: boolean;
   retentionCheck: boolean;
+  /** True only when the retrieval check happened after a meaningful interval. */
+  retentionDelayed: boolean;
+  /** Fraction of passed tests, when the activity has comparable cases. */
+  passedRatio?: number;
+  /** Task family of the activity, for evidence-coverage reporting. */
+  taskFamily?: string;
+  /** Provenance validity multiplier (see evidence.ts TASK_VALIDITY). */
+  taskValidity?: number;
   kind: string;
   method: string;
   /** Misconception codes this evidence supports or contradicts. */
   misconceptions?: string[];
 };
 
+/** What the UI may display for one skill. Null values mean "not assessed". */
 export type CompetencyView = {
   skillId: string;
   name: string;
   domain: string;
   category: string;
   difficulty: number;
-  mastery: number;
-  uncertainty: number;
-  support: string; // evidence support tier
-  depth: string;
-  independence: number;
-  application: number;
-  transfer: number;
-  retention: number;
+
+  status: SkillStatus;
+  mastery: number | null;
+  masteryInterval: { lower: number; upper: number } | null;
+  sufficiency: EvidenceSufficiency;
+
+  evidenceCount: number;
+  independentSuccesses: number;
+  taskFamilies: number;
+  lastAssessmentAt: string | null;
+
+  depth: string | null;
+  independence: number | null;
+  application: number | null;
+  transfer: number | null;
+  retention: number | null;
+  supportDependence: number | null;
+
   attempts: number;
-  successes: number;
-  hintDependence: number;
-  lastSeenAt: string | null;
   misconceptions: string[];
 };
 
@@ -47,12 +70,21 @@ export type MisconceptionView = {
   correction: string;
 };
 
+export type TutorBranchView = {
+  branchKey: string;
+  parentItemId: string;
+  parentTitle: string;
+  nodes: RoadmapItemView[];
+};
+
 export type RoadmapView = {
   id: string;
   goalTitle: string;
   summary: string;
   status: string;
   items: RoadmapItemView[];
+  /** Tutor-generated practice branches, kept OUT of the main tree (§44–45). */
+  tutorBranches: TutorBranchView[];
 };
 
 export type RoadmapItemView = {
@@ -61,11 +93,23 @@ export type RoadmapItemView = {
   phase: string;
   title: string;
   description: string;
+  objective: string;
   skillIds: string[];
   type: string;
   status: string;
   contentId: string | null;
+  taskId: string | null;
   estimatedMinutes: number;
+  parentId: string | null;
+  optional: boolean;
+  origin: string;
+  branchKey: string | null;
+  depth: number;
+  completedAt: string | null;
+  /** Status rollup computed by the core — components never derive colours. */
+  skillStatus: SkillStatus;
+  demonstratedSkills: number;
+  children: RoadmapItemView[];
 };
 
 export type RecommendationView = {

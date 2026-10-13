@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Target, Brain, Sparkles, Loader2, Clock, Upload, MessageSquare } from "lucide-react";
+import { ArrowRight, Target, Brain, Sparkles, Loader2, Clock, Upload, MessageSquare, AlertTriangle, Check } from "lucide-react";
 import { useI18n } from "@/components/i18n";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,7 @@ export function Onboarding() {
   const [hours, setHours] = useState(6);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingConfirm, setPendingConfirm] = useState<{ notice: string; reframedStatement: string } | null>(null);
 
   async function submit() {
     if (!statement.trim()) {
@@ -41,6 +42,37 @@ export function Onboarding() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ statement, level, hoursPerWeek: hours, lang }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? t("common.error"));
+      if (data.needsConfirmation) {
+        setPendingConfirm({ notice: data.notice, reframedStatement: data.reframedStatement });
+        setLoading(false);
+        return;
+      }
+      router.push(`/diagnostic?goalId=${data.goalId}`);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+      setLoading(false);
+    }
+  }
+
+  async function confirmReframe() {
+    if (!pendingConfirm) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          statement: pendingConfirm.reframedStatement || statement,
+          level,
+          hoursPerWeek: hours,
+          lang,
+          confirmed: true,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("common.error"));
@@ -92,7 +124,38 @@ export function Onboarding() {
         <p className="mt-2 text-xs text-text-faint">{t("onboarding.uploadHint")}</p>
       </div>
 
-      {/* Right — form */}
+      {/* Right — form / out-of-scope confirmation */}
+      {pendingConfirm ? (
+        <motion.div initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className="card p-6 shadow-card sm:p-7 lg:self-start">
+          <div className="flex items-center gap-2 text-sm font-semibold text-text">
+            <AlertTriangle className="h-4 w-4 text-amber" /> {t("onboarding.outOfScope.title")}
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-text-muted">{pendingConfirm.notice}</p>
+          <div className="mt-4 rounded-xl border border-white/[0.08] bg-ink-900/50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-faint">{t("onboarding.outOfScope.proposal")}</p>
+            <p className="mt-2 text-sm leading-relaxed text-text">{pendingConfirm.reframedStatement}</p>
+          </div>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <button onClick={confirmReframe} disabled={loading} className="btn-primary flex-1">
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> {t("onboarding.building")}</>
+              ) : (
+                <><Check className="h-4 w-4" /> {t("onboarding.outOfScope.confirm")}</>
+              )}
+            </button>
+            <button onClick={() => setPendingConfirm(null)} disabled={loading} className="btn-ghost flex-1">
+              {t("onboarding.outOfScope.change")}
+            </button>
+          </div>
+          <AnimatePresence>
+            {error && (
+              <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-4 text-sm text-rose">
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      ) : (
       <motion.div initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.6, delay: 0.2 }} className="card p-6 shadow-card sm:p-7 lg:self-start">
         <div className="flex items-center gap-2 text-sm font-semibold text-text">
           <Target className="h-4 w-4 text-accent-soft" /> {t("onboarding.goalLabel")}
@@ -147,6 +210,7 @@ export function Onboarding() {
           )}
         </button>
       </motion.div>
+      )}
     </div>
   );
 }

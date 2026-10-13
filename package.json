@@ -11,7 +11,9 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts"
+    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
+    "db:migrate-competency": "tsx prisma/migrate-competency.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

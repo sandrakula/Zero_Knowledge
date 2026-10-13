@@ -98,11 +98,13 @@ ZeroKnowledge — адаптивная образовательная систе
 ```
 D:\Learning_prj
 ├─ prisma/
-│  ├─ schema.prisma            # 20 моделей
+│  ├─ schema.prisma            # 20 моделей (с β-постериором, иерархией RoadmapItem, Conversation)
 │  ├─ seed.ts                  # админ + 45 навыков
+│  ├─ migrate-competency.ts    # недеструктивная миграция на β-постериор (§24)
 │  └─ dev.db                   # SQLite (gitignored)
 ├─ scripts/
-│  └─ smoke.mjs                # e2e-проверка живого API
+│  ├─ smoke.mjs                # e2e-проверка живого API
+│  └─ upgrade-smoke.mjs        # e2e-проверка апгрейда (hub, тьютор, ветки, подшаги, метрики)
 ├─ storage/materials/          # загруженные файлы (gitignored)
 ├─ docs/
 │  ├─ ADR-001..005.md
@@ -114,22 +116,22 @@ D:\Learning_prj
 │  │  ├─ page.tsx              # редирект по сессии
 │  │  ├─ login/ register/      # публичные страницы
 │  │  ├─ admin/                # админ-панель
-│  │  ├─ api/                  # 18 route handler'ов
+│  │  ├─ api/                  # route handler'ы (auth, state, skills, roadmap(+substeps), learn, run, attempt, tutor(+conversations), recommend, diagnostic, materials, admin)
 │  │  └─ (app)/                # группа с общим каркасом
-│  │     ├─ layout.tsx         # guard + AppShell
+│  │     ├─ layout.tsx         # guard + AppShell + FloatingTutor
 │  │     ├─ onboarding/ diagnostic/
 │  │     ├─ tutor/ home/ roadmap/ learn/[itemId]/
-│  │     └─ map/ materials/ progress/
+│  │     └─ learning/          # единый Learning hub (map/materials/progress → редиректы)
 │  ├─ components/
 │  │  ├─ i18n.tsx              # провайдер языка
-│  │  ├─ shell/app-shell.tsx   # сайдбар, аккаунт, язык
+│  │  ├─ shell/app-shell.tsx   # сайдбар, аккаунт, язык, FloatingTutor
 │  │  ├─ ui/                   # logo, spinner, progress-ring, markdown, reveal, language-toggle
 │  │  ├─ auth/ onboarding/ diagnostic/ home/ roadmap/
-│  │  ├─ learn/ tutor/ map/ progress/ materials/ admin/
+│  │  ├─ learn/ tutor/ learning/ materials/ admin/
 │  ├─ lib/
 │  │  ├─ llm/                  # types, provider, router, structured
 │  │  ├─ prompts/registry.ts   # каталог промптов
-│  │  ├─ core/                 # образовательное ядро (15 модулей)
+│  │  ├─ core/                 # образовательное ядро (mastery, competency, evidence, student-twin, roadmap, tutor(+actions), conversation, learn, taskgen, evaluation, content, materials, diagnostic, goal, knowledge-graph, code-runner, json)
 │  │  ├─ auth.ts password.ts db.ts api.ts
 │  │  ├─ i18n.ts lang.ts types.ts utils.ts
 │  └─ types/pdf-parse.d.ts
@@ -243,6 +245,8 @@ allowBuilds:               # разрешает build-скрипты (иначе
 | `pnpm db:push` | `prisma db push` | применение схемы к БД |
 | `pnpm db:seed` | `tsx prisma/seed.ts` | админ + 45 навыков |
 | `pnpm db:reset` | `push --force-reset && seed` | полный сброс |
+| `pnpm db:migrate-competency` | `tsx prisma/migrate-competency.ts` | недеструктивная миграция на β-постериор (§24) |
+| `pnpm test` | `node --import tsx --test "src/**/*.test.ts"` | unit-тесты чистого ядра (mastery/competency/evidence/roadmap) |
 
 Порядок первого запуска: `pnpm install` → `pnpm db:push` → `pnpm db:seed` → `pnpm dev`.
 
@@ -320,20 +324,29 @@ allowBuilds:               # разрешает build-скрипты (иначе
 ### 7.3 Состояние ученика
 
 **`CompetencyState`** — вектор компетенции, одна строка на пару (ученик, навык),
-`@@unique([learnerId, skillId])`.
+`@@unique([learnerId, skillId])`. Постериор мастерства хранится явно как (α, β) — он
+никогда не восстанавливается из округлённых процентов.
 
 | Поле | Тип | Смысл |
 |---|---|---|
-| `mastery` | Float | среднее постериора 0..1 |
-| `masteryUncertainty` | Float | `1/(n+1)`, 1 = данных нет |
-| `depth` | String | ступень когнитивной глубины |
-| `independence` | Float | самостоятельность 0..1 |
-| `application` | Float | интеграция нескольких навыков |
-| `transfer` | Float | применение в новых контекстах |
-| `retention` | Float | удержание во времени |
+| `masteryAlpha` / `masteryBeta` | Float | параметры Beta-постериора (приор α₀=1, β₀=3 → среднее 0.25) |
+| `mastery` | Float | зеркало среднего α/(α+β) для дешёвых чтений/совместимости |
+| `masteryUncertainty` | Float | LEGACY-прокси (сейчас — std постериора); новые расчёты используют α/β + `evidenceCount` |
+| `evidenceCount` | Int | осмысленных наблюдений сверх приора |
+| `depth` | String | ступень когнитивной глубины (`recognition`..`transfer`) |
+| `independence` | Float | самостоятельность 0..1 (EMA по `supportUsed`) |
+| `application` | Float | интеграция нескольких навыков (только явно интегративные задачи) |
+| `transfer` | Float | применение в новых контекстах (только явно трансферные задачи) |
+| `retention` | Float | последняя измеренная извлекаемость (со временем затухает) |
 | `attempts` / `successes` | Int | счётчики |
-| `hintDependence` | Float | зависимость от подсказок |
-| `lastSeenAt` / `lastRetrievedAt` | DateTime | время последнего контакта/припоминания |
+| `independentSuccesses` | Int | успехи с `supportUsed < 0.5` |
+| `integrationAttempts` / `transferAttempts` | Int | счётчики соответствующих задач |
+| `retentionChecks` / `retentionSuccesses` | Int | счётчики отложенных проверок удержания |
+| `supportDependence` | Float | скользящее среднее использованной помощи (0..1) |
+| `hintDependence` | Float | LEGACY — заменено на `supportDependence` |
+| `taskFamilies` | JSON | различные семейства задач (покрытие доказательств) |
+| `depthCounts` | JSON | независимые успехи по каждой ступени глубины |
+| `lastSeenAt` / `lastAssessmentAt` / `lastRetrievedAt` | DateTime | контакт / последняя оценка / последнее припоминание |
 | `updatedAt` | DateTime @updatedAt | |
 
 **`Misconception`** — состояние заблуждения, `@@unique([learnerId, skillId, code])`:
@@ -365,22 +378,32 @@ allowBuilds:               # разрешает build-скрипты (иначе
 (`action` JSON, `reason`, `priority`, `status`), факт использования подсказки (`taskId`, `level`)
 и сообщение переписки (`role`, `content`, `intent`, `meta`).
 
+**`Conversation`** — персистентный диалог тьютора (§54): `learnerId`, `title`, `summary`,
+`activeGoalId`, `activeRoadmapItemId`, `messageCount`, `lastMessageAt`, `archivedAt`.
+`Message` связан с ним через `conversationId` и дополнительно несёт `skillIds` (JSON),
+`taskId`, `roadmapItemId`, `meta` (JSON: результаты действий тьютора). Разговор хранит
+сказанное; модель ученика хранит, что ученик умеет делать — это разные сущности.
+
 ### 7.4 План обучения
 
 **`Roadmap`** — 1:1 к цели (`goalId @unique`): `summary` (текст от LLM), `status`.
 
-**`RoadmapItem`**:
+**`RoadmapItem`** (иерархический узел, §31–35):
 
 | Поле | Смысл |
 |---|---|
-| `index` | порядок |
+| `index` | порядок среди соседей |
 | `phase` | название фазы |
-| `title`, `description` | от LLM |
+| `title`, `description`, `objective` | заголовок, описание, короткая цель шага |
 | `skillIds` | JSON-массив навыков пункта |
-| `type` | `lesson` \| `task` \| `project` \| `assessment` \| `retention` \| `transfer` |
+| `type` | `concept` \| `lesson` \| `example` \| `practice` \| `task` \| `project` \| `assessment` \| `retention` \| `transfer` |
 | `status` | `locked` \| `ready` \| `active` \| `completed` |
-| `contentId` | ссылка на сгенерированный урок |
-| `taskId` | ссылка на сгенерированную задачу |
+| `contentId` / `taskId` | ссылки на урок/задачу |
+| `parentId` / `children` | самосвязь `RoadmapItemTree` (подшаги) |
+| `optional` | необязательный пункт (не блокирует основной путь) |
+| `origin` | `main` \| `tutor` (кто создал узел) |
+| `branchKey` | ключ параллельной ветки практики от тьютора |
+| `completedAt` / `updatedAt` | время завершения/обновления |
 | `estimatedMinutes` | Int |
 
 ### 7.5 Контент и материалы
@@ -390,7 +413,8 @@ allowBuilds:               # разрешает build-скрипты (иначе
 `status`, **`sourceIds`** (JSON — id материалов, на которых основан), `language`, `version`, `meta`.
 
 **`Task`**: `skillIds`, `family`, `title`, `statement`, `difficulty`, `cognitiveLevel`,
-`independenceRequired`, `transferLevel`, `starterCode`, `referenceSolution`, `tests` (JSON
+`independenceRequired`, `transferLevel`, `integrationLevel` (явная классификация
+интеграции §17), `starterCode`, `referenceSolution`, `tests` (JSON
 `[{input, expected}]`), `hints` (JSON), `status` (`validated`), `provenance`, `sourceIds`, `language`.
 
 **`Material`** / **`MaterialChunk`**: файл и его фрагменты. У `Material` есть
@@ -402,6 +426,8 @@ allowBuilds:               # разрешает build-скрипты (иначе
 **`DiagnosticQuestion`** — сохранённый ключ ответа: `id` (используется как questionId),
 `learnerId`, `skillId`, `correctIndex`, `explanation`, `misconception`. Существует именно для
 того, чтобы диагностика переживала перезапуск сервера.
+
+**`Conversation`** — см. §7.3 (персистентный диалог тьютора).
 
 ---
 
@@ -592,82 +618,78 @@ createEvidence({learnerId, skillIds, kind, method, value, summary, taskId?, atte
 
 ### 11.3 Мастерство (`mastery.ts`)
 
-Модель — **бета-постериор**. Хранится среднее `mastery` и неопределённость `u`; число
-наблюдений восстанавливается как `n = 1/u − 1`. Слабый приор: `PRIOR_S = 1`, `PRIOR_F = 3`,
-`PRIOR_N = 4` → стартовое мастерство `1/4 = 0.25`.
+Модель — **Beta-Binomial постериор**, хранится явно как (α, β). Приор
+`α₀=1, β₀=3` → среднее 0.25, но это слабый приор, а **не** доказательство: до появления
+реальных наблюдений UI обязан показывать «Not assessed», а не «25%».
 
 ```ts
-updateMastery(prev, success, strength):
-  w  = clamp(strength, 0, 1)
-  n  = max(0, 1/u − 1)
-  s  = clamp(p·(n + 4) − 1, 0, n)          // восстановление счётчиков из (p, u)
-  f  = n − s
-  s2 = success ? s + w : s
-  f2 = success ? f : f + w
-  n2 = n + w
-  mastery     = clamp((s2 + 1) / (n2 + 4))
-  uncertainty = clamp(1 / (n2 + 1), 0.02, 1)
+updatePosterior(p, q, w) → { alpha: α + w·q, beta: β + w·(1 − q) }
+posteriorMean(p)         → α / (α + β)
+posteriorStd(p)          → sqrt(α·β / ((α+β)² · (α+β+1)))
+evidenceCount(p)         → max(0, α + β − 4)
+credibleInterval(p, z)   → нормальная аппроксимация, клипается к [0,1] (документированное приближение)
+sufficiency(p)           → none(<0.5) | insufficient(<3) | moderate(<8) | strong(≥8)
 ```
 
-Как растёт при верных ответах (`w = 1`, детерминированное доказательство):
-
-| Верных подряд | mastery |
-|---|---|
-| 0 | 0.25 |
-| 1 | 0.40 |
-| 2 | 0.50 |
-| 3 | 0.57 |
-| 5 | 0.67 |
-
-Ошибка отбрасывает примерно к 0.20. Смысл конструкции: **один ответ не даёт «100%»** — это защита
-от фальшивой точности.
-
-**Уровни поддержки** (`supportTier`) по `n`: `< 0.5` — `insufficient`, `< 3` — `uncertain`,
-`< 8` — `moderate`, иначе `strong`. Это то, что видно в интерфейсе как «Support».
+`q ∈ [0,1]` — наблюдаемая доля успеха (0/1 для бинарных вопросов, доля пройденных тестов для
+программных задач), `w ∈ [0,1]` — эффективный вес доказательства. Один верный ответ при
+`w=1` даёт `mastery = 2/5 = 0.40`, не 100 % — защита от фальшивой точности.
 
 **Лестница глубины** (`DEPTH_LADDER`): `recognition → understanding → application → analysis →
-evaluation → creation → transfer`. `promoteDepth(current, demonstrated)` берёт максимум по рангу.
+evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит уровень задачи на ступень;
+задача уровня `apply` не доказывает `analysis`.
 
-`initialMastery()` → `{ mastery: 0.25, uncertainty: 1 }`.
+**Retention** — оценка извлекаемости с экспоненциальным затуханием (half-life 14 дней):
+`retentionEstimate(stored, lastRetrievedAt, now) = stored · 0.5^(days/14)`. Задача, решённая в той
+же сессии, не считается проверкой удержания.
 
-### 11.4 Student Learning Twin (`student-twin.ts`)
+### 11.4 Student Learning Twin (`student-twin.ts`) и чистые правила (`competency.ts`)
 
-Главный метод — `applyEvidence({learnerId, skillIds, value})`: по каждому навыку обновляет вектор.
+Все правила компетенции собраны в чистом модуле `competency.ts` (без Prisma/React/AI) и
+покрыты тестами. `student-twin.ts` только загружает состояние, делегирует правило и пишет
+результат обратно.
+
+`applyEvidenceToSkill(state, ev)` обновляет измерения по явным триггерам (§17–21):
 
 | Измерение | Правило |
 |---|---|
-| `mastery`, `masteryUncertainty` | `updateMastery(state, correct, strength)` |
-| `independence` | цель `correct ? clamp(1 − supportUsed) : clamp(ind − 0.15, 0, 1)`; `ind += 0.25·(цель − ind)` |
-| `application` | только если `integrated`: `+= correct ? 0.18 : −0.12` |
-| `transfer` | если `transferLevel > 0`: `+= correct ? 0.2 : −0.08` |
-| `retention` | если `retentionCheck`: `+= correct ? 0.25 : −0.35`; иначе `retention·0.99 + 0.01` |
-| `depth` | `promoteDepth(...)` **только** если `correct && supportUsed < 0.5` |
-| `attempts` | `+1` |
-| `successes` | `+1` при верном |
-| `hintDependence` | `clamp(+ (hintsUsed > 0 ? 0.12 : −0.05))` |
-| `lastSeenAt` | `now` |
-| `lastRetrievedAt` | `now`, если `retentionCheck` |
+| `mastery` (α/β) | `updatePosterior(q, effectiveWeight)` — единственное, что меняет любое наблюдение |
+| `independence` | EMA: цель `correct ? 1 − supportUsed : ind − 0.15`; шаг η=0.25. Ошибка не растёт самостоятельность |
+| `application` | только при `integrationLevel ≥ 0.5`: `+= correct ? 0.18 : −0.12` |
+| `transfer` | только при `transferLevel ≥ 0.4`: `+= correct ? 0.2 : −0.08` |
+| `retention` | только отложенная проверка (`retentionCheck && retentionDelayed`): `(succ+1)/(checks+2)` |
+| `depth` | растёт только при `correct && supportUsed < 0.5` и ≥ 2 независимых успеха на уровне |
+| `supportDependence` | EMA(η=0.2) доли использованной помощи |
+| счётчики | `evidenceCount`, `attempts`, `independentSuccesses`, `taskFamilies`, `depthCounts` |
 
-Отсюда практические следствия, заложенные осознанно:
+Пороги конфигурации — константы `RULES` и `CLASSIFICATION` в `competency.ts`; обычная практика
+имеет `transferLevel=0.1` (ниже порога 0.4), одиночный навык — `integrationLevel=0.15` (ниже
+порога 0.5), поэтому обычные задачи **не** двигают transfer/application (регрессионные тесты
+есть в `competency.test.ts` / `roadmap.test.ts`).
 
-- Подсказки почти не мешают `mastery`, но **бьют по `independence`** и **блокируют рост `depth`**.
-- `transfer` и `application` двигаются только «своими» типами задач — не любой попыткой.
+**Классификация статуса** `classifySkill(state, misconceptions)` — единая детерминированная
+политика (§28):
 
-Прочие функции модуля: `getCompetencyView(learnerId, skillId)` (вектор + уровень поддержки +
-активные заблуждения), `getActiveMisconceptions`, `getLearnerSummary` (все компетенции, счётчики,
-последние 30 доказательств, рекомендации, 20 событий), `recommendNext` (§11.14).
+- нет осмысленных доказательств (`evidenceCount < 1`) → `not_assessed`;
+- активное заблуждение с `confidence ≥ 0.6` или среднее < 0.3 → `needs_attention`;
+- иначе → `developing`, кроме строгого `demonstrated`: ≥ 4 наблюдений, среднее ≥ 0.7,
+  нижняя граница credible interval ≥ 0.45, ≥ 2 независимых успеха, ≥ 2 семейств задач и
+  отсутствие противоречащего активного заблуждения (confidence ≥ 0.5).
+
+Цвета узлов (карта/план) вычисляются из `STATUS_COLOR` в `competency.ts` — компоненты никогда
+не выводят цвета сами (§27). `rollupStatus()` сворачивает статусы навыков на узел плана.
+
+`student-twin.ts` предоставляет read-модель `getCompetencyView()` / `getAllSkillMetrics()` /
+`getLearnerSummary()` (единственные формы, которые UI может потреблять) и `recommendNext()`.
 
 **Жизненный цикл заблуждения** (`applyMisconceptionSignal`):
 
-- верный ответ при `supportUsed < 0.5`:
-  - был `monitoring` → `resolved` (`confidence = 0.15`, `resolvedAt = now`);
-  - иначе → `monitoring`, `confidence −= 0.35`;
-  - если записи нет — ничего не делаем;
-- ошибка (или ответ с поддержкой): создать запись (`confidence = 0.5`, `status = active`) либо
-  `confidence += 0.25`; `resolved` → `monitoring`.
+- верный ответ при `supportUsed < 0.5`: `monitoring` → `resolved` (confidence 0.15), иначе
+  `confidence −= 0.35`; нет записи — ничего не делаем;
+- ошибка/ответ с поддержкой: создать (`confidence 0.5`, `active`) или `confidence += 0.25`;
+  `resolved` → `monitoring`.
 
-То есть **одно правильное решение не закрывает заблуждение** — нужно устойчивое независимое
-подтверждение (требование ТЗ §85).
+Одно правильное решение не закрывает заблуждение — нужно устойчивое независимое подтверждение.
 
 ### 11.5 Диагностика (`diagnostic.ts`)
 
@@ -801,24 +823,40 @@ where: { OR: [{ learnerId }, { material: { scope: "global" } }] }
 
 Это не эмбеддинги, а лексическое совпадение — осознанный компромисс MVP (см. §18).
 
-### 11.12 Тьютор (`tutor.ts`)
+### 11.12 Тьютор (`tutor.ts`), диалоги и действия
 
-`tutor({learnerId, message, roadmapItemId?, language?})`:
+`tutor({learnerId, message, conversationId?, roadmapItemId?, language?})`:
 
-1. Сообщение пользователя сохраняется в `Message`.
-2. **Ветка «нет цели»:** если активной цели нет —
-   - сообщение короче 12 символов → ответ `clarify_goal` («расскажите подробнее»), цель **не** создаётся;
-   - иначе `createGoalFromStatement` → ответ `goal_created` + `goalId` (клиент покажет переход к тесту).
-3. **Обычная ветка:** `buildTutorContext()` собирает компактный контекст (текущий пункт плана,
-   условие задачи, последний код ученика, результат проверки, компетенции по навыкам задачи,
-   активные заблуждения, последние попытки) → `generateObject(TutorSchema)` →
-   `{intent, actionType, reply, misconceptionCode}`.
-4. Ответ ассистента сохраняется с `intent` и `actionType`.
-5. **Разговор как микро-оценка:** если модель указала `misconceptionCode`, создаётся доказательство
-   `kind: "tutor"`, `method: "ai-interpretation"`, **`strength: 0.35`** — слабое, оно не может
-   само по себе переписать состояние.
+1. Резолвится (или создаётся) активный `Conversation`; сообщение пользователя сохраняется
+   через `appendMessage()` (ownership проверяется по сессии, не по клиентскому id).
+2. **Ветка «нет цели»:** если активной цели нет — короткое сообщение (< 12 симв.) даёт
+   `clarify_goal`; иначе `createGoalFromStatement` → `goal_created` + `goalId`.
+3. **Обычная ветка:** `buildTutorContext()` собирает ограниченный контекст (§58, §61): цель,
+   roadmap-узлы со стабильными id, текущий узел/задача, последний код и результат проверки,
+   компетенции по навыкам, активные заблуждения, последние попытки, материалы и ограниченный
+   срез истории + релевантная ретро-выборка (`searchConversationHistory`, лексическая).
+   Ответ — `TutorSchema` `{intent, actionType, reply, misconceptionCode, action?}`.
+4. **Структурное действие** (если модель предложила): выполняется только через
+   `executeTutorAction()` (`tutor-actions.ts`) — модель никогда не пишет в Prisma напрямую.
+   Результат валидируется, сохраняется и возвращается с фактическим итогом (`describeActionResult`).
+5. Ответ ассистента сохраняется с `intent`/`actionType`/`meta`.
+6. **Разговор как микро-оценка:** только явный `misconceptionCode` создаёт слабое доказательство
+   `kind: "tutor"`, `method: "ai-interpretation"` (вес ~0.45) — мнение ИИ не равно детерминированному
+   результату.
 
-Контекст специально ограничен текущей задачей, а не всей историей (дисциплина контекста).
+**Действия тьютора** (§37, §40, §69–71) — `tutor-actions.ts`: `GENERATE_TASKS` /
+`CREATE_ROADMAP_BRANCH` (валидированная генерация задач + параллельная ветка), `ADD_ROADMAP_SUBSTEPS` /
+`EDIT_ROADMAP_NODE` (структурные правки плана через core-сервисы, с аудит-событиями). Все id
+проверяются на владение.
+
+**Диалоги** — `conversation.ts` (§53–60): `getOrCreateActiveConversation`, `createConversation`
+(архивирует предыдущий), `listConversations`, `getConversationMessages` (ownership-checked),
+`appendMessage`, `recentConversationContext` (bounded), `searchConversationHistory` (ключевое слово).
+История диалога — это сказанное; Student Learning Twin — это умения; заявление «я всё понял» не
+меняет компетенцию (§63).
+
+**Floating tutor** (§48–51): смонтирован в `AppShell`, доступен на всех авторизованных страницах;
+тот же `useTutor()`/backend, что и полная страница `/tutor` — история одна (§52).
 
 ### 11.13 Мастерство и рекомендации (`recommendNext`)
 
@@ -887,10 +925,11 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | Метод | Путь | Вход | Выход |
 |---|---|---|---|
 | POST | `/api/onboarding` | `{statement, level, hoursPerWeek, lang}` | `{goalId, spec}` (роадмап ещё не создан) |
-| GET | `/api/state` | — | цель, роадмап, `summary` (вектор, счётчики, доказательства, события, рекомендации), `misconceptions`, `nextBest`, `domainStats`, `materialCount`, `goalMetrics` |
+| GET | `/api/state` | — | цель, иерархический роадмап с `skillStatus`, `summary` (векторы, счётчики, доказательства, события, рекомендации), `misconceptions`, `nextBest`, `domainStats`, `materialCount`, `goalMetrics` |
 | GET | `/api/recommend?roadmapId=` | — | `{next, queue}` |
-| GET | `/api/roadmap?goalId=` | — | `{roadmap}` |
-| GET | `/api/skills` | — | `{domains, skills[]}` со состоянием ученика |
+| GET | `/api/roadmap?goalId=` | — | `{roadmap}` (дерево узлов) |
+| GET | `/api/skills` | — | `{domains, skills[]}` — метрики с `null` = «не оценено» |
+| POST | `/api/roadmap/substeps` | `{nodeId, lang, count?}` | `{created[]}` — генерация/сохранение подшагов узла |
 
 `goalMetrics` — кольца на главной: считаются по **навыкам текущего пункта плана**
 (`active`, иначе `ready`), с фолбэком на целевые навыки цели, если текущего пункта нет.
@@ -909,14 +948,22 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | POST | `/api/learn` | `{itemId, lang}` | `{item, lesson{body,sources,grounded}, task{statement,starterCode,hints,example,testCount}, competency}` |
 | POST | `/api/run` | `{code, input}` | `{ok, stdout, stderr, timedOut, durationMs}` |
 | POST | `/api/attempt` | `{taskId, roadmapItemId, code, hintsUsed, confidence, timeSpentSeconds, lang}` | `{passed,total,passedAll,feedback,testResults,competency,method}` |
-| POST | `/api/tutor` | `{message, roadmapItemId?, lang}` | `{intent, actionType, reply, misconceptionCode, goalId?}` |
+| POST | `/api/tutor` | `{message, conversationId?, roadmapItemId?, lang}` | `{conversationId, intent, actionType, reply, misconceptionCode, goalId?, action?}` |
+
+### Диалоги тьютора
+
+| Метод | Путь | Вход | Выход |
+|---|---|---|---|
+| GET | `/api/tutor/conversations` | — | `{conversations[], activeId}` |
+| POST | `/api/tutor/conversations` | — | `{conversation}` (новая, предыдущая архивируется) |
+| GET | `/api/tutor/conversations/:id` | — | `{conversation, messages[]}` (ownership, иначе 404) |
 
 ### Материалы и админ
 
 | Метод | Путь | Вход | Выход |
 |---|---|---|---|
 | POST | `/api/materials` | `FormData: file[, scope=global]` | `{id, filename, scope, chunkCount, summary, skillIds, …}` |
-| GET | `/api/materials` | — | `{isAdmin, materials[]}` (ученик видит свои + глобальные) |
+| GET | `/api/materials` | — | `{isAdmin, materials[]}` (свои + глобальные; `mimeType`, `provenance`) |
 | DELETE | `/api/materials/:id` | — | `{ok}` (владелец или админ, иначе 403) |
 | GET | `/api/admin/overview` | — | `{students[], totals{}}` (только `role: admin`, иначе 403) |
 
@@ -937,12 +984,15 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | `(app)/layout.tsx` | server | нет сессии → `/login`; оборачивает в `AppShell` |
 | `/tutor` | client | — (первый пункт навигации) |
 | `/home` | server + client | нет цели → `/tutor`; нет роадмапа или диагностики → `/diagnostic?goalId=` |
-| `/roadmap`, `/map`, `/progress`, `/materials` | client | каркас |
-| `/learn/[itemId]` | server (params) + client | каркас |
+| `/roadmap` | client | иерархический план с раскрытием подшагов |
+| `/learning` | server + client | единый Learning hub: вкладки Overview / Knowledge Map / Materials / Progress |
+| `/map`, `/materials`, `/progress` | server | редиректы на `/learning?tab=…` (совместимость) |
+| `/learn/[itemId]` | server (params) + client | каркас; `/api/learn` проверяет владение узлом |
 | `/onboarding` | server + client | есть цель → `/home` |
 | `/diagnostic` | server + `Suspense` | каркас |
 
-`(app)` — route group: не влияет на URL, но даёт общий каркас (сайдбар, аккаунт, язык).
+`(app)` — route group: не влияет на URL, но даёт общий каркас (сайдбар, аккаунт, язык) и
+монтирует **FloatingTutor** на всех авторизованных страницах (§48).
 
 ### Состояние
 
@@ -1089,30 +1139,32 @@ console.error(`[api] ${msg}`)                        // серверный ло�
 5. **Изоляция кода — уровень подпроцесса**, не контейнер/gVisor. Для прода нужен контейнерный
    sandbox с лимитами CPU/памяти/сети.
 6. **SQLite** — не Postgres; JSON-поля вместо связующих таблиц.
-7. **Нет тестового фреймворка.** Есть `scripts/smoke.mjs` (e2e по живому API) и `tsc --noEmit`.
+7. **Формальные тесты — только для чистого ядра.** `node --import tsx --test` покрывает
+   `mastery`/`competency`/`evidence`/`roadmap` (50 тестов); e2e — `scripts/upgrade-smoke.mjs`.
+   Для Prisma-зависимых сервисов отдельных unit-тестов нет.
 8. **Нет rate limiting, подтверждения email, сброса пароля, 2FA.**
 
 ### Образовательные пробелы
 
-9. **Нет планировщика повторений** — `retention` считается, но интервальные повторения по
-   расписанию не ставятся.
+9. **Планировщик повторений — частичный.** `retentionEstimate` + `retentionDue` считаются и
+   показываются в UI, но интервальные повторения по расписанию не ставятся автоматически.
 10. **Нет интерливинга** — смешивание навыков в одной сессии не реализовано.
-11. **Перенос двигается слишком легко:** условие `transferLevel > 0`, а обычные пункты получают
-    `0.15`, поэтому `transfer` растёт почти от любой верной задачи и за 5 успехов доходит до 100 %.
-    Корректнее поднять порог (например `>= 0.4`, чтобы двигали только `transfer`/`project`) и
-    замедлить шаг.
-12. **`application` и `hintDependence` считаются, но не выводятся в UI.**
+11. **Перенос исправлен, но строг:** обычная практика имеет `transferLevel=0.1` (порог 0.4), поэтому
+    transfer двигают только `transfer`/`project`-задачи; шаг +0.2 за успех (замедлен против прежнего).
+12. **`application`, `supportDependence` и `retention` выводятся в UI** (карта/прогресс);
+    остаётся не показывать полную историю изменений вектора во времени.
 13. **Задачи только по Python**; нет статического анализа/AST и оценки сложности.
 14. **Нет дашборда учителя** — только админская сводка.
 15. **Материалы не «усваиваются» в граф** — покрытие навыков хранится у материала, но новых узлов
     графа из документа не создаётся.
 16. **i18n покрывает интерфейс**; служебные строки в логах и часть подписей — на английском.
+17. **Retrieval-история тьютора лексическая** (keyword), а не семантическая (§60).
 
 ### Ближайшие разумные шаги
 
-Порог `transferLevel`; планировщик повторений (retention → расписание); вывод `application` и
-`hintDependence`; эмбеддинги + `pgvector` для retrieval; контейнерный sandbox; формальные тесты
-(unit для `mastery`/`applyEvidence` + e2e).
+Планировщик повторений (retention → расписание); интерливинг; эмбеддинги + `pgvector` для
+retrieval (материалов и истории диалога); контейнерный sandbox; unit-тесты для Prisma-сервисов
+(roadmap-редактирование, tutor-действия).
 
 ---
 

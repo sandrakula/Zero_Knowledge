@@ -35,6 +35,7 @@ model Learner {
   attempts     TaskAttempt[]
   hints        HintUsage[]
   messages     Message[]
+  conversations Conversation[]
   recommendations Recommendation[]
   materials    Material[]
 }
@@ -102,17 +103,42 @@ model CompetencyState {
   learner       Learner  @relation(fields: [learnerId], references: [id])
   skillId       String
   skill         Skill    @relation(fields: [skillId], references: [id])
+
+  // Beta-Binomial posterior, stored explicitly so it is never reconstructed
+  // from a rounded percentage. Prior: alpha0 = 1, beta0 = 3 (mean 0.25).
+  masteryAlpha  Float    @default(1)
+  masteryBeta   Float    @default(3)
+
+  // Derived mirror of the posterior mean, kept for cheap reads/compat.
   mastery       Float    @default(0)
+  // LEGACY: previous "1/(n+1)" uncertainty proxy. Kept for data preservation;
+  // new code uses masteryAlpha/Beta + evidenceCount instead.
   masteryUncertainty Float @default(1)
+
   depth         String   @default("recognition") // recognition..transfer
   independence  Float    @default(0)
   application   Float    @default(0)
   transfer      Float    @default(0)
-  retention     Float    @default(1)
+  retention     Float    @default(0) // last MEASURED retrieval performance
+
+  evidenceCount Int      @default(0) // meaningful observations
   attempts      Int      @default(0)
   successes     Int      @default(0)
+  independentSuccesses Int @default(0)
+  integrationAttempts  Int @default(0)
+  transferAttempts     Int @default(0)
+  retentionChecks      Int @default(0)
+  retentionSuccesses   Int @default(0)
+
+  supportDependence Float @default(0) // rolling average of assistance used
+  // LEGACY: superseded by supportDependence.
   hintDependence Float   @default(0)
+
+  taskFamilies  String   @default("[]") // JSON — distinct task families observed
+  depthCounts   String   @default("{}") // JSON — independent successes per depth level
+
   lastSeenAt    DateTime @default(now())
+  lastAssessmentAt DateTime?
   lastRetrievedAt DateTime?
   updatedAt     DateTime @updatedAt
 
@@ -177,12 +203,24 @@ model RoadmapItem {
   phase     String
   title     String
   description String
+  objective String  @default("") // short learning objective
   skillIds  String  @default("[]") // JSON array
   type      String  @default("lesson") // lesson | diagnostic | task | project | assessment | retention | transfer
   status    String  @default("locked") // locked | ready | active | completed
   contentId String?
   taskId    String?
   estimatedMinutes Int @default(20)
+
+  // Hierarchy (§32): a node may have editable substeps.
+  parentId  String?
+  parent    RoadmapItem?  @relation("RoadmapItemTree", fields: [parentId], references: [id])
+  children  RoadmapItem[] @relation("RoadmapItemTree")
+
+  optional  Boolean @default(false) // optional items never gate the main path
+  origin    String  @default("main") // main | tutor
+  branchKey String? // groups a tutor-created parallel branch
+  completedAt DateTime?
+  updatedAt DateTime @updatedAt @default(now())
 }
 
 model ContentItem {
@@ -212,6 +250,7 @@ model Task {
   cognitiveLevel String  @default("apply")
   independenceRequired Float @default(0.5)
   transferLevel Float    @default(0)
+  integrationLevel Float @default(0) // explicit integration classification (§17)
   starterCode   String   @default("")
   referenceSolution String @default("")
   tests         String   @default("[]") // JSON [{input, expected, hidden}]
@@ -293,12 +332,36 @@ model HintUsage {
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  learnerId String
-  learner   Learner  @relation(fields: [learnerId], references: [id])
-  role      String   // user | assistant | system
-  content   String
-  intent    String?
-  meta      String   @default("{}")
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  learnerId      String
+  learner        Learner  @relation(fields: [learnerId], references: [id])
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  role           String   // user | assistant | system
+  content        String
+  intent         String?
+  actionType     String?
+  skillIds       String   @default("[]") // JSON — skills this message relates to
+  taskId         String?
+  roadmapItemId  String?
+  meta           String   @default("{}")
+  createdAt      DateTime @default(now())
+}
+
+// Persistent tutor conversation (§54). The conversation stores what was SAID;
+// the Student Learning Twin stores what the learner can DO. They are separate.
+model Conversation {
+  id           String   @id @default(cuid())
+  learnerId    String
+  learner      Learner  @relation(fields: [learnerId], references: [id])
+  title        String   @default("")
+  summary      String   @default("")
+  activeGoalId String?
+  activeRoadmapItemId String?
+  messageCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+  archivedAt   DateTime?
+  messages     Message[]
 }

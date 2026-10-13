@@ -1,55 +1,80 @@
 import { clamp } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
-// Uncertainty-aware mastery estimation (§12–13, §68).
+// Beta-Binomial mastery model (§13–14, §23).
 //
-// Belief is a Beta posterior. We store the posterior mean (mastery)
-// and an uncertainty u = 1 / (n_data + 1), where n_data is the number
-// of strength-weighted observations. A fixed weak prior (1 success,
-// 3 failures → prior mean 0.25) keeps early evidence from producing
-// fake precision while still responding to real observations.
+// The posterior is stored explicitly as (alpha, beta) so it is never
+// reconstructed from rounded percentages. The prior alpha0 = 1, beta0 = 3
+// gives a prior mean of 0.25 — that is a WEAK PRIOR, not evidence, so the UI
+// must show "Not assessed" until real observations exist (see competency.ts).
 // ─────────────────────────────────────────────────────────────
 
-const PRIOR_S = 1;
-const PRIOR_F = 3;
-const PRIOR_N = PRIOR_S + PRIOR_F; // 4
+export const PRIOR_ALPHA = 1;
+export const PRIOR_BETA = 3;
+export const PRIOR_TOTAL = PRIOR_ALPHA + PRIOR_BETA;
 
-export type MasteryState = { mastery: number; uncertainty: number };
+export type Posterior = { alpha: number; beta: number };
 
-/** Effective data counts implied by the stored (mean, uncertainty). */
-function toCounts(p: number, u: number): { s: number; f: number; n: number } {
-  const n = Math.max(0, 1 / Math.max(u, 1e-6) - 1);
-  const s = clamp(p * (n + PRIOR_N) - PRIOR_S, 0, n);
-  const f = Math.max(0, n - s);
-  return { s, f, n };
+export function priorPosterior(): Posterior {
+  return { alpha: PRIOR_ALPHA, beta: PRIOR_BETA };
 }
 
-export function updateMastery(
-  prev: MasteryState,
-  success: boolean,
-  strength: number,
-): MasteryState {
-  const w = clamp(strength, 0, 1);
-  const { s, f, n } = toCounts(prev.mastery, prev.uncertainty);
-  const s2 = success ? s + w : s;
-  const f2 = success ? f : f + w;
-  const n2 = n + w;
-  const mastery = clamp((s2 + PRIOR_S) / (n2 + PRIOR_N), 0, 1);
-  const uncertainty = clamp(1 / (n2 + 1), 0.02, 1);
-  return { mastery, uncertainty };
+export function posteriorMean(p: Posterior): number {
+  const n = p.alpha + p.beta;
+  return n > 0 ? clamp(p.alpha / n) : 0;
 }
 
-export type SupportTier = "insufficient" | "uncertain" | "moderate" | "strong";
+/** Closed-form standard deviation of the Beta posterior. */
+export function posteriorStd(p: Posterior): number {
+  const n = p.alpha + p.beta;
+  if (n <= 0) return 0.5;
+  return Math.sqrt((p.alpha * p.beta) / (n * n * (n + 1)));
+}
 
-export function supportTier(u: number): SupportTier {
-  const n = Math.max(0, 1 / Math.max(u, 1e-6) - 1);
-  if (n < 0.5) return "insufficient";
-  if (n < 3) return "uncertain";
+/** Strength-weighted observations beyond the prior — the "amount of evidence". */
+export function evidenceCount(p: Posterior): number {
+  return Math.max(0, p.alpha + p.beta - PRIOR_TOTAL);
+}
+
+/**
+ * Credible interval via a normal approximation, clipped to [0,1].
+ * DOCUMENTED APPROXIMATION: this is not an exact Beta interval; it is only
+ * meaningful when the evidence count is non-trivial.
+ */
+export function credibleInterval(p: Posterior, z = 1.96): { lower: number; upper: number } {
+  const mean = posteriorMean(p);
+  const sd = posteriorStd(p);
+  return { lower: clamp(mean - z * sd, 0, 1), upper: clamp(mean + z * sd, 0, 1) };
+}
+
+/**
+ * One observation. `q` is the observed performance score in [0,1] (binary for
+ * diagnostic questions, fraction of passed tests for comparable programming
+ * tasks, rubric score otherwise). `w` is the effective evidence weight.
+ */
+export function updatePosterior(p: Posterior, q: number, w: number): Posterior {
+  const ww = clamp(w, 0, 1);
+  if (ww <= 0) return p;
+  const qq = clamp(q, 0, 1);
+  return { alpha: p.alpha + ww * qq, beta: p.beta + ww * (1 - qq) };
+}
+
+/**
+ * How much evidence backs the estimate. This is EVIDENCE SUFFICIENCY, not
+ * "confusion about a number" and not the learner's self-reported confidence.
+ */
+export type EvidenceSufficiency = "none" | "insufficient" | "moderate" | "strong";
+
+export function sufficiency(p: Posterior): EvidenceSufficiency {
+  const n = evidenceCount(p);
+  if (n < 0.5) return "none";
+  if (n < 3) return "insufficient";
   if (n < 8) return "moderate";
   return "strong";
 }
 
-// Cognitive depth ladder (§14).
+// ── Cognitive depth ladder (§20) ────────────────────────────
+
 export const DEPTH_LADDER = [
   "recognition",
   "understanding",
@@ -60,17 +85,83 @@ export const DEPTH_LADDER = [
   "transfer",
 ] as const;
 
+export type Depth = (typeof DEPTH_LADDER)[number];
+
+const COGNITIVE_TO_DEPTH: Record<string, Depth> = {
+  recognize: "recognition",
+  recognition: "recognition",
+  understand: "understanding",
+  understanding: "understanding",
+  apply: "application",
+  application: "application",
+  analyze: "analysis",
+  analysis: "analysis",
+  evaluate: "evaluation",
+  evaluation: "evaluation",
+  create: "creation",
+  creation: "creation",
+  transfer: "transfer",
+};
+
+/** Map a task's cognitive level onto the depth ladder. */
+export function depthFromCognitiveLevel(level: string | null | undefined): Depth {
+  const key = (level ?? "").toLowerCase().trim();
+  return COGNITIVE_TO_DEPTH[key] ?? "understanding";
+}
+
 export function depthRank(depth: string): number {
-  const i = DEPTH_LADDER.indexOf(depth as (typeof DEPTH_LADDER)[number]);
+  const i = DEPTH_LADDER.indexOf(depth as Depth);
   return i === -1 ? 0 : i;
 }
 
-export function promoteDepth(current: string, demonstrated: string): string {
-  const a = depthRank(current);
-  const b = depthRank(demonstrated);
-  return DEPTH_LADDER[Math.max(a, b)];
+// ── Retention (§19) ─────────────────────────────────────────
+
+/** Half-life of the retention estimate, in days. */
+export const RETENTION_HALF_LIFE_DAYS = 14;
+/** Below this estimated retention a review becomes useful. */
+export const RETENTION_DUE_THRESHOLD = 0.6;
+/** A learning session in the same sitting is not a retention check. */
+export const RETENTION_MIN_INTERVAL_DAYS = 1;
+
+/**
+ * Time-decayed retention ESTIMATE. `stored` is the last measured retrieval
+ * performance; the estimate decays exponentially from the last successful
+ * retrieval. This is a heuristic estimate of retrievability, not a measurement
+ * of memory.
+ */
+export function retentionEstimate(
+  stored: number,
+  lastRetrievedAt: Date | null | undefined,
+  now: Date = new Date(),
+): number {
+  if (!lastRetrievedAt) return clamp(stored);
+  const days = Math.max(0, (now.getTime() - new Date(lastRetrievedAt).getTime()) / 86_400_000);
+  const factor = Math.pow(0.5, days / RETENTION_HALF_LIFE_DAYS);
+  return clamp(stored * factor);
 }
 
-export function initialMastery(): MasteryState {
-  return { mastery: PRIOR_S / PRIOR_N, uncertainty: 1 };
+/** Whether a skill is due for a retention review. */
+export function retentionDue(
+  stored: number,
+  lastRetrievedAt: Date | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!lastRetrievedAt) return false;
+  const days = (now.getTime() - new Date(lastRetrievedAt).getTime()) / 86_400_000;
+  if (days < RETENTION_MIN_INTERVAL_DAYS) return false;
+  return retentionEstimate(stored, lastRetrievedAt, now) < RETENTION_DUE_THRESHOLD;
+}
+
+/** Number of days until the next retention review would become useful. */
+export function daysUntilRetentionDue(
+  stored: number,
+  lastRetrievedAt: Date | null | undefined,
+  now: Date = new Date(),
+): number | null {
+  if (!lastRetrievedAt || stored <= 0) return null;
+  const targetFactor = RETENTION_DUE_THRESHOLD / stored;
+  if (targetFactor <= 0 || targetFactor >= 1) return RETENTION_MIN_INTERVAL_DAYS;
+  const days = -RETENTION_HALF_LIFE_DAYS * Math.log2(targetFactor);
+  const elapsed = (now.getTime() - new Date(lastRetrievedAt).getTime()) / 86_400_000;
+  return Math.max(0, Math.ceil(days - elapsed));
 }

@@ -3,7 +3,7 @@ import { handle, requireUser } from "@/lib/api";
 import { normalizeLang } from "@/lib/lang";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: Request) {
   return handle(async () => {
@@ -12,7 +12,8 @@ export async function POST(req: Request) {
     return tutor({
       learnerId: userId,
       message: String(body.message ?? ""),
-      roadmapItemId: body.roadmapItemId,
+      conversationId: body.conversationId ? String(body.conversationId) : undefined,
+      roadmapItemId: body.roadmapItemId ? String(body.roadmapItemId) : undefined,
       language: normalizeLang(body.lang),
     });
   });

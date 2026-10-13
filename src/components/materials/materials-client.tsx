@@ -10,9 +10,11 @@ type Material = {
   id: string;
   filename: string;
   size: number;
+  mimeType: string;
   language: string;
   status: string;
   scope: string;
+  provenance: "user-provided" | "teacher-provided";
   isOwner: boolean;
   chunkCount: number;
   summary: string;
@@ -132,8 +134,12 @@ export function MaterialsClient() {
                     <p className="truncate font-medium text-text">{m.filename}</p>
                     <span className="chip">{fmtSize(m.size)}</span>
                     <span className="chip uppercase">{m.language}</span>
+                    <span className="chip">{m.mimeType?.split("/")[1] ?? m.mimeType}</span>
                     <span className={cn("chip", m.scope === "global" ? "border-cyan/30 text-cyan" : "text-text-faint")}>
                       {m.scope === "global" ? t("materials.shared") : t("materials.own")}
+                    </span>
+                    <span className="chip border-mint/20 text-mint">
+                      {m.provenance === "teacher-provided" ? t("materials.provTeacher") : t("materials.original")}
                     </span>
                     <span className="chip">{m.chunkCount} {t("materials.chunks")}</span>
                   </div>

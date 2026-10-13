@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, Check, X, ArrowRight, Loader2, Sparkles } from "lucide-react";
@@ -43,6 +43,9 @@ export function DiagnosticFlow() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
+  // Guard against double-mount / dependency changes re-triggering the same
+  // diagnostic start (which would generate a second, different first question).
+  const startedRef = useRef<string | null>(null);
 
   const start = useCallback(async () => {
     setLoading(true);
@@ -71,7 +74,9 @@ export function DiagnosticFlow() {
   }, [goalId, lang, t]);
 
   useEffect(() => {
-    if (goalId) start();
+    if (!goalId || startedRef.current === goalId) return;
+    startedRef.current = goalId;
+    void start();
   }, [goalId, start]);
 
   async function answer(i: number) {

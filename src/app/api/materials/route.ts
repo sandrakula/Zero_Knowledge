@@ -120,6 +120,7 @@ export async function GET() {
         id: m.id,
         filename: m.filename,
         size: m.size,
+        mimeType: m.mimeType,
         language: m.language,
         scope: m.scope,
         status: m.status,
@@ -127,6 +128,9 @@ export async function GET() {
         summary: m.summary,
         skillIds: JSON.parse(m.skillIds) as string[],
         isOwner: m.learnerId === userId,
+        // Materials are always original uploads (never generated content);
+        // provenance distinguishes whose original it is (§8).
+        provenance: m.scope === "global" ? "teacher-provided" : "user-provided",
         createdAt: m.createdAt.toISOString(),
       })),
     };

@@ -1,5 +1,6 @@
-import { MapClient } from "@/components/map/map-client";
+import { redirect } from "next/navigation";
 
-export default function MapPage() {
-  return <MapClient />;
+/** Compatibility: the Knowledge Map is now a tab of the unified Learning hub. */
+export default function MapRedirect() {
+  redirect("/learning?tab=map");
 }
