@@ -152,8 +152,8 @@ export function MapClient() {
                   <ProgressRing value={selectedFull.mastery ?? 0} size={64} label={selectedFull.seen ? `${Math.round((selectedFull.mastery ?? 0) * 100)}` : "—"} color={stateColor(selectedFull)} />
                   <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <Metric label={t("map.depth")} value={selectedFull.depth ?? "—"} />
-                    <Metric label={t("map.independence")} value={selectedFull.independence === null ? "—" : `${Math.round(selectedFull.independence * 100)}%`} />
-                    <Metric label={t("map.transfer")} value={selectedFull.transfer === null ? "—" : `${Math.round(selectedFull.transfer * 100)}%`} />
+                    <Metric label={t("metric.noHints")} value={selectedFull.independence === null ? "—" : `${Math.round(selectedFull.independence * 100)}%`} />
+                    <Metric label={t("metric.newTasks")} value={selectedFull.transfer === null ? "—" : `${Math.round(selectedFull.transfer * 100)}%`} />
                     <Metric label={t("map.attempts")} value={String(selectedFull.attempts)} />
                   </div>
                 </div>

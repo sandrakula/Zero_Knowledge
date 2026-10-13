@@ -190,6 +190,14 @@ export const en: Dict = {
   "materials.shared": "shared",
   "materials.own": "yours",
 
+  // metric labels in plain language (shown on Home / Progress / Map)
+  "metric.knowledge": "Knowledge",
+  "metric.knowledge.hint": "How well you actually know this. Grows only from real evidence.",
+  "metric.noHints": "No hints",
+  "metric.noHints.hint": "You solve it on your own — without hints or help.",
+  "metric.newTasks": "New tasks",
+  "metric.newTasks.hint": "You can apply it to new, unfamiliar problems — not just repeat a familiar one.",
+
   // shared
   "common.loading": "Loading…",
   "common.error": "Something went wrong",
@@ -393,6 +401,13 @@ export const ru: Dict = {
   "materials.back": "Назад",
   "materials.shared": "общий",
   "materials.own": "ваш",
+
+  "metric.knowledge": "Знание",
+  "metric.knowledge.hint": "Насколько хорошо вы это действительно знаете. Растёт только от реальных доказательств.",
+  "metric.noHints": "Без подсказок",
+  "metric.noHints.hint": "Вы решаете сами — без подсказок и помощи.",
+  "metric.newTasks": "В новых задачах",
+  "metric.newTasks.hint": "Вы применяете это в новых, незнакомых задачах, а не просто повторяете знакомое.",
 
   "common.loading": "Загрузка…",
   "common.error": "Что-то пошло не так",

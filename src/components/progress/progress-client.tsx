@@ -56,11 +56,11 @@ export function ProgressClient() {
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-text-faint">
                 <th className="pb-2 pr-3 font-medium">{t("progress.skill")}</th>
-                <th className="pb-2 pr-3 font-medium">{t("progress.mastery")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("metric.knowledge")}</th>
                 <th className="pb-2 pr-3 font-medium">{t("progress.support")}</th>
                 <th className="pb-2 pr-3 font-medium">{t("progress.depth")}</th>
-                <th className="pb-2 pr-3 font-medium">{t("progress.independence")}</th>
-                <th className="pb-2 font-medium">{t("progress.transfer")}</th>
+                <th className="pb-2 pr-3 font-medium">{t("metric.noHints")}</th>
+                <th className="pb-2 font-medium">{t("metric.newTasks")}</th>
               </tr>
             </thead>
             <tbody>

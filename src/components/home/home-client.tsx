@@ -88,9 +88,9 @@ export function HomeClient() {
               </div>
 
               <div className="flex flex-wrap items-start justify-center gap-x-6 gap-y-4 sm:gap-x-8">
-                <RingStat value={avgMastery} color="#7c6cff" caption={t("progress.mastery")} />
-                <RingStat value={avgIndependence} color="#22d3ee" caption={t("progress.independence")} />
-                <RingStat value={avgTransfer} color="#34d399" caption={t("progress.transfer")} />
+                <RingStat value={avgMastery} color="#7c6cff" caption={t("metric.knowledge")} hint={t("metric.knowledge.hint")} />
+                <RingStat value={avgIndependence} color="#22d3ee" caption={t("metric.noHints")} hint={t("metric.noHints.hint")} />
+                <RingStat value={avgTransfer} color="#34d399" caption={t("metric.newTasks")} hint={t("metric.newTasks.hint")} />
               </div>
             </div>
           </div>
@@ -210,9 +210,9 @@ export function HomeClient() {
 }
 
 /** Ring + caption underneath (captions stay outside so long words never overlap). */
-function RingStat({ value, color, caption }: { value: number; color: string; caption: string }) {
+function RingStat({ value, color, caption, hint }: { value: number; color: string; caption: string; hint?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex cursor-help flex-col items-center gap-2" title={hint}>
       <ProgressRing value={value} size={68} color={color} />
       <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-text-faint">{caption}</span>
     </div>
