@@ -305,6 +305,7 @@ export const en: Dict = {
   "roadmap.noSubsteps": "No substeps yet — you can break this step down or ask the tutor.",
   "roadmap.rebuild": "Re-plan from evidence",
   "roadmap.rebuilding": "Re-planning…",
+  "roadmap.autoBreaking": "Breaking topics into substeps…",
 
   // ── admin
   "admin.title": "Administration",
@@ -614,6 +615,7 @@ export const ru: Dict = {
   "roadmap.noSubsteps": "Подшагов пока нет — можно разбить шаг или попросить тьютора.",
   "roadmap.rebuild": "Пересобрать план",
   "roadmap.rebuilding": "Пересобираем…",
+  "roadmap.autoBreaking": "Разбиваю темы на подшаги…",
 
   "admin.title": "Администрирование",
   "admin.subtitle": "Ученики, их прогресс, уровень знаний и активность",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Route, Sparkles, Target } from "lucide-react";
@@ -8,6 +8,9 @@ import { useI18n } from "@/components/i18n";
 import { StatusDot, StatusLegend } from "@/components/learning/status";
 import { cn } from "@/lib/utils";
 import type { StateResponse, RoadmapItemView, TutorBranchView } from "@/lib/types";
+
+// Topics that are always auto-broken into substeps (single-purpose checks stay whole).
+const ELIGIBLE = new Set(["lesson", "concept", "practice", "assessment", "example", "project", "transfer"]);
 
 const TYPE_COLOR: Record<string, string> = {
   lesson: "#7c6cff",
@@ -29,15 +32,76 @@ export function RoadmapClient() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
+  const [autoBreaking, setAutoBreaking] = useState(false);
+  const autoBrokeRef = useRef(false);
+  const expandedOnceRef = useRef(false);
 
-  const load = () => {
+  const load = () =>
     fetch("/api/state")
       .then((r) => r.json())
       .then((d) => (d.error ? setError(d.error) : setState(d)))
       .catch((e) => setError(e.message));
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const savedLang = (): "en" | "ru" => {
+    if (typeof window === "undefined") return lang;
+    const s = window.localStorage.getItem("zk_lang");
+    return s === "ru" || s === "en" ? s : lang;
   };
 
-  useEffect(load, []);
+  const expandAllWithChildren = (data: StateResponse) => {
+    setExpanded((prev) => {
+      const next = { ...prev };
+      for (const i of data.roadmap?.items ?? []) if (i.children.length) next[i.id] = true;
+      return next;
+    });
+  };
+
+  // Auto-breakdown: every eligible topic gets substeps without a manual click.
+  useEffect(() => {
+    if (!state?.roadmap) return;
+    const eligible = state.roadmap.items.filter((i) => !i.children.length && ELIGIBLE.has(i.type));
+
+    if (eligible.length === 0) {
+      if (!expandedOnceRef.current) {
+        expandedOnceRef.current = true;
+        expandAllWithChildren(state);
+      }
+      return;
+    }
+    if (autoBrokeRef.current) return;
+    autoBrokeRef.current = true;
+    setAutoBreaking(true);
+    (async () => {
+      const pool = [...eligible];
+      const workers = Array.from({ length: 3 }, async () => {
+        while (pool.length) {
+          const item = pool.shift()!;
+          try {
+            await fetch("/api/roadmap/substeps", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ nodeId: item.id, lang: savedLang() }),
+            });
+          } catch {
+            /* retried on next mount */
+          }
+        }
+      });
+      await Promise.all(workers);
+      const res = await fetch("/api/state").then((r) => r.json());
+      if (!res.error) {
+        setState(res);
+        expandedOnceRef.current = true;
+        expandAllWithChildren(res);
+      }
+      setAutoBreaking(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   // Reflect tutor-made roadmap edits immediately (§ — tutor changes the plan in place).
   useEffect(() => {
@@ -112,6 +176,11 @@ export function RoadmapClient() {
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-text-muted">{roadmap?.summary}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {autoBreaking && (
+            <span className="chip border-cyan/30 text-cyan">
+              <Loader2 className="h-3 w-3 animate-spin" /> {t("roadmap.autoBreaking")}
+            </span>
+          )}
           <button onClick={rebuild} disabled={rebuilding} className="btn-ghost px-3 py-1.5 text-xs">
             {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {rebuilding ? t("roadmap.rebuilding") : t("roadmap.rebuild")}
