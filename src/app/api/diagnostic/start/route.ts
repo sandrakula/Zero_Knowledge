@@ -11,6 +11,6 @@ export async function POST(req: Request) {
     const { goalId, lang } = await req.json();
     const goal = await prisma.goal.findUnique({ where: { id: goalId } });
     if (!goal || goal.learnerId !== userId) return { error: "Goal not found", status: 404 };
-    return startDiagnostic(goalId, normalizeLang(lang));
+    return startDiagnostic(goalId, userId, normalizeLang(lang));
   });
 }

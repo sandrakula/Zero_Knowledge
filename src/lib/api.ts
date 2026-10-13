@@ -33,7 +33,8 @@ export async function handle(
   } catch (e) {
     if (e instanceof ApiError) return fail(e.message, e.status);
     const msg = e instanceof Error ? e.message : String(e);
-    const isProvider = msg.includes("AI") || msg.includes("provider") || msg.includes("timed out");
+    console.error(`[api] ${msg}`);
+    const isProvider = msg.includes("AI") || msg.includes("provider") || msg.includes("timed out") || msg.includes("Structured output");
     return fail(msg, isProvider ? 502 : 500);
   }
 }

@@ -29,11 +29,6 @@ export type DiagnosticQuestion = z.infer<typeof QSchema> & {
   difficulty: string;
 };
 
-// In-memory answer keys. Diagnostic questions are ephemeral; on restart the
-// learner simply re-does the (cheap) diagnostic. Evidence is only committed
-// once an answer arrives, so state is never corrupted by a restart.
-const keyStore = new Map<string, { correctIndex: number; explanation: string; misconception: string }>();
-
 /** Answer key is never sent to the client — only the question surface is. */
 function publicQuestion(q: DiagnosticQuestion) {
   return {
@@ -54,6 +49,7 @@ function levelFor(mastery: number): string {
 }
 
 async function generateQuestion(
+  learnerId: string,
   skillId: string,
   level: string,
   language?: string,
@@ -67,8 +63,18 @@ async function generateQuestion(
     `Skill: ${skill.name} (${skill.id})\nDescription: ${skill.description}\nTarget difficulty: ${level}\n${langInstruction(language)}`,
     { maxTokens: 8000 },
   );
-  const id = `dq_${Math.random().toString(36).slice(2, 10)}`;
-  keyStore.set(id, { correctIndex: q.correctIndex, explanation: q.explanation, misconception: q.misconception ?? "" });
+  const id = `dq_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+  // Persist the answer key so an in-progress diagnostic survives a restart.
+  await prisma.diagnosticQuestion.create({
+    data: {
+      id,
+      learnerId,
+      skillId,
+      correctIndex: q.correctIndex,
+      explanation: q.explanation,
+      misconception: q.misconception ?? "",
+    },
+  });
   return {
     ...q,
     code: q.code ?? "",
@@ -100,15 +106,18 @@ function pickSkills(goalSkills: string[]): string[] {
   return chosen;
 }
 
-export async function startDiagnostic(goalId: string, language?: string) {
+export async function startDiagnostic(goalId: string, learnerId: string, language?: string) {
   const goal = await prisma.goal.findUnique({ where: { id: goalId }, include: { targetSkills: true } });
-  if (!goal) throw new Error("Goal not found");
+  if (!goal || goal.learnerId !== learnerId) throw new Error("Goal not found");
+
+  // Clear any stale questions from a previous interrupted diagnostic.
+  await prisma.diagnosticQuestion.deleteMany({ where: { learnerId } });
 
   const goalSkills = goal.targetSkills.map((g) => g.skillId);
   const ladder = pickSkills(goalSkills);
   const first = ladder[0];
 
-  const q = await generateQuestion(first, "beginner", language);
+  const q = await generateQuestion(learnerId, first, "beginner", language);
   return {
     ladder,
     index: 0,
@@ -127,8 +136,11 @@ export async function answerDiagnostic(input: {
   learnerId: string;
   language?: string;
 }) {
-  const key = keyStore.get(input.questionId);
-  if (!key) throw new Error("Question expired — please restart the diagnostic");
+  const key = await prisma.diagnosticQuestion.findUnique({ where: { id: input.questionId } });
+  if (!key || key.learnerId !== input.learnerId) {
+    throw new Error("Question expired — please restart the diagnostic");
+  }
+  await prisma.diagnosticQuestion.delete({ where: { id: key.id } }).catch(() => {});
 
   const correct = input.selectedIndex === key.correctIndex;
   const value = {
@@ -185,6 +197,6 @@ export async function answerDiagnostic(input: {
 
   const nextSkillId = input.ladder[nextIndex];
   const nextLevel = correct ? levelFor(0.6) : "beginner";
-  const nextQ = await generateQuestion(nextSkillId, nextLevel, input.language);
+  const nextQ = await generateQuestion(input.learnerId, nextSkillId, nextLevel, input.language);
   return { done: false, correct, feedback, index: nextIndex, question: publicQuestion(nextQ) };
 }

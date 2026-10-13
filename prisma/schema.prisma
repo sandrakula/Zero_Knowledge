@@ -157,6 +157,18 @@ model MaterialChunk {
   text       String
 }
 
+// Persisted diagnostic answer keys so an in-progress diagnostic survives
+// server restarts / hot reloads (the answer key never goes to the client).
+model DiagnosticQuestion {
+  id            String   @id
+  learnerId     String
+  skillId       String
+  correctIndex  Int
+  explanation   String
+  misconception String   @default("")
+  createdAt     DateTime @default(now())
+}
+
 model RoadmapItem {
   id        String  @id @default(cuid())
   roadmapId String
