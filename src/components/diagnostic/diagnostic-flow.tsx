@@ -47,6 +47,14 @@ export function DiagnosticFlow() {
   // diagnostic start (which would generate a second, different first question).
   const startedRef = useRef<string | null>(null);
 
+  // Read the saved language directly so the first question is generated in the
+  // right language even before the i18n context finishes hydrating.
+  const apiLang = (): "en" | "ru" => {
+    if (typeof window === "undefined") return lang;
+    const saved = window.localStorage.getItem("zk_lang");
+    return saved === "ru" || saved === "en" ? saved : lang;
+  };
+
   const start = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -58,7 +66,7 @@ export function DiagnosticFlow() {
       const res = await fetch("/api/diagnostic/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalId, lang }),
+        body: JSON.stringify({ goalId, lang: apiLang() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("common.error"));
@@ -87,7 +95,7 @@ export function DiagnosticFlow() {
       const res = await fetch("/api/diagnostic/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalId, ladder, index, questionId: question.id, skillId: question.skillId, selectedIndex: i, confidence, lang }),
+        body: JSON.stringify({ goalId, ladder, index, questionId: question.id, skillId: question.skillId, selectedIndex: i, confidence, lang: apiLang() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("common.error"));

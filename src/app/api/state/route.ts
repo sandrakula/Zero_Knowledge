@@ -77,7 +77,7 @@ export async function GET() {
         ? { id: goal.id, title: goal.title, domain: goal.domain, targetLevel: goal.targetLevel, statement: goal.statement }
         : null,
       roadmap: roadmap
-        ? { id: roadmap.id, summary: roadmap.summary, items: roadmap.items, progress: roadmap.progress }
+        ? { id: roadmap.id, summary: roadmap.summary, items: roadmap.items, tutorBranches: roadmap.tutorBranches, progress: roadmap.progress }
         : null,
       summary,
       misconceptions,

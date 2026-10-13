@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { dicts } from "@/lib/i18n";
 import type { Lang } from "@/lib/lang";
 
@@ -19,16 +19,14 @@ const Ctx = createContext<I18nValue>({
 });
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  // Initialize synchronously from localStorage to avoid an "en → ru" flip on
-  // mount, which re-rendered the tree and double-fired effect-driven requests
-  // (e.g. the diagnostic's first question being generated twice).
-  const [lang, setLangState] = useState<Lang>(() => {
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem("zk_lang");
-      if (saved === "ru" || saved === "en") return saved;
-    }
-    return "en";
-  });
+  // Start with "en" so the server and first client render match (no hydration
+  // mismatch), then hydrate the saved language after mount.
+  const [lang, setLangState] = useState<Lang>("en");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("zk_lang");
+    if (saved === "ru" || saved === "en") setLangState(saved);
+  }, []);
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
