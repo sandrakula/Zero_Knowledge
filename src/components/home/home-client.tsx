@@ -66,16 +66,11 @@ export function HomeClient() {
             <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-lg">
                 {nextBest.next ? (
-                  <>
-                    <div className="flex items-center gap-2 text-sm text-text-muted">
-                      <Target className="h-4 w-4 text-accent-soft" />
-                      <span className="font-medium text-accent-soft">{nextBest.next.title}</span>
-                      <span className="chip">{t(`type.${nextBest.next.type}`) ?? nextBest.next.type}</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-text-faint">
-                      {nextBest.next.description} — {t("home.chosenFrom")} {summary.evidenceCount} {t("home.evidence")}
-                    </p>
-                  </>
+                  <div className="flex items-center gap-2 text-sm text-text-muted">
+                    <Target className="h-4 w-4 text-accent-soft" />
+                    <span className="font-medium text-accent-soft">{nextBest.next.title}</span>
+                    <span className="chip">{t(`type.${nextBest.next.type}`) ?? nextBest.next.type}</span>
+                  </div>
                 ) : (
                   <p className="text-sm leading-relaxed text-text-muted">{t("home.roadmapReady")}</p>
                 )}
@@ -92,10 +87,10 @@ export function HomeClient() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-5">
-                <ProgressRing value={avgMastery} label={`${Math.round(avgMastery * 100)}`} sublabel={t("progress.mastery").toLowerCase()} color="#7c6cff" />
-                <ProgressRing value={avgIndependence} label={`${Math.round(avgIndependence * 100)}`} sublabel={t("progress.independence").toLowerCase()} color="#22d3ee" />
-                <ProgressRing value={avgTransfer} label={`${Math.round(avgTransfer * 100)}`} sublabel={t("progress.transfer").toLowerCase()} color="#34d399" />
+              <div className="flex flex-wrap items-start justify-center gap-x-6 gap-y-4 sm:gap-x-8">
+                <RingStat value={avgMastery} color="#7c6cff" caption={t("progress.mastery")} />
+                <RingStat value={avgIndependence} color="#22d3ee" caption={t("progress.independence")} />
+                <RingStat value={avgTransfer} color="#34d399" caption={t("progress.transfer")} />
               </div>
             </div>
           </div>
@@ -210,6 +205,16 @@ export function HomeClient() {
       <p className="flex items-center justify-center gap-2 text-center text-[11px] text-text-faint">
         <Brain className="h-3.5 w-3.5" /> {t("home.footer")}
       </p>
+    </div>
+  );
+}
+
+/** Ring + caption underneath (captions stay outside so long words never overlap). */
+function RingStat({ value, color, caption }: { value: number; color: string; caption: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <ProgressRing value={value} size={68} color={color} />
+      <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-text-faint">{caption}</span>
     </div>
   );
 }
