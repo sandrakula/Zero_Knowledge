@@ -403,6 +403,20 @@ export function rollupStatus(statuses: SkillStatus[]): SkillStatus {
   return "developing";
 }
 
+/**
+ * Status rendered next to a roadmap node.
+ *
+ * A completed node is a hard, deterministic milestone — every test passed with
+ * at most minimal support. A later failure on the same (often shared) skill, or
+ * a low lifetime posterior mean, must not repaint that finished step red and
+ * contradict its checkmark. The residual weakness stays visible where it
+ * belongs: on the skill itself in the Learning hub.
+ */
+export function nodeDisplayStatus(itemStatus: string, rolled: SkillStatus): SkillStatus {
+  if (itemStatus === "completed" && rolled === "needs_attention") return "developing";
+  return rolled;
+}
+
 async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatus>> {
   const [states, misconceptions] = await Promise.all([
     prisma.competencyState.findMany({ where: { learnerId } }),
@@ -480,7 +494,7 @@ export async function getRoadmapView(goalId: string, learnerId: string) {
       branchKey: i.branchKey,
       depth,
       completedAt: i.completedAt ? i.completedAt.toISOString() : null,
-      skillStatus: rollupStatus(skillStatuses),
+      skillStatus: nodeDisplayStatus(i.status, rollupStatus(skillStatuses)),
       demonstratedSkills: skillStatuses.filter((s) => s === "demonstrated").length,
       children: [],
     };

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { rollupStatus, isStaleFromStatuses, RoadmapSchema } from "@/lib/core/roadmap";
+import { rollupStatus, nodeDisplayStatus, isStaleFromStatuses, RoadmapSchema } from "@/lib/core/roadmap";
 import {
   RULES,
   classifyActivity,
@@ -59,6 +59,24 @@ test("all demonstrated rolls up to demonstrated", () => {
 
 test("all not assessed rolls up to not assessed", () => {
   assert.equal(rollupStatus(["not_assessed", "not_assessed"]), "not_assessed");
+});
+
+// A finished step carries a checkmark; painting it red because the underlying
+// (shared) skill still has a low lifetime mean contradicts that milestone.
+test("a completed node never shows needs_attention", () => {
+  assert.equal(nodeDisplayStatus("completed", "needs_attention"), "developing");
+});
+
+test("an unfinished node keeps needs_attention", () => {
+  assert.equal(nodeDisplayStatus("ready", "needs_attention"), "needs_attention");
+  assert.equal(nodeDisplayStatus("active", "needs_attention"), "needs_attention");
+  assert.equal(nodeDisplayStatus("locked", "needs_attention"), "needs_attention");
+});
+
+test("node display passes through every other status", () => {
+  assert.equal(nodeDisplayStatus("completed", "demonstrated"), "demonstrated");
+  assert.equal(nodeDisplayStatus("completed", "developing"), "developing");
+  assert.equal(nodeDisplayStatus("completed", "not_assessed"), "not_assessed");
 });
 
 test("mixed states roll up to developing", () => {
