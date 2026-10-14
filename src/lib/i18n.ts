@@ -78,6 +78,7 @@ export const en: Dict = {
   "diag.continue": "Continue",
   "diag.finish": "Finish",
   "diag.retry": "Retry",
+  "diag.preparingRoadmap": "Preparing your detailed roadmap…",
 
   // home
   "home.next": "What should I do next?",
@@ -401,6 +402,7 @@ export const ru: Dict = {
   "diag.continue": "Далее",
   "diag.finish": "Завершить",
   "diag.retry": "Повторить",
+  "diag.preparingRoadmap": "Готовим подробный план обучения…",
 
   "home.next": "Что делать дальше?",
   "home.roadmapReady": "Ваш план готов.",

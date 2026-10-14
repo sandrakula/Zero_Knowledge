@@ -16,6 +16,15 @@ import type { RoadmapItemView } from "./types";
 // deterministic, evidence-derived status colours.
 // ─────────────────────────────────────────────────────────────
 
+const SubstepItemSchema = z.object({
+  title: z.string(),
+  objective: z.string().default(""),
+  description: z.string().default(""),
+  type: z.string().default("practice"),
+  estimatedMinutes: z.number().int().min(3).max(120).default(15),
+  optional: z.boolean().default(false),
+});
+
 const RoadmapSchema = z.object({
   summary: z.string(),
   phases: z.array(
@@ -29,6 +38,9 @@ const RoadmapSchema = z.object({
           skillIds: z.array(z.string()),
           type: z.string(),
           estimatedMinutes: z.number().int().min(5).max(240),
+          // Substeps are produced together with the roadmap so the plan is
+          // always fully broken down on first view (no second LLM pass).
+          substeps: z.array(SubstepItemSchema).default([]),
         }),
       ),
     }),
@@ -75,7 +87,7 @@ export async function generateRoadmap(input: {
   ].join("\n\n");
 
   const result = await generateObject(RoadmapSchema, prompt.capability, prompt.system, user, {
-    maxTokens: 12000,
+    maxTokens: 20000,
   });
 
   const validIds = new Set(SKILLS.map((s) => s.id));
@@ -99,10 +111,11 @@ export async function generateRoadmap(input: {
     for (const item of phase.items) {
       const skillIds = item.skillIds.filter((id) => validIds.has(id));
       if (skillIds.length === 0) continue;
-      await prisma.roadmapItem.create({
+      const rootIndex = index++;
+      const root = await prisma.roadmapItem.create({
         data: {
           roadmapId: roadmap.id,
-          index: index++,
+          index: rootIndex,
           phase: phase.phase,
           title: item.title,
           description: item.description,
@@ -116,9 +129,39 @@ export async function generateRoadmap(input: {
           estimatedMinutes: item.estimatedMinutes,
         },
       });
+
+      // Single-purpose checks stay whole; substantial learning steps always
+      // arrive with their breakdown already in place.
+      const eligible = !SINGLE_PURPOSE_TYPES.has(item.type);
+      const subs = item.substeps ?? [];
+      if (eligible && subs.length) {
+        let subIndex = rootIndex * 1000 + 1;
+        for (const s of subs) {
+          await prisma.roadmapItem.create({
+            data: {
+              roadmapId: roadmap.id,
+              parentId: root.id,
+              index: subIndex++,
+              phase: phase.phase,
+              title: s.title.slice(0, 200),
+              description: s.description ?? "",
+              objective: s.objective ?? "",
+              skillIds: JSON.stringify(skillIds),
+              type: s.type || "practice",
+              status: "ready",
+              optional: s.optional ?? false,
+              origin: "main",
+              estimatedMinutes: s.estimatedMinutes ?? 15,
+            },
+          });
+        }
+      }
     }
   }
 }
+
+/** Types that are a single check by design and are never broken into substeps. */
+export const SINGLE_PURPOSE_TYPES = new Set(["retention", "diagnostic"]);
 
 /** Build the roadmap once the diagnostic has seeded the learner model. */
 export async function buildRoadmapFromGoal(input: {
@@ -147,6 +190,25 @@ export async function buildRoadmapFromGoal(input: {
     competency: comps.map((c) => ({ skillId: c.skillId, mastery: c.mastery })),
     language: input.language,
   });
+}
+
+/**
+ * Build the roadmap only if the goal does not have one yet. Used after the
+ * diagnostic (which no longer blocks on roadmap generation) and as a safety
+ * net whenever a learner reaches the plan before it exists.
+ */
+export async function ensureRoadmap(input: {
+  goalId: string;
+  learnerId: string;
+  language?: string;
+  /** Rebuild even when a plan already exists (e.g. after a fresh diagnostic). */
+  force?: boolean;
+}): Promise<{ ready: boolean; roadmapId: string | null }> {
+  const existing = await prisma.roadmap.findUnique({ where: { goalId: input.goalId } });
+  if (existing && !input.force) return { ready: true, roadmapId: existing.id };
+  await buildRoadmapFromGoal(input);
+  const created = await prisma.roadmap.findUnique({ where: { goalId: input.goalId } });
+  return { ready: Boolean(created), roadmapId: created?.id ?? null };
 }
 
 /**

@@ -64,8 +64,15 @@ async function main() {
   let q = d.data.question, idx = d.data.index, ladder = d.data.ladder, done = false;
   while (!done) {
     const a = await api("/api/diagnostic/answer", { method: "POST", cookie, body: { goalId, ladder, index: idx, questionId: q.id, skillId: q.skillId, selectedIndex: 0, confidence: 0.5, lang: "en" } });
-    done = a.data.done; q = a.data.question; idx = a.data.index ?? idx;
+    done = Boolean(a.data.done);
+    if (!done) {
+      const nx = a.data.next;
+      const nq = await api("/api/diagnostic/next", { method: "POST", cookie, body: { skillId: nx.skillId, level: nx.level, lang: "en" } });
+      q = nq.data.question;
+      idx = nx.index;
+    }
   }
+  await api("/api/roadmap/ensure", { method: "POST", cookie, body: { goalId, force: true, lang: "en" } });
 
   let state = await api("/api/state", { cookie });
   const roots = state.data.roadmap.items;
@@ -75,10 +82,12 @@ async function main() {
   const gMetrics = state.data.goalMetrics;
   ok("reaction metrics are null when unassessed", gMetrics.mastery === null || typeof gMetrics.mastery === "number");
 
-  // --- Roadmap substeps (hierarchical) ---
-  const target = roots.find((i) => i.status === "ready") ?? roots[0];
+  // --- Roadmap substeps (hierarchical, generated together with the roadmap) ---
+  const prebroken = roots.filter((i) => (i.children?.length ?? 0) > 0);
+  ok("roadmap arrives pre-broken into substeps", prebroken.length > 0, `${prebroken.length}/${roots.length} roots have substeps`);
+  const target = prebroken[0] ?? roots.find((i) => i.status === "ready") ?? roots[0];
   r = await api("/api/roadmap/substeps", { method: "POST", cookie, body: { nodeId: target.id, lang: "en" } });
-  ok("substeps generated", r.status === 200 && (r.data.created?.length ?? 0) > 0, `${r.data.created?.length ?? 0} substeps`);
+  ok("substeps endpoint is idempotent", r.status === 200);
 
   state = await api("/api/state", { cookie });
   const withChildren = state.data.roadmap.items.find((i) => i.id === target.id);

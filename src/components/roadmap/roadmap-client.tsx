@@ -35,6 +35,7 @@ export function RoadmapClient() {
   const [autoBreaking, setAutoBreaking] = useState(false);
   const autoBrokeRef = useRef(false);
   const expandedOnceRef = useRef(false);
+  const ensuredRef = useRef(false);
 
   const load = () =>
     fetch("/api/state")
@@ -99,6 +100,26 @@ export function RoadmapClient() {
         expandAllWithChildren(res);
       }
       setAutoBreaking(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  // Safety net: if the plan has not been built yet (e.g. the learner left the
+  // diagnostic before it finished preparing), build it now.
+  useEffect(() => {
+    if (!state || state.roadmap || !state.goal || ensuredRef.current) return;
+    ensuredRef.current = true;
+    (async () => {
+      try {
+        await fetch("/api/roadmap/ensure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goalId: state.goal!.id, lang: savedLang() }),
+        });
+      } catch {
+        /* surfaced by the following reload */
+      }
+      void load();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);

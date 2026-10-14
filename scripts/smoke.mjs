@@ -75,14 +75,22 @@ async function main() {
   let idx = r.data.index;
   const ladder = r.data.ladder;
   let answered = 0;
-  while (!r.data.done && answered < 20) {
+  let done = false;
+  while (!done && answered < 20) {
     const ans = await api("/api/diagnostic/answer", { method: "POST", cookie: studentCookie, body: { goalId, ladder, index: idx, questionId: q.id, skillId: q.skillId, selectedIndex: 0, confidence: 0.5, lang: "en" } });
     answered++;
-    r = ans;
-    q = ans.data.question;
-    idx = ans.data.index ?? idx;
+    done = Boolean(ans.data.done);
+    if (!done) {
+      // Verdict is immediate; the next question is a separate request.
+      const nx = ans.data.next;
+      const nq = await api("/api/diagnostic/next", { method: "POST", cookie: studentCookie, body: { skillId: nx.skillId, level: nx.level, lang: "en" } });
+      q = nq.data.question;
+      idx = nx.index;
+    }
   }
-  console.log("diagnostic done:", r.data.done, "| questions answered:", answered);
+  // Roadmap is built after the diagnostic (no longer blocks the last verdict).
+  await api("/api/roadmap/ensure", { method: "POST", cookie: studentCookie, body: { goalId, force: true, lang: "en" } });
+  console.log("diagnostic done:", done, "| questions answered:", answered);
 
   r = await api("/api/state", { cookie: studentCookie });
   console.log("after diagnostic — roadmap items:", r.data.roadmap?.items?.length, "| evidence:", r.data.summary?.evidenceCount);

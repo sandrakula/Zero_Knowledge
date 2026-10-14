@@ -99,9 +99,20 @@ Return STRICT JSON only with this shape:
         {
           "title": string,
           "description": string,
-          "skillIds": string[], // 1-4 skill ids from the catalog
-          "type": string,       // lesson | task | project | assessment | retention | transfer
-          "estimatedMinutes": number
+          "objective": string,   // one sentence: what the learner will be able to do
+          "skillIds": string[],  // 1-4 skill ids from the catalog
+          "type": string,        // lesson | concept | practice | example | project | assessment | retention | transfer
+          "estimatedMinutes": number,
+          "substeps": [
+            {
+              "title": string,
+              "objective": string,
+              "description": string,
+              "type": string,    // concept | lesson | example | practice | assessment | transfer | project
+              "estimatedMinutes": number,
+              "optional": boolean
+            }
+          ]
         }
       ]
     }
@@ -112,8 +123,11 @@ Rules:
 - Order items so prerequisites come first (respect the prerequisite list provided).
 - Use the learner's current competency state: skip or compress items for skills already mastered, add "assessment" for uncertain skills, "retention" for decaying mastered skills.
 - End with at least one integrative "project" and one "transfer" item.
-- The roadmap is a hypothesis: keep it focused (3-6 phases, 12-20 items total).
-- Only use skill ids that exist in the catalog.`,
+- The roadmap is a hypothesis: keep it focused (3-6 phases, 10-16 items total).
+- Only use skill ids that exist in the catalog.
+- EVERY learning item must include 3-6 concrete substeps so the plan is fully detailed from the start: order them understanding → guided practice → independent practice → transfer, and vary their types.
+- Items of type "retention" or "diagnostic" are single checks: give them an empty substeps array [].
+- Do not make every substep a lesson; prefer worked examples and practice.`,
   },
   {
     id: "lesson",

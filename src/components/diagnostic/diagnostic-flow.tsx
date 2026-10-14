@@ -18,7 +18,7 @@ type Question = {
   options: string[];
 };
 
-type Pending = { question: Question | null; index: number; done: boolean };
+type Pending = { done: boolean; next: { index: number; skillId: string; level: string } | null };
 
 const CONFIDENCE = [
   { label: "diag.conf.notSure", value: 0.33 },
@@ -39,9 +39,14 @@ export function DiagnosticFlow() {
   const [selected, setSelected] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ correct: boolean; text: string } | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [nextQuestion, setNextQuestion] = useState<Question | null>(null);
+  const [loadingNext, setLoadingNext] = useState(false);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [roadmapError, setRoadmapError] = useState("");
+  const [preparingRoadmap, setPreparingRoadmap] = useState(false);
+  const [roadmapReady, setRoadmapReady] = useState(false);
   const [progress, setProgress] = useState(0);
   // Guard against double-mount / dependency changes re-triggering the same
   // diagnostic start (which would generate a second, different first question).
@@ -62,6 +67,7 @@ export function DiagnosticFlow() {
     setSelected(null);
     setFeedback(null);
     setPending(null);
+    setNextQuestion(null);
     try {
       const res = await fetch("/api/diagnostic/start", {
         method: "POST",
@@ -99,14 +105,64 @@ export function DiagnosticFlow() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? t("common.error"));
-      // Show the verdict for THIS question and only advance on "Continue".
+      // Show the verdict for THIS question immediately; the next question is
+      // requested in the background and never delays the answer check.
       setFeedback({ correct: data.correct, text: data.feedback });
-      setPending({ question: data.question ?? null, index: data.index ?? index, done: Boolean(data.done) });
+      setPending({ done: Boolean(data.done), next: data.next ?? null });
       setProgress(Math.round(((index + 1) / Math.max(ladder.length, 1)) * 100));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.error"));
     }
   }
+
+  // Prefetch the next question while the learner reads the feedback, so
+  // "Continue" is instant.
+  useEffect(() => {
+    if (!pending || pending.done || !pending.next || nextQuestion || loadingNext) return;
+    const meta = pending.next;
+    setLoadingNext(true);
+    fetch("/api/diagnostic/next", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ skillId: meta.skillId, level: meta.level, lang: apiLang() }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) setError(data.error);
+        else setNextQuestion(data.question);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : t("common.error")))
+      .finally(() => setLoadingNext(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, nextQuestion, loadingNext]);
+
+  // Once the diagnostic is finished, build the (already-broken-down) roadmap
+  // on the completion screen — the last verdict was returned without waiting.
+  const prepareRoadmap = useCallback(async () => {
+    if (!goalId) return;
+    setPreparingRoadmap(true);
+    setRoadmapError("");
+    try {
+      const res = await fetch("/api/roadmap/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goalId, lang: apiLang(), force: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? t("common.error"));
+      setRoadmapReady(true);
+    } catch (e) {
+      setRoadmapError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setPreparingRoadmap(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goalId, lang, t]);
+
+  useEffect(() => {
+    if (done && goalId && !roadmapReady) void prepareRoadmap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done, goalId]);
 
   function next() {
     if (!pending) return;
@@ -114,11 +170,13 @@ export function DiagnosticFlow() {
       setDone(true);
       return;
     }
-    setQuestion(pending.question);
-    setIndex(pending.index);
+    if (!nextQuestion || !pending.next) return;
+    setQuestion(nextQuestion);
+    setIndex(pending.next.index);
     setSelected(null);
     setFeedback(null);
     setPending(null);
+    setNextQuestion(null);
     setConfidence(0.66);
   }
 
@@ -168,9 +226,27 @@ export function DiagnosticFlow() {
             </div>
             <h2 className="mt-6 text-2xl font-bold text-text">{t("diag.done.title")}</h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-text-muted">{t("diag.done.desc")}</p>
-            <button onClick={() => router.push("/home")} className="btn-primary mt-8">
-              {t("diag.open")} <ArrowRight className="h-4 w-4" />
-            </button>
+            {roadmapError && <p className="mt-4 text-sm text-rose">{roadmapError}</p>}
+            {!roadmapReady && !roadmapError && (
+              <p className="mt-5 inline-flex items-center gap-2 text-sm text-text-muted">
+                <Loader2 className="h-4 w-4 animate-spin text-accent-soft" /> {t("diag.preparingRoadmap")}
+              </p>
+            )}
+            <div className="mt-8 flex items-center justify-center gap-3">
+              {roadmapError && (
+                <button onClick={prepareRoadmap} disabled={preparingRoadmap} className="btn-ghost">
+                  {preparingRoadmap ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {t("diag.retry")}
+                </button>
+              )}
+              <button
+                onClick={() => router.push("/home")}
+                disabled={!roadmapReady}
+                className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {roadmapReady ? t("diag.open") : <Loader2 className="h-4 w-4 animate-spin" />} <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -243,7 +319,8 @@ export function DiagnosticFlow() {
                       <Markdown>{feedback.text}</Markdown>
                     </div>
                   </div>
-                  <button onClick={next} className="btn-primary mt-4">
+                  <button onClick={next} disabled={!pending?.done && (!nextQuestion || loadingNext)} className="btn-primary mt-4 disabled:cursor-not-allowed disabled:opacity-60">
+                    {!pending?.done && (!nextQuestion || loadingNext) && <Loader2 className="h-4 w-4 animate-spin" />}
                     {pending?.done ? t("diag.finish") : t("diag.continue")} <ArrowRight className="h-4 w-4" />
                   </button>
                 </motion.div>

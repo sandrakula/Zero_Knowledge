@@ -714,13 +714,16 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 4. `createEvidence` + `LearningEvent` типа `confidence_submitted`
    (payload: `{confidence, correct, calibration}`) — материал для обучения калибровке уверенности.
 5. Переход: `nextIndex = index + 1`; если `nextIndex >= ladder.length` — диагностика завершена.
-6. **Финал**: `buildRoadmapFromGoal(...)` + событие `diagnostic_completed`; в ответе `{done: true}`.
-7. Иначе генерируется следующий вопрос; сложность зависит от ответа:
-   `correct ? levelFor(0.6) : "beginner"`, где `levelFor`: `<0.33` beginner, `<0.66` intermediate,
-   иначе advanced.
+6. **Финал**: только событие `diagnostic_completed`; в ответе `{done: true, next: null}`.
+   Роадмап **не строится** внутри ответа — он создаётся отдельно (`POST /api/roadmap/ensure`)
+   на экране завершения, чтобы последний вердикт не ждал генерацию.
+7. Иначе в ответе сразу возвращается `next: {index, skillId, level}`, где
+   `level = correct ? levelFor(0.6) : "beginner"` (`levelFor`: `<0.33` beginner, `<0.66` intermediate,
+   иначе advanced). Сам вопрос генерирует отдельный запрос `nextDiagnosticQuestion`
+   (`POST /api/diagnostic/next`) — вердикт никогда не ждёт модель.
 
-Ответ всегда содержит `correct` и `feedback` — именно на это опирается интерфейс, чтобы показать
-вердикт **до** перехода к следующему вопросу.
+Ответ `answerDiagnostic` содержит `correct` и `feedback` немедленно (без LLM-вызова), `next` —
+метаданные следующего вопроса, либо `null` если диагностика завершена.
 
 ### 11.6 Компилятор цели (`goal-compiler.ts`, `goal.ts`)
 
@@ -741,11 +744,17 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 `generateRoadmap({goalId, learnerId, spec, competency, language})`:
 
 - на вход промпту `roadmap`: название цели, целевой уровень, упорядоченные целевые навыки,
-  текущее мастерство по ним, карта пререквизитов, язык;
+  текущее мастерство по ним, карта пререквизитов, язык. Промпт требует **подшаги внутри каждого
+  пункта** (`substeps`), поэтому план приходит уже разбитым;
 - предыдущий роадмап удаляется **в правильном порядке** (сначала `RoadmapItem`, потом `Roadmap`,
   иначе FK-ограничение);
-- `Roadmap` + `RoadmapItem` (все со статусом `locked`, `index` сквозной);
-- **первый пункт переводится в `ready`**.
+- `Roadmap` + корневые `RoadmapItem` (все со статусом `ready`, `index` сквозной);
+- для каждого пункта, кроме одиночных проверок (`retention`, `diagnostic`), его `substeps`
+  записываются дочерними `RoadmapItem` (`origin: "main"`, `index = rootIndex * 1000 + n`) —
+  за один вызов модели, без второго прохода.
+
+`ensureRoadmap({goalId, learnerId, language?, force?})` — идемпотентно строит план, если его нет
+(`force` — перестроить существующий, используется после повторной диагностики).
 
 `buildRoadmapFromGoal({goalId, learnerId, language})` — восстановление `GoalSpec` из БД
 (`Goal` + `GoalSkill`) + чтение текущих `CompetencyState`; вызывается из диагностики.
@@ -929,7 +938,8 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | GET | `/api/recommend?roadmapId=` | — | `{next, queue}` |
 | GET | `/api/roadmap?goalId=` | — | `{roadmap}` (дерево узлов) |
 | GET | `/api/skills` | — | `{domains, skills[]}` — метрики с `null` = «не оценено» |
-| POST | `/api/roadmap/substeps` | `{nodeId, lang, count?}` | `{created[]}` — генерация/сохранение подшагов узла |
+| POST | `/api/roadmap/substeps` | `{nodeId, lang, count?}` | `{created[]}` — генерация/сохранение подшагов узла (идемпотентно: `[]`, если подшаги уже есть) |
+| POST | `/api/roadmap/ensure` | `{goalId, lang, force?}` | `{ready, roadmapId}` — строит план, если его ещё нет (`force` — перестроить) |
 
 `goalMetrics` — кольца на главной: считаются по **навыкам текущего пункта плана**
 (`active`, иначе `ready`), с фолбэком на целевые навыки цели, если текущего пункта нет.
@@ -939,7 +949,8 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | Метод | Путь | Вход | Выход |
 |---|---|---|---|
 | POST | `/api/diagnostic/start` | `{goalId, lang}` | `{ladder[], index, question}` (без ключа ответа) |
-| POST | `/api/diagnostic/answer` | `{goalId, ladder, index, questionId, skillId, selectedIndex, confidence, lang}` | `{done, correct, feedback, index?, question?}` |
+| POST | `/api/diagnostic/answer` | `{goalId, ladder, index, questionId, skillId, selectedIndex, confidence, lang}` | `{done, correct, feedback, next}` — вердикт немедленно, без LLM |
+| POST | `/api/diagnostic/next` | `{skillId, level, lang}` | `{question}` — следующий вопрос адаптивной диагностики |
 
 ### Обучение
 
