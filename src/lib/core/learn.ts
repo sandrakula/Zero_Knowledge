@@ -75,27 +75,9 @@ export async function openLearnItem(input: {
 
   const lesson = await ensureLessonForItem({ learnerId: input.learnerId, itemId: item.id, language: input.language });
 
-  // Adaptive support fading (§70, §74): worked example → independent.
-  const primary = skillIds[0];
-  const comp = await getCompetencyView(input.learnerId, primary);
-  const fmt = instructionFormat(comp?.mastery ?? null);
-  const format = fmt.format;
-  const activity = classifyActivity(item.type, skillIds.length);
-
   // Every subtopic is practised with a BANK of tasks (>= MIN_TASKS_PER_TOPIC),
   // not a single exercise. Generation is topic-locked and variety-aware.
-  const bankInput: TaskBankInput = {
-    itemId: item.id,
-    topic: item.title,
-    skillIds,
-    difficulty: clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3),
-    cognitiveLevel: activity.cognitiveLevel,
-    transferLevel: activity.transferLevel,
-    integrationLevel: activity.integrationLevel,
-    independenceRequired: item.type === "assessment" ? 0.9 : fmt.independenceRequired,
-    misconceptions: comp?.misconceptions ?? [],
-    language: input.language,
-  };
+  const { bankInput, format } = await computeBankInput({ item, learnerId: input.learnerId, language: input.language });
   await ensureTaskBank({ ...bankInput, legacyTaskId: item.taskId });
   if (input.newTask) await generateIntoBank(bankInput);
 
@@ -176,6 +158,66 @@ type TaskBankInput = {
   misconceptions: string[];
   language?: string;
 };
+
+/** Shared inputs for every task of one subtopic (difficulty, activity kind, …). */
+async function computeBankInput(input: {
+  item: { id: string; title: string; type: string; skillIds: string };
+  learnerId: string;
+  language?: string;
+}): Promise<{ bankInput: TaskBankInput; format: string }> {
+  const skillIds = JSON.parse(input.item.skillIds) as string[];
+  const primary = skillIds[0];
+  const comp = await getCompetencyView(input.learnerId, primary);
+  const fmt = instructionFormat(comp?.mastery ?? null);
+  const activity = classifyActivity(input.item.type, skillIds.length);
+  return {
+    format: fmt.format,
+    bankInput: {
+      itemId: input.item.id,
+      topic: input.item.title,
+      skillIds,
+      difficulty: clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3),
+      cognitiveLevel: activity.cognitiveLevel,
+      transferLevel: activity.transferLevel,
+      integrationLevel: activity.integrationLevel,
+      independenceRequired: input.item.type === "assessment" ? 0.9 : fmt.independenceRequired,
+      misconceptions: comp?.misconceptions ?? [],
+      language: input.language,
+    },
+  };
+}
+
+/**
+ * Ensure a subtopic has its full bank of validated tasks. Used both when a
+ * learner opens the item and by the bulk "generate all" job. Returns the size
+ * of the bank afterwards.
+ */
+export async function ensureTasksForItem(input: { learnerId: string; itemId: string; language?: string }): Promise<number> {
+  const item = await getOwnedNode(input.learnerId, input.itemId);
+  if (!item) throw new Error("Roadmap item not found");
+  const { bankInput } = await computeBankInput({ item, learnerId: input.learnerId, language: input.language });
+  if (bankInput.skillIds.length === 0) return 0;
+  await ensureTaskBank({ ...bankInput, legacyTaskId: item.taskId });
+  return (await findValidatedTasksByItem(item.id)).length;
+}
+
+/** Roadmap items of the learner's active goal that still lack a full task bank. */
+export async function itemsMissingTasks(learnerId: string): Promise<{ id: string; title: string }[]> {
+  const goal = await prisma.goal.findFirst({
+    where: { learnerId, status: "active" },
+    orderBy: { createdAt: "desc" },
+    include: { roadmap: { include: { items: true } } },
+  });
+  const items = goal?.roadmap?.items ?? [];
+  const out: { id: string; title: string }[] = [];
+  for (const it of items) {
+    const skillIds = JSON.parse(it.skillIds || "[]") as string[];
+    if (skillIds.length === 0) continue;
+    const count = await prisma.task.count({ where: { roadmapItemId: it.id, status: "validated" } });
+    if (count < MIN_TASKS_PER_TOPIC) out.push({ id: it.id, title: it.title });
+  }
+  return out;
+}
 
 /** Generate one more validated task for a subtopic and add it to its bank. */
 async function generateIntoBank(input: TaskBankInput): Promise<void> {

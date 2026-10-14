@@ -25,6 +25,15 @@ const TYPE_COLOR: Record<string, string> = {
   transfer: "#fb7185",
 };
 
+type TaskJobStatus = {
+  running: boolean;
+  total: number;
+  done: number;
+  failed: number;
+  current: string | null;
+  errors: string[];
+};
+
 export function RoadmapClient() {
   const { t, lang } = useI18n();
   const [state, setState] = useState<StateResponse | null>(null);
@@ -36,6 +45,8 @@ export function RoadmapClient() {
   const [outline, setOutline] = useState("");
   const [importing, setImporting] = useState(false);
   const [autoBreaking, setAutoBreaking] = useState(false);
+  const [taskJob, setTaskJob] = useState<TaskJobStatus | null>(null);
+  const [startingTasks, setStartingTasks] = useState(false);
   const autoBrokeRef = useRef(false);
   const expandedOnceRef = useRef(false);
   const ensuredRef = useRef(false);
@@ -49,6 +60,30 @@ export function RoadmapClient() {
   useEffect(() => {
     void load();
   }, []);
+
+  // Bulk task generation runs in the background on the server; show its state
+  // on mount (so a reload does not lose it) and poll while it runs.
+  useEffect(() => {
+    fetch("/api/tasks/generate-all")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.error && d.job) setTaskJob(d.job);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!taskJob?.running) return;
+    const id = setInterval(() => {
+      fetch("/api/tasks/generate-all")
+        .then((r) => r.json())
+        .then((d) => {
+          if (!d.error && d.job) setTaskJob(d.job);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [taskJob?.running]);
 
   const savedLang = (): "en" | "ru" => {
     if (typeof window === "undefined") return lang;
@@ -227,6 +262,35 @@ export function RoadmapClient() {
     }
   }
 
+  async function generateAllTasks() {
+    setStartingTasks(true);
+    setError("");
+    try {
+      const res = await fetch("/api/tasks/generate-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lang: savedLang() }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error ?? t("common.error"));
+      setTaskJob(d.job);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setStartingTasks(false);
+    }
+  }
+
+  async function stopTasks() {
+    try {
+      const res = await fetch("/api/tasks/generate-all", { method: "DELETE" });
+      const d = await res.json();
+      if (!d.error) setTaskJob(d.job);
+    } catch {
+      /* ignore — the job will finish on its own */
+    }
+  }
+
   if (error) return <p className="text-rose">{error}</p>;  if (!state) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
 
   const { goal, roadmap } = state;
@@ -252,6 +316,26 @@ export function RoadmapClient() {
             <Upload className="h-3.5 w-3.5" />
             {t("roadmap.import")}
           </button>
+          {taskJob?.running ? (
+            <span className="chip border-cyan/30 text-cyan">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t("roadmap.tasksRunning")} {taskJob.done}/{taskJob.total}
+              {taskJob.failed > 0 ? ` · ${taskJob.failed} ${t("roadmap.tasksFailed")}` : ""}
+              <button onClick={stopTasks} className="ml-1 underline underline-offset-2 hover:text-text">
+                {t("roadmap.tasksStop")}
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={generateAllTasks}
+              disabled={startingTasks || autoBreaking}
+              title={t("roadmap.generateTasks.hint")}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-50"
+            >
+              {startingTasks ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {t("roadmap.generateTasks")}
+            </button>
+          )}
           <button onClick={rebuild} disabled={rebuilding} className="btn-ghost px-3 py-1.5 text-xs">
             {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {rebuilding ? t("roadmap.rebuilding") : t("roadmap.rebuild")}

@@ -16,4 +16,4 @@ python scripts/export-chat-history.py
 | 3 | [session-03-2026-10-14T0642.md](session-03-2026-10-14T0642.md) | 2026-10-14 06:42 | deepseek/deepseek-v4-pro | 1 | 5 |
 | 4 | [session-04-2026-10-14T0711.md](session-04-2026-10-14T0711.md) | 2026-10-14 07:11 | deepseek/deepseek-flash | 7 | 149 |
 | 5 | [session-05-2026-10-14T0737.md](session-05-2026-10-14T0737.md) | 2026-10-14 07:37 | deepseek/deepseek-flash | 22 | 707 |
-| 6 | [session-06-2026-10-14T1032.md](session-06-2026-10-14T1032.md) | 2026-10-14 10:32 | deepseek/deepseek-flash | 5 | 237 |
+| 6 | [session-06-2026-10-14T1032.md](session-06-2026-10-14T1032.md) | 2026-10-14 10:32 | deepseek/deepseek-flash | 6 | 275 |

@@ -793,6 +793,14 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 блокирует обучение. `openLearnItem({taskId})` переключает задачу внутри банка без генерации,
 `{newTask:true}` добавляет ещё одну.
 
+**Пакетная генерация (`task-bank-job.ts`).** Кнопка «Сгенерировать все задачи» на
+странице плана вызывает `POST /api/tasks/generate-all`: сервер запускает фоновую задачу,
+которая обходит все подтемы активной цели с неполным банком (`itemsMissingTasks`) и доводит
+каждую до `MIN_TASKS_PER_TOPIC` (`ensureTasksForItem`). Пул из 2 воркеров, прогресс — в
+памяти процесса, `GET` отдаёт статус (`running/total/done/failed/current`), `DELETE` —
+останавливает после текущей подтемы. Состояние не переживает рестарт сервера — это просто
+значит «запусти снова».
+
 ### 11.9 Оценка попытки (`evaluation.ts`)
 
 `evaluateAttempt({learnerId, taskId, roadmapItemId, code, hintsUsed, confidence, timeSpentSeconds, language})`:
