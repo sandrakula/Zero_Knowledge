@@ -323,12 +323,15 @@ allowBuilds:               # разрешает build-скрипты (иначе
 
 ### 7.3 Состояние ученика
 
-**`CompetencyState`** — вектор компетенции, одна строка на пару (ученик, навык),
-`@@unique([learnerId, skillId])`. Постериор мастерства хранится явно как (α, β) — он
-никогда не восстанавливается из округлённых процентов.
+**`CompetencyState`** — вектор компетенции, одна строка на **(ученик, навык, скоуп)**,
+`@@unique([learnerId, skillId, topicId])`. `topicId = ""` — агрегат (среднее по всем
+подтемам, его показывает Learning); `topicId = <id RoadmapItem>` — состояние одной
+подтемы (его показывает цвет узла плана). Постериор мастерства хранится явно как (α, β) —
+он никогда не восстанавливается из округлённых процентов.
 
 | Поле | Тип | Смысл |
 |---|---|---|
+| `topicId` | String @default("") | скоуп: `""` = агрегат, иначе id подтемы |
 | `masteryAlpha` / `masteryBeta` | Float | параметры Beta-постериора (приор α₀=1, β₀=3 → среднее 0.25) |
 | `mastery` | Float | зеркало среднего α/(α+β) для дешёвых чтений/совместимости |
 | `masteryUncertainty` | Float | LEGACY-прокси (сейчас — std постериора); новые расчёты используют α/β + `evidenceCount` |
@@ -349,7 +352,8 @@ allowBuilds:               # разрешает build-скрипты (иначе
 | `lastSeenAt` / `lastAssessmentAt` / `lastRetrievedAt` | DateTime | контакт / последняя оценка / последнее припоминание |
 | `updatedAt` | DateTime @updatedAt | |
 
-**`Misconception`** — состояние заблуждения, `@@unique([learnerId, skillId, code])`:
+**`Misconception`** — состояние заблуждения, `@@unique([learnerId, skillId, code, topicId])`
+(тот же скоуп, что у компетенции):
 `code`, `description`, `confidence` (Float, 0.5), `status` (`active`\|`monitoring`\|`resolved`),
 `evidenceIds` (JSON), `resolvedAt`.
 
@@ -412,7 +416,8 @@ allowBuilds:               # разрешает build-скрипты (иначе
 (`canonical` \| `user-provided` \| `teacher-provided` \| `external` \| `generated` \| `enriched`),
 `status`, **`sourceIds`** (JSON — id материалов, на которых основан), `language`, `version`, `meta`.
 
-**`Task`**: `skillIds`, `family`, `title`, `statement`, `difficulty`, `cognitiveLevel`,
+**`Task`**: `skillIds`, `family`, `title`, `topic` (тема, под которую написана),
+`roadmapItemId` (подтема — банк задач), `statement`, `difficulty`, `cognitiveLevel`,
 `independenceRequired`, `transferLevel`, `integrationLevel` (явная классификация
 интеграции §17), `starterCode`, `referenceSolution`, `tests` (JSON
 `[{input, expected}]`), `hints` (JSON), `status` (`validated`), `provenance`, `sourceIds`, `language`.
@@ -1189,7 +1194,7 @@ console.error(`[api] ${msg}`)                        // серверный ло�
    sandbox с лимитами CPU/памяти/сети.
 6. **SQLite** — не Postgres; JSON-поля вместо связующих таблиц.
 7. **Формальные тесты — только для чистого ядра.** `node --import tsx --test` покрывает
-   `mastery`/`competency`/`evidence`/`roadmap` (50 тестов); e2e — `scripts/upgrade-smoke.mjs`.
+   `mastery`/`competency`/`evidence`/`roadmap` (75+ тестов); e2e — `scripts/upgrade-smoke.mjs`.
    Для Prisma-зависимых сервисов отдельных unit-тестов нет.
 8. **Нет rate limiting, подтверждения email, сброса пароля, 2FA.**
 
