@@ -81,6 +81,8 @@ export async function generateRoadmap(input: {
   spec: GoalSpec;
   competency: { skillId: string; mastery: number }[];
   language?: string;
+  /** Learner-supplied roadmap outline — used verbatim as the plan structure. */
+  outline?: string;
 }): Promise<void> {
   const prompt = getPrompt("roadmap")!;
   const catalog = skillCatalogForPrompt();
@@ -89,12 +91,21 @@ export async function generateRoadmap(input: {
     .filter((c) => input.spec.targetSkills.includes(c.skillId))
     .map((c) => ({ skill: c.skillId, mastery: +c.mastery.toFixed(2) }));
 
+  const outlineBlock = input.outline?.trim()
+    ? [
+        "LEARNER-PROVIDED ROADMAP (authoritative — follow it):",
+        input.outline.trim().slice(0, 8000),
+        "Rules for the provided roadmap: treat its top-level items as the plan's main steps, in the given order. Keep each node's own sub-items as THAT node's substeps — do NOT promote them into separate top-level steps. If a node already lists sub-items, copy them verbatim (translate if needed) and add no extra substeps. If a node has no sub-items, generate 3-6 concrete substeps. Map every node to catalog skillIds. You may exceed the generic item-count guidance to respect the learner's structure.",
+      ].join("\n")
+    : null;
+
   const user = [
     `Goal: ${input.spec.title} (${input.spec.targetLevel})`,
     `Target skills (ordered): ${input.spec.targetSkills.join(", ")}`,
     `Learner current mastery (0..1, where absent means unknown): ${JSON.stringify(competencySummary)}`,
     `Prerequisite map:\n${catalog}`,
     `Target level: ${input.spec.targetLevel}`,
+    ...(outlineBlock ? [outlineBlock] : []),
     langInstruction(input.language),
   ].join("\n\n");
 
@@ -181,6 +192,8 @@ export async function buildRoadmapFromGoal(input: {
   goalId: string;
   learnerId: string;
   language?: string;
+  /** Learner-supplied roadmap outline. */
+  outline?: string;
 }): Promise<void> {
   const goal = await prisma.goal.findUnique({ where: { id: input.goalId }, include: { targetSkills: true } });
   if (!goal) return;
@@ -202,7 +215,38 @@ export async function buildRoadmapFromGoal(input: {
     spec,
     competency: comps.map((c) => ({ skillId: c.skillId, mastery: c.mastery })),
     language: input.language,
+    outline: input.outline,
   });
+}
+
+/**
+ * Build (or rebuild) the plan around a roadmap the learner supplied themselves.
+ * The outline is authoritative: its nodes are preserved in order, existing
+ * sub-items are kept as-is, and only nodes without sub-items are expanded.
+ */
+export async function importRoadmapFromOutline(input: {
+  goalId: string;
+  learnerId: string;
+  outline: string;
+  language?: string;
+}): Promise<{ roadmapId: string }> {
+  const goal = await prisma.goal.findUnique({ where: { id: input.goalId } });
+  if (!goal || goal.learnerId !== input.learnerId) throw new Error("Goal not found");
+  const outline = input.outline.trim();
+  if (!outline) throw new Error("Roadmap outline is empty");
+
+  await buildRoadmapFromGoal({ goalId: input.goalId, learnerId: input.learnerId, language: input.language, outline });
+
+  const created = await prisma.roadmap.findUnique({ where: { goalId: input.goalId } });
+  if (!created) throw new Error("Roadmap generation failed");
+  await prisma.learningEvent.create({
+    data: {
+      learnerId: input.learnerId,
+      type: "roadmap_imported",
+      payload: JSON.stringify({ goalId: input.goalId, roadmapId: created.id, outlineChars: outline.length }),
+    },
+  });
+  return { roadmapId: created.id };
 }
 
 /**

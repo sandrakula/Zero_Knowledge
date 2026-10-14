@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Route, Sparkles, Target } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Route, Sparkles, Target, Upload } from "lucide-react";
 import { useI18n } from "@/components/i18n";
 import { StatusDot, StatusLegend } from "@/components/learning/status";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,9 @@ export function RoadmapClient() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [outline, setOutline] = useState("");
+  const [importing, setImporting] = useState(false);
   const [autoBreaking, setAutoBreaking] = useState(false);
   const autoBrokeRef = useRef(false);
   const expandedOnceRef = useRef(false);
@@ -162,6 +165,28 @@ export function RoadmapClient() {
     }
   }
 
+  async function importOutline() {
+    if (!state?.goal || !outline.trim()) return;
+    setImporting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/roadmap/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goalId: state.goal.id, outline, lang: savedLang() }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? t("common.error"));
+      setImportOpen(false);
+      setOutline("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function breakDown(nodeId: string) {
     setBusy(nodeId);
     try {
@@ -180,8 +205,7 @@ export function RoadmapClient() {
     }
   }
 
-  if (error) return <p className="text-rose">{error}</p>;
-  if (!state) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
+  if (error) return <p className="text-rose">{error}</p>;  if (!state) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
 
   const { goal, roadmap } = state;
   const done = roadmap?.progress.completed ?? 0;
@@ -202,6 +226,10 @@ export function RoadmapClient() {
               <Loader2 className="h-3 w-3 animate-spin" /> {t("roadmap.autoBreaking")}
             </span>
           )}
+          <button onClick={() => setImportOpen((o) => !o)} className="btn-ghost px-3 py-1.5 text-xs">
+            <Upload className="h-3.5 w-3.5" />
+            {t("roadmap.import")}
+          </button>
           <button onClick={rebuild} disabled={rebuilding} className="btn-ghost px-3 py-1.5 text-xs">
             {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {rebuilding ? t("roadmap.rebuilding") : t("roadmap.rebuild")}
@@ -209,6 +237,33 @@ export function RoadmapClient() {
           <StatusLegend />
         </div>
       </div>
+
+      <AnimatePresence initial={false}>
+        {importOpen && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="card p-5">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
+                <Upload className="h-4 w-4 text-accent-soft" /> {t("roadmap.import")}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-text-faint">{t("roadmap.import.hint")}</p>
+              <textarea
+                value={outline}
+                onChange={(e) => setOutline(e.target.value)}
+                rows={10}
+                placeholder={t("roadmap.import.placeholder")}
+                className="mt-3 w-full resize-y rounded-xl border border-white/[0.08] bg-ink-950/60 p-3 font-mono text-xs leading-6 text-text outline-none placeholder:text-text-faint focus:border-accent/50"
+              />
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button onClick={() => setImportOpen(false)} className="btn-ghost px-3 py-1.5 text-xs">{t("common.cancel")}</button>
+                <button onClick={importOutline} disabled={importing || !outline.trim()} className="btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
+                  {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {importing ? t("roadmap.import.building") : t("roadmap.import.generate")}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="max-w-md">
         <div className="mb-1.5 flex justify-between text-xs text-text-faint">

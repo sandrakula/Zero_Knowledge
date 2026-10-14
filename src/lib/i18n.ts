@@ -208,6 +208,7 @@ export const en: Dict = {
   "common.error": "Something went wrong",
   "common.retry": "Retry",
   "common.close": "Close",
+  "common.cancel": "Cancel",
 
   // ── semantic skill status (§27, §30) ──
   "status.not_assessed": "Not assessed",
@@ -273,6 +274,11 @@ export const en: Dict = {
   "roadmap.rebuild": "Re-plan from evidence",
   "roadmap.rebuilding": "Re-planning…",
   "roadmap.autoBreaking": "Breaking topics into substeps…",
+  "roadmap.import": "Import your plan",
+  "roadmap.import.hint": "Paste your own roadmap — the AI builds the course around it. Your nodes are kept in order, existing sub-items stay as they are, and only nodes without sub-items get expanded into substeps.",
+  "roadmap.import.placeholder": "e.g.\n1. Python basics\n   - variables and types\n   - operators\n2. Control flow\n3. Functions",
+  "roadmap.import.generate": "Build my course",
+  "roadmap.import.building": "Building…",
 
   // ── admin
   "admin.title": "Administration",
@@ -490,6 +496,7 @@ export const ru: Dict = {
   "common.error": "Что-то пошло не так",
   "common.retry": "Повторить",
   "common.close": "Закрыть",
+  "common.cancel": "Отмена",
 
   "status.not_assessed": "Не оценено",
   "status.needs_attention": "Требует внимания",
@@ -551,6 +558,11 @@ export const ru: Dict = {
   "roadmap.rebuild": "Пересобрать план",
   "roadmap.rebuilding": "Пересобираем…",
   "roadmap.autoBreaking": "Разбиваю темы на подшаги…",
+  "roadmap.import": "Импортировать свой план",
+  "roadmap.import.hint": "Вставьте свой роадмап — ИИ построит обучение вокруг него. Ваши пункты сохраняются по порядку, уже разбитые подпункты остаются как есть, а ноды без подпунктов догенерируются в подшаги.",
+  "roadmap.import.placeholder": "Например:\n1. Основы Python\n   - переменные и типы\n   - операторы\n2. Управляющие конструкции\n3. Функции",
+  "roadmap.import.generate": "Построить курс",
+  "roadmap.import.building": "Строю…",
 
   "admin.title": "Администрирование",
   "admin.subtitle": "Ученики, их прогресс, уровень знаний и активность",
