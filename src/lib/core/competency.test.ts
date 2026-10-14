@@ -92,6 +92,20 @@ test("repeated failures lower mastery and keep it out of demonstrated", () => {
   assert.equal(classifySkill(s), "needs_attention");
 });
 
+test("recent independent successes lift a skill out of needs_attention", () => {
+  // Five failures put the skill firmly in needs_attention...
+  const failed = apply(emptySkillState(), ...Array.from({ length: 5 }, () => ev({ q: 0, correct: false })));
+  assert.equal(classifySkill(failed), "needs_attention");
+  // ...but two RECENT independent successes must be able to recover it, rather
+  // than ancient failures keeping it red forever.
+  const recovered = apply(
+    failed,
+    ev({ q: 1, correct: true, taskFamily: "fam-b" }),
+    ev({ q: 1, correct: true, taskFamily: "fam-c" }),
+  );
+  assert.equal(classifySkill(recovered), "developing");
+});
+
 test("credible interval tightens as evidence accumulates", () => {
   let s = emptySkillState();
   const first = credibleInterval({ alpha: s.alpha, beta: s.beta });

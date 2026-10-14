@@ -430,6 +430,7 @@ async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatu
           evidenceCount: s.evidenceCount,
           attempts: s.attempts,
           independentSuccesses: s.independentSuccesses,
+          successStreak: s.successStreak,
           integrationAttempts: s.integrationAttempts,
           transferAttempts: s.transferAttempts,
           retentionChecks: s.retentionChecks,

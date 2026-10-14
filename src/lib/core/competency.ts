@@ -36,6 +36,8 @@ export type SkillState = {
   evidenceCount: number;
   attempts: number;
   independentSuccesses: number;
+  /** Consecutive independent successes; reset by any failure or supported answer. */
+  successStreak: number;
   integrationAttempts: number;
   transferAttempts: number;
   retentionChecks: number;
@@ -109,6 +111,7 @@ export function emptySkillState(): SkillState {
     evidenceCount: 0,
     attempts: 0,
     independentSuccesses: 0,
+    successStreak: 0,
     integrationAttempts: 0,
     transferAttempts: 0,
     retentionChecks: 0,
@@ -144,6 +147,7 @@ export function applyEvidenceToSkill(state: SkillState, ev: EvidenceInput): Skil
   if (ev.correct && ev.supportUsed < RULES.independenceThreshold) {
     next.independentSuccesses = state.independentSuccesses + 1;
   }
+  next.successStreak = ev.correct && ev.supportUsed < RULES.independenceThreshold ? state.successStreak + 1 : 0;
   if (ev.taskFamily && !state.taskFamilies.includes(ev.taskFamily)) {
     next.taskFamilies = [...state.taskFamilies, ev.taskFamily].slice(-RULES.maxTaskFamiliesTracked);
   }
@@ -241,7 +245,10 @@ export function classifySkill(
   const blocking = active.some((m) => m.confidence >= CLASSIFICATION.misconceptionBlocksDemonstrated);
 
   if (severe) return "needs_attention";
-  if (mean < CLASSIFICATION.needsAttentionMastery) return "needs_attention";
+  // A current streak of independent successes means the learner is improving
+  // right now; a low lifetime mean from earlier failures must not keep the
+  // skill red forever.
+  if (mean < CLASSIFICATION.needsAttentionMastery && state.successStreak === 0) return "needs_attention";
 
   const ci = credibleInterval(post);
 

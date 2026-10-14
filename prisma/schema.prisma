@@ -125,6 +125,9 @@ model CompetencyState {
   attempts      Int      @default(0)
   successes     Int      @default(0)
   independentSuccesses Int @default(0)
+  // Consecutive independent successes (reset by a failure or a supported answer).
+  // Keeps "needs attention" from sticking to a learner who is now succeeding.
+  successStreak        Int @default(0)
   integrationAttempts  Int @default(0)
   transferAttempts     Int @default(0)
   retentionChecks      Int @default(0)
