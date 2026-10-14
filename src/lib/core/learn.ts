@@ -15,6 +15,8 @@ export async function openLearnItem(input: {
   learnerId: string;
   itemId: string;
   language?: string;
+  /** Generate a fresh task for this topic instead of reusing the current one. */
+  newTask?: boolean;
 }): Promise<{
   item: {
     id: string;
@@ -69,7 +71,7 @@ export async function openLearnItem(input: {
   const lesson = await ensureLessonForItem({ learnerId: input.learnerId, itemId: item.id, language: input.language });
 
   // Reuse the item's existing validated task, or generate + validate a new one.
-  let taskRecord = item.taskId
+  let taskRecord = !input.newTask && item.taskId
     ? await prisma.task.findUnique({ where: { id: item.taskId } })
     : null;
 
@@ -84,7 +86,7 @@ export async function openLearnItem(input: {
     format = fmt.format;
 
     // Prefer a validated existing task for the same skill before generating (§134).
-    const existingId = await findExistingValidatedTask({ skillIds, topic: item.title });
+    const existingId = input.newTask ? null : await findExistingValidatedTask({ skillIds, topic: item.title });
     if (existingId) {
       taskRecord = await prisma.task.findUnique({ where: { id: existingId } });
       if (taskRecord) await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId: existingId } });

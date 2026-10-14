@@ -14,6 +14,7 @@ import {
   Loader2,
   Play,
   RotateCcw,
+  RefreshCw,
   Send,
   Sparkles,
   TerminalSquare,
@@ -46,6 +47,7 @@ export function LearnClient({ itemId }: { itemId: string }) {
   const [attempt, setAttempt] = useState<AttemptResponse | null>(null);
   const [error, setError] = useState("");
   const [lessonOpen, setLessonOpen] = useState(true);
+  const [generatingTask, setGeneratingTask] = useState(false);
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainText, setExplainText] = useState("");
   const [explainSending, setExplainSending] = useState(false);
@@ -72,6 +74,34 @@ export function LearnClient({ itemId }: { itemId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Generate a fresh task for the SAME topic — so a single subtopic offers
+  // more than one exercise to practise with.
+  async function anotherTask() {
+    if (!data) return;
+    setGeneratingTask(true);
+    setError("");
+    setAttempt(null);
+    setRunOutput(null);
+    setHintsShown(0);
+    try {
+      const res = await fetch("/api/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, lang, newTask: true }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? t("common.error"));
+      setData(d);
+      setCode(d.task.starterCode || "");
+      setCustomInput(d.task.example.input ?? "");
+      startTime.current = Date.now();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setGeneratingTask(false);
+    }
+  }
 
   async function run() {
     if (!data) return;
@@ -224,6 +254,15 @@ export function LearnClient({ itemId }: { itemId: string }) {
             <div className="flex items-center gap-2 text-sm font-semibold text-text">
               <TerminalSquare className="h-4 w-4 text-accent-soft" /> {task.title}
               <span className="chip">{t(`learn.format.${task.format}`)}</span>
+              <button
+                onClick={anotherTask}
+                disabled={generatingTask}
+                title={t("learn.anotherTask.hint")}
+                className="btn-ghost ml-auto px-2.5 py-1 text-[11px] disabled:opacity-50"
+              >
+                {generatingTask ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {t("learn.anotherTask")}
+              </button>
             </div>
             <div className="mt-3">
               <Markdown>{task.statement}</Markdown>
