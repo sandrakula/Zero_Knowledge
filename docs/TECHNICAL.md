@@ -749,11 +749,13 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 
 ### 11.7 Curriculum / Roadmap (`roadmap.ts`)
 
-`generateRoadmap({goalId, learnerId, spec, competency, language})`:
+`generateRoadmap({goalId, learnerId, spec, competency, masteredSkills?, language})`:
 
 - на вход промпту `roadmap`: название цели, целевой уровень, упорядоченные целевые навыки,
   текущее мастерство по ним, карта пререквизитов, язык. Промпт требует **подшаги внутри каждого
   пункта** (`substeps`), поэтому план приходит уже разбитым;
+- `masteredSkills` — навыки, которые ученик решает **уверенно** (`isConfidentlyMastered`):
+  жёсткое правило сжатия (не создавать новые уроки/практику, максимум один короткий `retention`);
 - предыдущий роадмап удаляется **в правильном порядке** (сначала `RoadmapItem`, потом `Roadmap`,
   иначе FK-ограничение);
 - `Roadmap` + корневые `RoadmapItem` (все со статусом `ready`, `index` сквозной);
@@ -771,6 +773,13 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 
 `markItemCompleted(learnerId, itemId)` — пункт → `completed`, затем первый `locked` → `ready`;
 пишет событие `roadmap_item_completed`.
+
+`regenerateRoadmap({learnerId, goalId, language?})` — пересборка по нажатию «Пересобрать план»:
+считает `masteredSkillIds` (агрегатный скоуп + `isConfidentlyMastered`), передаёт их генератору,
+а затем **сжимает** план — у каждого корня, чьи навыки теперь уверенно освоены или
+`demonstrated`, удаляются дочерние подшаги и он помечается `completed` (одна нода вместо серии).
+Возвращает `{regenerated, beforeTotal, afterTotal, autoCompleted}` — то есть пересборка после
+реального прогресса даёт **меньше**, а не больше подтем.
 
 ### 11.8 Генерация задач (`taskgen.ts`)
 
@@ -857,17 +866,24 @@ where: { OR: [{ learnerId }, { material: { scope: "global" } }] }
 
 ### 11.12 Тьютор (`tutor.ts`), диалоги и действия
 
-`tutor({learnerId, message, conversationId?, roadmapItemId?, language?})`:
+`tutor({learnerId, message, conversationId?, roadmapItemId?, taskId?, code?, language?})`:
 
 1. Резолвится (или создаётся) активный `Conversation`; сообщение пользователя сохраняется
    через `appendMessage()` (ownership проверяется по сессии, не по клиентскому id).
 2. **Ветка «нет цели»:** если активной цели нет — короткое сообщение (< 12 симв.) даёт
    `clarify_goal`; иначе `createGoalFromStatement` → `goal_created` + `goalId`.
 3. **Обычная ветка:** `buildTutorContext()` собирает ограниченный контекст (§58, §61): цель,
-   roadmap-узлы со стабильными id, текущий узел/задача, последний код и результат проверки,
-   компетенции по навыкам, активные заблуждения, последние попытки, материалы и ограниченный
-   срез истории + релевантная ретро-выборка (`searchConversationHistory`, лексическая).
+   roadmap-узлы со стабильными id, **текущий узел вместе с его родителем и соседними подтемами
+   (текущая отмечена ▸)**, текущий банк-задачу (`taskId`), **текущий неотправленный код из
+   редактора** (`code`) или последний сохранённый, результат проверки, компетенции по навыкам,
+   активные заблуждения, последние попытки, материалы и ограниченный срез истории +
+   релевантная ретро-выборка (`searchConversationHistory`, лексическая).
    Ответ — `TutorSchema` `{intent, actionType, reply, misconceptionCode, action?}`.
+
+**Живой контекст.** `LearnClient` публикует событие `zk:learn-context`
+(`{itemId, taskId, code}`), `useTutor()` его слушает и отправляет вместе с сообщением;
+на `/learn/[id]` itemId также берётся из URL. Так тьютор всегда отвечает про то, что
+открыто на экране сейчас, а не про догадку из `status: active`.
 4. **Структурное действие** (если модель предложила): выполняется только через
    `executeTutorAction()` (`tutor-actions.ts`) — модель никогда не пишет в Prisma напрямую.
    Результат валидируется, сохраняется и возвращается с фактическим итогом (`describeActionResult`).
@@ -982,7 +998,7 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | POST | `/api/learn` | `{itemId, lang}` | `{item, lesson{body,sources,grounded}, task{statement,starterCode,hints,example,testCount}, competency}` |
 | POST | `/api/run` | `{code, input}` | `{ok, stdout, stderr, timedOut, durationMs}` |
 | POST | `/api/attempt` | `{taskId, roadmapItemId, code, hintsUsed, confidence, timeSpentSeconds, lang}` | `{passed,total,passedAll,feedback,testResults,competency,method}` |
-| POST | `/api/tutor` | `{message, conversationId?, roadmapItemId?, lang}` | `{conversationId, intent, actionType, reply, misconceptionCode, goalId?, action?}` |
+| POST | `/api/tutor` | `{message, conversationId?, roadmapItemId?, taskId?, code?, lang}` | `{conversationId, intent, actionType, reply, misconceptionCode, goalId?, action?}` |
 
 ### Диалоги тьютора
 

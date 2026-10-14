@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useI18n } from "@/components/i18n";
 import type { ConversationSummary, StateResponse } from "@/lib/types";
 
@@ -33,6 +34,10 @@ export function useTutor() {
   const [hasGoal, setHasGoal] = useState<boolean | null>(null);
   const [goalId, setGoalId] = useState<string | null>(null);
   const [context, setContext] = useState<{ itemId: string; title: string } | null>(null);
+  // What the learn view publishes for the screen the learner is on right now:
+  // the exact item, the current bank task and the unsent editor code.
+  const [liveContext, setLiveContext] = useState<{ itemId: string; title: string; taskId?: string; code?: string } | null>(null);
+  const pathname = usePathname();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = useCallback(async (id: string) => {
@@ -88,6 +93,22 @@ export function useTutor() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
+  // The learn view emits the live context; the float tutor follows the screen.
+  useEffect(() => {
+    const onCtx = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { itemId: string; title: string; taskId?: string; code?: string }
+        | null;
+      setLiveContext(detail ?? null);
+    };
+    window.addEventListener("zk:learn-context", onCtx);
+    return () => window.removeEventListener("zk:learn-context", onCtx);
+  }, []);
+
+  // Fallback: derive the item from the URL when on a learn screen.
+  const pathItemId = pathname?.startsWith("/learn/") ? pathname.split("/")[2] : null;
+  const activeContext = liveContext ?? (pathItemId ? { itemId: pathItemId, title: context?.title ?? "" } : context);
+
   const send = useCallback(
     async (text: string) => {
       const value = text.trim();
@@ -100,7 +121,14 @@ export function useTutor() {
         const res = await fetch("/api/tutor", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: value, conversationId, roadmapItemId: context?.itemId, lang }),
+          body: JSON.stringify({
+            message: value,
+            conversationId,
+            roadmapItemId: activeContext?.itemId,
+            taskId: liveContext?.taskId,
+            code: liveContext?.code,
+            lang,
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? t("common.error"));
@@ -130,7 +158,7 @@ export function useTutor() {
         setSending(false);
       }
     },
-    [conversationId, context?.itemId, lang, sending, t],
+    [conversationId, activeContext?.itemId, liveContext?.taskId, liveContext?.code, lang, sending, t],
   );
 
   const newConversation = useCallback(async () => {
@@ -163,7 +191,7 @@ export function useTutor() {
     error,
     hasGoal,
     goalId,
-    context,
+    context: activeContext,
     conversationId,
     conversations,
     bottomRef,

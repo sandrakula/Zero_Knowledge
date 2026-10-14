@@ -9,6 +9,7 @@ import {
   classifySkill,
   emptySkillState,
   instructionFormat,
+  isConfidentlyMastered,
   skillMetrics,
   type EvidenceInput,
   type SkillState,
@@ -382,4 +383,30 @@ test("high mastery fades to independent work with a blank starter", () => {
 
 test("null mastery falls back to worked example", () => {
   assert.equal(instructionFormat(null).format, "worked_example");
+});
+
+// ── Confident mastery → roadmap compression (§29) ─────────
+
+test("a fresh skill is not confidently mastered", () => {
+  assert.equal(isConfidentlyMastered(emptySkillState()), false);
+});
+
+test("sustained unaided success becomes confidently mastered", () => {
+  const s = apply(emptySkillState(), ev(), ev(), ev(), ev(), ev(), ev());
+  assert.equal(isConfidentlyMastered(s), true);
+});
+
+test("high mastery built on support is not confidently mastered", () => {
+  let s = emptySkillState();
+  for (let i = 0; i < 12; i++) s = applyEvidenceToSkill(s, ev({ q: 0.9, supportUsed: 1 }));
+  assert.ok(posteriorMean({ alpha: s.alpha, beta: s.beta }) >= 0.6);
+  assert.equal(isConfidentlyMastered(s), false);
+});
+
+test("a live streak overrides elevated support dependence", () => {
+  let s = emptySkillState();
+  for (let i = 0; i < 8; i++) s = applyEvidenceToSkill(s, ev({ q: 0.9, supportUsed: 1 }));
+  s = apply(s, ev(), ev());
+  assert.ok(s.successStreak >= 2);
+  assert.equal(isConfidentlyMastered(s), true);
 });

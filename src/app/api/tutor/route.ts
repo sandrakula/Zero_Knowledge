@@ -14,6 +14,8 @@ export async function POST(req: Request) {
       message: String(body.message ?? ""),
       conversationId: body.conversationId ? String(body.conversationId) : undefined,
       roadmapItemId: body.roadmapItemId ? String(body.roadmapItemId) : undefined,
+      taskId: body.taskId ? String(body.taskId) : undefined,
+      code: body.code ? String(body.code) : undefined,
       language: normalizeLang(body.lang),
     });
   });

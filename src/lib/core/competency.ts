@@ -273,6 +273,32 @@ export function classifySkill(
   return demonstrated ? "demonstrated" : "developing";
 }
 
+/**
+ * Thresholds for COMPRESSING a re-planned roadmap. When a skill is now solved
+ * confidently, the plan should shrink (fewer substeps, no re-teaching) instead
+ * of repeating it. Deliberately looser than `demonstrated` — planning may be
+ * aggressive while the learner's displayed status stays strict and honest.
+ */
+export const CONFIDENT = {
+  /** Posterior mean at/above which the material may be compressed. */
+  minMastery: 0.6,
+  /** Independent (unsupported) successes required. */
+  minIndependentSuccesses: 2,
+  /** At/below this support dependence the learner is working unaided. */
+  maxSupportDependence: 0.25,
+  /** A live streak of independent successes also counts as confidence. */
+  minStreak: 2,
+} as const;
+
+/** Whether a skill is mastered confidently enough to compress its lessons. */
+export function isConfidentlyMastered(state: SkillState): boolean {
+  if (state.evidenceCount === 0) return false;
+  const mean = posteriorMean({ alpha: state.alpha, beta: state.beta });
+  const confident =
+    state.successStreak >= CONFIDENT.minStreak || state.supportDependence <= CONFIDENT.maxSupportDependence;
+  return mean >= CONFIDENT.minMastery && state.independentSuccesses >= CONFIDENT.minIndependentSuccesses && confident;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Read model (§22) — what the UI is allowed to display, and whether a given
 // metric has enough evidence to be shown at all.

@@ -4,7 +4,7 @@ import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
 import { langInstruction } from "@/lib/lang";
 import { SKILLS, getSkill } from "./knowledge-graph";
-import { classifySkill, AGGREGATE_SCOPE, type SkillStatus } from "./competency";
+import { classifySkill, isConfidentlyMastered, AGGREGATE_SCOPE, type SkillState, type SkillStatus } from "./competency";
 import { safeJson } from "./json";
 import type { GoalSpec } from "./goal-compiler";
 import { skillCatalogForPrompt } from "./goal-compiler";
@@ -83,6 +83,8 @@ export async function generateRoadmap(input: {
   language?: string;
   /** Learner-supplied roadmap outline — used verbatim as the plan structure. */
   outline?: string;
+  /** Skills the learner solves confidently — their content must be compressed. */
+  masteredSkills?: string[];
 }): Promise<void> {
   const prompt = getPrompt("roadmap")!;
   const catalog = skillCatalogForPrompt();
@@ -90,6 +92,11 @@ export async function generateRoadmap(input: {
   const competencySummary = input.competency
     .filter((c) => input.spec.targetSkills.includes(c.skillId))
     .map((c) => ({ skill: c.skillId, mastery: +c.mastery.toFixed(2) }));
+
+  const masteredNames = (input.masteredSkills ?? [])
+    .filter((id) => input.spec.targetSkills.includes(id))
+    .map((id) => getSkill(id)?.name ?? id)
+    .slice(0, 40);
 
   const outlineBlock = input.outline?.trim()
     ? [
@@ -105,6 +112,11 @@ export async function generateRoadmap(input: {
     `Learner current mastery (0..1, where absent means unknown): ${JSON.stringify(competencySummary)}`,
     `Prerequisite map:\n${catalog}`,
     `Target level: ${input.spec.targetLevel}`,
+    ...(masteredNames.length
+      ? [
+          `CONFIDENTLY MASTERED skills (the learner already solves these unaided) — HARD compression rule: do NOT create lessons, practice or assessments for them. Omit them entirely, or keep at most ONE short "retention" review item with an empty substeps array: ${masteredNames.join(", ")}`,
+        ]
+      : []),
     ...(outlineBlock ? [outlineBlock] : []),
     langInstruction(input.language),
   ].join("\n\n");
@@ -216,6 +228,7 @@ export async function buildRoadmapFromGoal(input: {
     competency: comps.map((c) => ({ skillId: c.skillId, mastery: c.mastery })),
     language: input.language,
     outline: input.outline,
+    masteredSkills: await masteredSkillIds(input.learnerId),
   });
 }
 
@@ -330,6 +343,7 @@ export async function regenerateRoadmap(input: {
   const comps = await prisma.competencyState.findMany({
     where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, skillId: { in: spec.targetSkills } },
   });
+  const mastered = await masteredSkillIds(input.learnerId);
 
   await generateRoadmap({
     goalId: input.goalId,
@@ -337,12 +351,15 @@ export async function regenerateRoadmap(input: {
     spec,
     competency: comps.map((c) => ({ skillId: c.skillId, mastery: c.mastery })),
     language: input.language,
+    masteredSkills: mastered,
   });
 
   const after = await prisma.roadmap.findUnique({ where: { goalId: input.goalId } });
   if (!after) throw new Error("Roadmap generation failed");
 
-  // Topics already fully demonstrated are reflected as completed in the new plan.
+  // Shrink the plan: a topic whose skills are now solved confidently or
+  // demonstrated stays as ONE completed node — its substeps are dropped, so
+  // re-planning after real progress produces fewer, not more, subtopics.
   const statuses = await skillStatusMap(input.learnerId);
   const newRoots = await prisma.roadmapItem.findMany({
     where: { roadmapId: after.id, parentId: null },
@@ -351,10 +368,12 @@ export async function regenerateRoadmap(input: {
   let autoCompleted = 0;
   for (const r of newRoots) {
     const skills = safeJson<string[]>(r.skillIds, []);
-    if (skills.length > 0 && skills.every((id) => statuses.get(id) === "demonstrated")) {
-      await prisma.roadmapItem.update({ where: { id: r.id }, data: { status: "completed", completedAt: new Date() } });
-      autoCompleted++;
-    }
+    if (skills.length === 0) continue;
+    const solid = skills.every((id) => mastered.includes(id) || statuses.get(id) === "demonstrated");
+    if (!solid) continue;
+    await prisma.roadmapItem.deleteMany({ where: { parentId: r.id } });
+    await prisma.roadmapItem.update({ where: { id: r.id }, data: { status: "completed", completedAt: new Date() } });
+    autoCompleted++;
   }
 
   await prisma.learningEvent.create({
@@ -421,6 +440,53 @@ function scopeKey(topicId: string, skillId: string): string {
   return `${topicId}::${skillId}`;
 }
 
+/** Map a persisted competency row onto the pure core's state shape. */
+function rowToSkillState(s: {
+  masteryAlpha: number;
+  masteryBeta: number;
+  depth: string;
+  independence: number;
+  application: number;
+  transfer: number;
+  retention: number;
+  evidenceCount: number;
+  attempts: number;
+  independentSuccesses: number;
+  successStreak: number;
+  integrationAttempts: number;
+  transferAttempts: number;
+  retentionChecks: number;
+  retentionSuccesses: number;
+  supportDependence: number;
+  taskFamilies: string;
+  depthCounts: string;
+  lastRetrievedAt: Date | null;
+  lastAssessmentAt: Date | null;
+}): SkillState {
+  return {
+    alpha: s.masteryAlpha,
+    beta: s.masteryBeta,
+    depth: s.depth,
+    independence: s.independence,
+    application: s.application,
+    transfer: s.transfer,
+    retention: s.retention,
+    evidenceCount: s.evidenceCount,
+    attempts: s.attempts,
+    independentSuccesses: s.independentSuccesses,
+    successStreak: s.successStreak,
+    integrationAttempts: s.integrationAttempts,
+    transferAttempts: s.transferAttempts,
+    retentionChecks: s.retentionChecks,
+    retentionSuccesses: s.retentionSuccesses,
+    supportDependence: s.supportDependence,
+    taskFamilies: safeJson<string[]>(s.taskFamilies, []),
+    depthCounts: safeJson<Record<string, number>>(s.depthCounts, {}),
+    lastRetrievedAt: s.lastRetrievedAt,
+    lastAssessmentAt: s.lastAssessmentAt,
+  };
+}
+
 /**
  * Classify every stored competency scope, keyed by `<topicId>::<skillId>`.
  * The aggregate scope ("") is the average across subtopics; a subtopic scope
@@ -441,34 +507,7 @@ async function classifyScopedStates(learnerId: string): Promise<Map<string, Skil
   const map = new Map<string, SkillStatus>();
   for (const s of states) {
     const key = scopeKey(s.topicId, s.skillId);
-    map.set(
-      key,
-      classifySkill(
-        {
-          alpha: s.masteryAlpha,
-          beta: s.masteryBeta,
-          depth: s.depth,
-          independence: s.independence,
-          application: s.application,
-          transfer: s.transfer,
-          retention: s.retention,
-          evidenceCount: s.evidenceCount,
-          attempts: s.attempts,
-          independentSuccesses: s.independentSuccesses,
-          successStreak: s.successStreak,
-          integrationAttempts: s.integrationAttempts,
-          transferAttempts: s.transferAttempts,
-          retentionChecks: s.retentionChecks,
-          retentionSuccesses: s.retentionSuccesses,
-          supportDependence: s.supportDependence,
-          taskFamilies: safeJson<string[]>(s.taskFamilies, []),
-          depthCounts: safeJson<Record<string, number>>(s.depthCounts, {}),
-          lastRetrievedAt: s.lastRetrievedAt,
-          lastAssessmentAt: s.lastAssessmentAt,
-        },
-        miscByScope.get(key) ?? [],
-      ),
-    );
+    map.set(key, classifySkill(rowToSkillState(s), miscByScope.get(key) ?? []));
   }
   return map;
 }
@@ -482,6 +521,15 @@ async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatu
     if (key.slice(0, sep) === AGGREGATE_SCOPE) map.set(key.slice(sep + 2), status);
   }
   return map;
+}
+
+/**
+ * Skills the learner now solves confidently (aggregate). Re-planning uses this
+ * to SHRINK the plan instead of re-teaching what is already solid.
+ */
+async function masteredSkillIds(learnerId: string): Promise<string[]> {
+  const states = await prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } });
+  return states.filter((s) => isConfidentlyMastered(rowToSkillState(s))).map((s) => s.skillId);
 }
 
 /** The roadmap as a tree, with deterministic statuses computed by the core. */

@@ -70,6 +70,10 @@ export async function buildTutorContext(input: {
   learnerId: string;
   conversationId: string;
   roadmapItemId?: string;
+  /** The exact task the learner is viewing (may differ from the node's saved one). */
+  taskId?: string;
+  /** The learner's unsent editor content — what they are doing RIGHT NOW. */
+  currentCode?: string;
   question?: string;
 }): Promise<string> {
   const parts: string[] = [];
@@ -86,7 +90,7 @@ export async function buildTutorContext(input: {
     const nodes = await prisma.roadmapItem.findMany({
       where: { roadmapId: goal.roadmap.id },
       orderBy: [{ index: "asc" }],
-      take: 60,
+      take: 400,
     });
     const lines = nodes
       .filter((n) => !n.parentId)
@@ -115,20 +119,50 @@ export async function buildTutorContext(input: {
     if (node) {
       parts.push(`Current roadmap step: [${node.id}] "${node.title}" — ${node.objective || node.description}`);
       skillIds.push(...safeJson<string[]>(node.skillIds, []));
-      if (node.taskId) {
-        const task = await prisma.task.findUnique({ where: { id: node.taskId } });
-        if (task) parts.push(`Current task: "${task.title}"\nStatement:\n${task.statement.slice(0, 1200)}`);
+
+      // Where the current step sits among its siblings, and its own subtopics,
+      // so the tutor knows the learner's actual position in the plan.
+      if (node.parentId) {
+        const [parent, siblings] = await Promise.all([
+          prisma.roadmapItem.findUnique({ where: { id: node.parentId } }),
+          prisma.roadmapItem.findMany({ where: { parentId: node.parentId }, orderBy: { index: "asc" } }),
+        ]);
+        if (parent) parts.push(`Its parent topic: [${parent.id}] "${parent.title}"`);
+        if (siblings.length) {
+          parts.push(
+            `Subtopics of that topic (current marked ▸):\n${siblings
+              .map((s) => `${s.id === node.id ? "▸" : "-"} [${s.id}] "${s.title}" (${s.type}, ${s.status})`)
+              .join("\n")}`,
+          );
+        }
+      } else {
+        const kids = await prisma.roadmapItem.findMany({ where: { parentId: node.id }, orderBy: { index: "asc" } });
+        if (kids.length) {
+          parts.push(`Its subtopics:\n${kids.map((c) => `- [${c.id}] "${c.title}" (${c.type}, ${c.status})`).join("\n")}`);
+        }
+      }
+
+      const effectiveTaskId = input.taskId ?? node.taskId;
+      const task = effectiveTaskId ? await prisma.task.findUnique({ where: { id: effectiveTaskId } }) : null;
+      if (task) {
+        parts.push(`Current task (the learner is on THIS exercise right now): "${task.title}"\nStatement:\n${task.statement.slice(0, 1200)}`);
+        if (input.currentCode && input.currentCode.trim()) {
+          parts.push(
+            `Learner's CURRENT editor code (unsent — this is exactly what they are working on now):\n\`\`\`python\n${input.currentCode.slice(0, 2000)}\n\`\`\``,
+          );
+        }
         const attempt = await prisma.taskAttempt.findFirst({
-          where: { learnerId: input.learnerId, taskId: node.taskId },
+          where: { learnerId: input.learnerId, taskId: task.id },
           orderBy: { createdAt: "desc" },
         });
         if (attempt) {
-          parts.push(
-            `Learner's latest code (task "${task?.title ?? ""}"):\n\`\`\`python\n${attempt.code.slice(0, 1500)}\n\`\`\``,
-          );
+          if (!input.currentCode || !input.currentCode.trim()) {
+            parts.push(`Learner's latest submitted code:\n\`\`\`python\n${attempt.code.slice(0, 1500)}\n\`\`\``);
+          }
           parts.push(`Latest verification: ${attempt.passed}/${attempt.total} tests passed, hints used: ${attempt.hintsUsed}.`);
         }
       }
+
       if (node.contentId) {
         const lesson = await prisma.contentItem.findUnique({ where: { id: node.contentId } });
         if (lesson) parts.push(`Current lesson (excerpt the learner just read):\n${lesson.body.slice(0, 900)}`);
@@ -331,6 +365,10 @@ export async function tutor(input: {
   message: string;
   conversationId?: string;
   roadmapItemId?: string;
+  /** The exact task the learner is on (from the task bank). */
+  taskId?: string;
+  /** The learner's current editor content, if any. */
+  code?: string;
   language?: string;
 }): Promise<TutorResult> {
   const lang = normalizeLang(input.language);
@@ -433,6 +471,8 @@ export async function tutor(input: {
     learnerId: input.learnerId,
     conversationId,
     roadmapItemId: input.roadmapItemId,
+    taskId: input.taskId,
+    currentCode: input.code,
     question: input.message,
   });
 

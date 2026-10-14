@@ -75,6 +75,24 @@ export function LearnClient({ itemId }: { itemId: string }) {
     load();
   }, [load]);
 
+  // Publish exactly what is on screen (item, current bank task, unsent code) so
+  // the floating tutor always answers about what the learner is doing now.
+  useEffect(() => {
+    if (!data) return;
+    window.dispatchEvent(
+      new CustomEvent("zk:learn-context", {
+        detail: { itemId, title: data.item.title, taskId: data.task.id, code },
+      }),
+    );
+  }, [data, code, itemId]);
+
+  useEffect(
+    () => () => {
+      window.dispatchEvent(new CustomEvent("zk:learn-context", { detail: null }));
+    },
+    [],
+  );
+
   // Generate a fresh task for the SAME topic — so a single subtopic offers
   // more than one exercise to practise with.
   async function anotherTask() {
