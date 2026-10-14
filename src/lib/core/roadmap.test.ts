@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { rollupStatus, isStaleFromStatuses } from "@/lib/core/roadmap";
+import { rollupStatus, isStaleFromStatuses, RoadmapSchema } from "@/lib/core/roadmap";
 import {
   RULES,
   classifyActivity,
@@ -10,6 +10,40 @@ import {
 } from "@/lib/core/competency";
 
 // ── Node status rollup (§29, §86) ───────────────────────────
+// ── Roadmap schema resilience ──────────────────────────────
+// The model sometimes overshoots estimatedMinutes (e.g. 300). This must be
+// clamped, never rejected — a rejected value fails the whole plan generation.
+
+test("oversized estimatedMinutes is clamped, not rejected", () => {
+  const parsed = RoadmapSchema.parse({
+    summary: "s",
+    phases: [
+      {
+        phase: "p",
+        items: [
+          {
+            title: "t",
+            description: "d",
+            skillIds: ["python.basics"],
+            type: "lesson",
+            estimatedMinutes: 300,
+            substeps: [{ title: "s1", estimatedMinutes: 500 }],
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(parsed.phases[0].items[0].estimatedMinutes, 240);
+  assert.equal(parsed.phases[0].items[0].substeps[0].estimatedMinutes, 120);
+});
+
+test("missing estimatedMinutes falls back to a default", () => {
+  const parsed = RoadmapSchema.parse({
+    summary: "s",
+    phases: [{ phase: "p", items: [{ title: "t", description: "d", skillIds: ["x"], type: "lesson" }] }],
+  });
+  assert.equal(parsed.phases[0].items[0].estimatedMinutes, 30);
+});
 
 test("empty skill list is not assessed", () => {
   assert.equal(rollupStatus([]), "not_assessed");

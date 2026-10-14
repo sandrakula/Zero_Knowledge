@@ -16,16 +16,28 @@ import type { RoadmapItemView } from "./types";
 // deterministic, evidence-derived status colours.
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Models occasionally overshoot numeric ranges (e.g. 300 min for one item).
+ * Clamp into the allowed window instead of failing the whole plan — the value
+ * is a UI estimate, not a correctness-critical figure.
+ */
+function minutes(min: number, max: number, fallback: number) {
+  return z.preprocess((v) => {
+    const n = typeof v === "string" ? Number(v) : v;
+    return typeof n === "number" && Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : v;
+  }, z.number().int().min(min).max(max).default(fallback));
+}
+
 const SubstepItemSchema = z.object({
   title: z.string(),
   objective: z.string().default(""),
   description: z.string().default(""),
   type: z.string().default("practice"),
-  estimatedMinutes: z.number().int().min(3).max(120).default(15),
+  estimatedMinutes: minutes(3, 120, 15),
   optional: z.boolean().default(false),
 });
 
-const RoadmapSchema = z.object({
+export const RoadmapSchema = z.object({
   summary: z.string(),
   phases: z.array(
     z.object({
@@ -37,7 +49,7 @@ const RoadmapSchema = z.object({
           objective: z.string().default(""),
           skillIds: z.array(z.string()),
           type: z.string(),
-          estimatedMinutes: z.number().int().min(5).max(240),
+          estimatedMinutes: minutes(5, 240, 30),
           // Substeps are produced together with the roadmap so the plan is
           // always fully broken down on first view (no second LLM pass).
           substeps: z.array(SubstepItemSchema).default([]),
@@ -55,7 +67,7 @@ export const SubstepSchema = z.object({
         objective: z.string().default(""),
         description: z.string().default(""),
         type: z.string().default("practice"),
-        estimatedMinutes: z.number().int().min(3).max(120).default(15),
+        estimatedMinutes: minutes(3, 120, 15),
         optional: z.boolean().default(false),
       }),
     )
