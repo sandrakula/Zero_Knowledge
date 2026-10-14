@@ -26,6 +26,7 @@ const TaskSchema = z.object({
 export type GeneratedTask = {
   title: string;
   family: string;
+  topic: string;
   statement: string;
   starterCode: string;
   referenceSolution: string;
@@ -43,10 +44,11 @@ export type GeneratedTask = {
 
 function normalize(
   t: z.infer<typeof TaskSchema>,
-  input: { skillIds: string[]; difficulty: number; transferLevel: number; integrationLevel: number; independenceRequired: number; language?: string },
+  input: { skillIds: string[]; topic?: string; difficulty: number; transferLevel: number; integrationLevel: number; independenceRequired: number; language?: string },
 ): GeneratedTask {
   return {
     ...t,
+    topic: input.topic ?? "",
     starterCode: t.starterCode ?? "",
     cognitiveLevel: t.cognitiveLevel ?? "apply",
     misconceptionTargets: t.misconceptionTargets ?? [],
@@ -77,6 +79,8 @@ export async function validateTask(task: { referenceSolution: string; tests: { i
 
 export async function generateTask(input: {
   skillIds: string[];
+  /** Roadmap topic the task must actually be about (e.g. "От обычной функции к корутине"). */
+  topic?: string;
   difficulty: number;
   cognitiveLevel: string;
   transferLevel: number;
@@ -91,6 +95,7 @@ export async function generateTask(input: {
 
   const user = [
     `Target skills: ${names}`,
+    ...(input.topic ? [`Topic — the task MUST be specifically about this: ${input.topic}`, `Write the task for this topic, not merely for the underlying skill.`] : []),
     `Difficulty: ${Math.round(input.difficulty * 100)}/100`,
     `Cognitive level: ${input.cognitiveLevel}`,
     `Transfer level: ${input.transferLevel}`,
@@ -138,6 +143,8 @@ export async function generateTask(input: {
 export async function findExistingValidatedTask(input: {
   skillIds: string[];
   family?: string;
+  /** Only reuse a task written for the same roadmap topic. */
+  topic?: string;
 }): Promise<string | null> {
   const primary = input.skillIds[0];
   if (!primary) return null;
@@ -150,6 +157,9 @@ export async function findExistingValidatedTask(input: {
     const skillIds = JSON.parse(t.skillIds) as string[];
     if (skillIds[0] !== primary) continue;
     if (input.family && t.family !== input.family) continue;
+    // A task reused for a different topic is exactly the "async topic got a
+    // functions task" bug — require the stored topic to match.
+    if (input.topic && t.topic !== input.topic) continue;
     return t.id;
   }
   return null;
@@ -162,6 +172,7 @@ export async function persistTask(task: GeneratedTask): Promise<string> {
       skillIds: JSON.stringify(task.skillIds),
       family: task.family,
       title: task.title,
+      topic: task.topic,
       statement: task.statement,
       difficulty: task.difficulty,
       cognitiveLevel: task.cognitiveLevel,

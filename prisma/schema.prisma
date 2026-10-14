@@ -245,6 +245,7 @@ model Task {
   skillIds      String   @default("[]")
   family        String
   title         String
+  topic         String   @default("") // roadmap topic the task was written for
   statement     String   // markdown
   difficulty    Float    @default(0.5)
   cognitiveLevel String  @default("apply")

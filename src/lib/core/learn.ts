@@ -84,7 +84,7 @@ export async function openLearnItem(input: {
     format = fmt.format;
 
     // Prefer a validated existing task for the same skill before generating (§134).
-    const existingId = await findExistingValidatedTask({ skillIds });
+    const existingId = await findExistingValidatedTask({ skillIds, topic: item.title });
     if (existingId) {
       taskRecord = await prisma.task.findUnique({ where: { id: existingId } });
       if (taskRecord) await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId: existingId } });
@@ -94,6 +94,7 @@ export async function openLearnItem(input: {
       const activity = classifyActivity(item.type, skillIds.length);
       const task = await generateTask({
         skillIds,
+        topic: item.title,
         difficulty,
         cognitiveLevel: activity.cognitiveLevel,
         transferLevel: activity.transferLevel,

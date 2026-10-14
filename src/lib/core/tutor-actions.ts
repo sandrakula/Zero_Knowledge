@@ -153,6 +153,7 @@ async function generateTaskBranch(input: {
     try {
       const task = await generateTask({
         skillIds,
+        topic: input.action.focus || undefined,
         difficulty: diff,
         cognitiveLevel: activity.cognitiveLevel,
         transferLevel: activity.transferLevel,

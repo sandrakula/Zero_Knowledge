@@ -14,6 +14,7 @@
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "db:migrate-competency": "tsx prisma/migrate-competency.ts",
     "db:migrate-conversations": "tsx prisma/migrate-conversations.ts",
+    "db:migrate-task-topics": "tsx prisma/migrate-task-topics.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "prisma": {

@@ -175,6 +175,7 @@ Return STRICT JSON only with this shape:
 }
 
 CRITICAL RULES:
+- When a TOPIC is given in the request, the task MUST exercise that exact topic (for example async/await, decorators, generators, file I/O) — matching only the underlying skill is NOT enough.
 - The referenceSolution MUST read from stdin (input()) and print answers to stdout only.
 - Each test case's "expected" MUST be the EXACT stdout the referenceSolution produces (whitespace-sensitive, no trailing spaces).
 - The starterCode must NOT contain the answer.
