@@ -32,7 +32,15 @@ export async function runPython(code: string, stdin = ""): Promise<RunResult> {
     const child = spawn(PYTHON, [file], {
       cwd: dir,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        // Windows Python defaults stdout/stdin to the ANSI code page (cp1251,
+        // cp866, …). Force UTF-8 so non-ASCII output is not mangled into
+        // replacement characters before Node decodes it as UTF-8.
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1",
+      },
       windowsHide: true,
     });
 
@@ -84,6 +92,11 @@ export async function runPython(code: string, stdin = ""): Promise<RunResult> {
   return result;
 }
 
+/** Normalise runner output for comparison: CRLF -> LF, then trim. */
+export function normalizeOutput(text: string): string {
+  return text.replace(/\r\n/g, "\n").trim();
+}
+
 /** Run a solution against a set of {input, expected} test cases. */
 export async function runTests(
   code: string,
@@ -93,8 +106,9 @@ export async function runTests(
   let passed = 0;
   for (const t of tests) {
     const r = await runPython(code, t.input);
-    const actual = r.stdout.trim();
-    const expected = t.expected.trim();
+    // Normalise line endings: Windows Python emits CRLF, expected values use LF.
+    const actual = normalizeOutput(r.stdout);
+    const expected = normalizeOutput(t.expected);
     const pass = r.ok && actual === expected;
     if (pass) passed++;
     results.push({ ...r, expected, pass });
