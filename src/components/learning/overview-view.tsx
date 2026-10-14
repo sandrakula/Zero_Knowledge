@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Loader2, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Layers, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
 import { useI18n } from "@/components/i18n";
 import { StatusBadge, StatusDot } from "@/components/learning/status";
 import { cn, timeAgo } from "@/lib/utils";
@@ -16,27 +15,25 @@ import type { StateResponse } from "@/lib/types";
  * are presented as SEPARATE metrics — 8 of 10 roadmap items is not "80% of the
  * subject" and the UI says so explicitly.
  */
-export function OverviewView({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
+export function OverviewView({ state }: { state: StateResponse }) {
   const { t } = useI18n();
-  const [state, setState] = useState<StateResponse | null>(null);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/state")
-      .then((r) => r.json())
-      .then((d) => (d.error ? setError(d.error) : setState(d)))
-      .catch((e) => setError(e.message));
-  }, []);
-
-  if (error) return <p className="text-rose">{error}</p>;
-  if (!state) return <div className="grid min-h-[40vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
-
-  const { goal, roadmap, summary, misconceptions, nextBest, materialCount } = state;
+  const { goal, roadmap, summary, misconceptions, nextBest, materialCount, targetSkills, domainStats } = state;
   const counts = summary.counts;
-  const targetTotal = roadmap?.items.reduce((a, i) => a + i.skillIds.length, 0) ?? 0;
+  // Distinct target skills represented on the roadmap — NOT a sum over items
+  // (a skill referenced by several steps must be counted once).
+  const roadmapTargetSkills = roadmap
+    ? new Set(roadmap.items.flatMap((i) => i.skillIds)).size
+    : 0;
   const assessed = summary.skills.filter((s) => s.status !== "not_assessed");
   const dueReview = summary.skills.filter((s) => s.retentionDue);
   const attention = summary.skills.filter((s) => s.status === "needs_attention");
+
+  // All goal target skills grouped by domain ("where"), including the ones with
+  // no evidence yet — the deterministic read model, never a fabricated score.
+  const skillsByDomain = domainStats
+    .map((d) => ({ domain: d, skills: targetSkills.filter((s) => s.domain === d.id) }))
+    .filter((g) => g.skills.length > 0);
 
   // Bottleneck: an unresolved misconception first, then the weakest skill.
   const worstMisconception = misconceptions[0] ?? null;
@@ -100,9 +97,8 @@ export function OverviewView({ onOpenTab }: { onOpenTab: (tab: string) => void }
           <div className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-xs">
             <div className="flex justify-between"><span className="text-text-faint">{t("hub.evidenceVolume")}</span><span className="text-text">{summary.evidenceCount}</span></div>
             <div className="flex justify-between"><span className="text-text-faint">{t("hub.tab.materials")}</span><span className="text-text">{materialCount}</span></div>
-            <div className="flex justify-between"><span className="text-text-faint">→ {t("hub.ofTargetSkills")}</span><span className="text-text">{targetTotal}</span></div>
+            <div className="flex justify-between"><span className="text-text-faint">{t("hub.targetSkills")}</span><span className="text-text">{roadmapTargetSkills}</span></div>
           </div>
-          <button onClick={() => onOpenTab("map")} className="btn-ghost mt-4 w-full py-2 text-xs">{t("hub.openMap")}</button>
         </section>
 
         <section className="card p-5">
@@ -145,6 +141,42 @@ export function OverviewView({ onOpenTab }: { onOpenTab: (tab: string) => void }
         </section>
       </div>
 
+      <section className="card p-5">
+        <div className="flex items-center gap-2 text-sm font-semibold text-text">
+          <Layers className="h-4 w-4 text-accent-soft" />
+          {t("skills.title")}
+          <span className="chip ml-auto">{targetSkills.length}</span>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{t("skills.hint")}</p>
+
+        <div className="mt-4 space-y-5">
+          {skillsByDomain.map(({ domain, skills }) => (
+            <div key={domain.id}>
+              <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
+                <span className="text-sm" style={{ color: domain.color }}>{domain.icon}</span>
+                {domain.name}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {skills.map((s) => (
+                  <div
+                    key={s.skillId}
+                    title={t(`status.${s.status}`)}
+                    className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                  >
+                    <StatusDot status={s.status} />
+                    <span className="truncate text-sm text-text">{s.name}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-text-faint">
+                      {s.mastery === null ? t("metric.notAssessed") : `${Math.round(s.mastery * 100)}%`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {targetSkills.length === 0 && <p className="text-sm text-text-faint">{t("skills.empty")}</p>}
+        </div>
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-5">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-text"><Clock className="h-4 w-4 text-amber" /> {t("hub.needsReview")}</h2>
@@ -181,9 +213,6 @@ export function OverviewView({ onOpenTab }: { onOpenTab: (tab: string) => void }
               <p className="text-xs text-text-faint">{t("home.noEvidence")}</p>
             )}
           </div>
-          <button onClick={() => onOpenTab("progress")} className="btn-ghost mt-4 w-full py-2 text-xs">
-            {t("hub.tab.progress")} <ArrowRight className="h-3.5 w-3.5" />
-          </button>
         </section>
       </div>
 

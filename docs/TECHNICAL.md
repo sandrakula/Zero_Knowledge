@@ -121,7 +121,7 @@ D:\Learning_prj
 │  │     ├─ layout.tsx         # guard + AppShell + FloatingTutor
 │  │     ├─ onboarding/ diagnostic/
 │  │     ├─ tutor/ home/ roadmap/ learn/[itemId]/
-│  │     └─ learning/          # единый Learning hub (map/materials/progress → редиректы)
+│  │     └─ learning/          # единый Learning hub: секции Overview + Materials
 │  ├─ components/
 │  │  ├─ i18n.tsx              # провайдер языка
 │  │  ├─ shell/app-shell.tsx   # сайдбар, аккаунт, язык, FloatingTutor
@@ -676,7 +676,7 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
   нижняя граница credible interval ≥ 0.45, ≥ 2 независимых успеха, ≥ 2 семейств задач и
   отсутствие противоречащего активного заблуждения (confidence ≥ 0.5).
 
-Цвета узлов (карта/план) вычисляются из `STATUS_COLOR` в `competency.ts` — компоненты никогда
+Цвета узлов плана вычисляются из `STATUS_COLOR` в `competency.ts` — компоненты никогда
 не выводят цвета сами (§27). `rollupStatus()` сворачивает статусы навыков на узел плана.
 
 `student-twin.ts` предоставляет read-модель `getCompetencyView()` / `getAllSkillMetrics()` /
@@ -996,8 +996,8 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 | `/tutor` | client | — (первый пункт навигации) |
 | `/home` | server + client | нет цели → `/tutor`; нет роадмапа или диагностики → `/diagnostic?goalId=` |
 | `/roadmap` | client | иерархический план с раскрытием подшагов |
-| `/learning` | server + client | единый Learning hub: вкладки Overview / Knowledge Map / Materials / Progress |
-| `/map`, `/materials`, `/progress` | server | редиректы на `/learning?tab=…` (совместимость) |
+| `/learning` | server + client | единый Learning hub: секции Overview / Materials |
+| `/materials` | server | редирект на `/learning?tab=materials` (совместимость) |
 | `/learn/[itemId]` | server (params) + client | каркас; `/api/learn` проверяет владение узлом |
 | `/onboarding` | server + client | есть цель → `/home` |
 | `/diagnostic` | server + `Suspense` | каркас |
@@ -1025,8 +1025,8 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 (react-markdown + prose-стили), `reveal` (появление при скролле), `language-toggle`.
 `shell/app-shell.tsx` — сайдбар с активным индикатором (`layoutId`), мобильный топбар, блок
 аккаунта (имя, email, язык, выход).
-Фичи — `auth/`, `onboarding/`, `diagnostic/`, `home/`, `roadmap/`, `learn/`, `tutor/`, `map/`,
-`progress/`, `materials/`, `admin/`.
+Фичи — `auth/`, `onboarding/`, `diagnostic/`, `home/`, `roadmap/`, `learn/`, `tutor/`,
+`learning/`, `materials/`, `admin/`.
 
 ### Дизайн-система
 
@@ -1082,10 +1082,9 @@ runTests(code, tests)  → { passed, total, results[{...result, expected, pass}]
 `POST /api/materials` (FormData) → извлечение → чанки → анализ → `Material` + `MaterialChunk`.
 Админ грузит со `scope=global` — эти материалы доступны всем ученикам при генерации уроков.
 
-### 15.7 Прогресс, карта, админ
+### 15.7 Админ
 
-`/progress` — полные векторы и цепочка доказательств; `/map` — состояние по навыкам с
-пререквизитами; `/admin` — сводка по ученикам и загрузка общих материалов.
+`/admin` — сводка по ученикам и загрузка общих материалов.
 
 ---
 
@@ -1162,7 +1161,8 @@ console.error(`[api] ${msg}`)                        // серверный ло�
 10. **Нет интерливинга** — смешивание навыков в одной сессии не реализовано.
 11. **Перенос исправлен, но строг:** обычная практика имеет `transferLevel=0.1` (порог 0.4), поэтому
     transfer двигают только `transfer`/`project`-задачи; шаг +0.2 за успех (замедлен против прежнего).
-12. **`application`, `supportDependence` и `retention` выводятся в UI** (карта/прогресс);
+12. **`application`, `supportDependence` и `retention` считаются ядром** и отдаются через API
+    (`/api/state`, `/api/skills`), но отдельной вкладки прогресса в UI больше нет;
     остаётся не показывать полную историю изменений вектора во времени.
 13. **Задачи только по Python**; нет статического анализа/AST и оценки сложности.
 14. **Нет дашборда учителя** — только админская сводка.

@@ -1,77 +1,89 @@
 "use client";
 
-import { useCallback } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Activity, FileText, LayoutDashboard, Network } from "lucide-react";
+import { FileText, LayoutDashboard, Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n";
 import { OverviewView } from "@/components/learning/overview-view";
-import { MapView } from "@/components/learning/map-view";
-import { ProgressView } from "@/components/learning/progress-view";
 import { MaterialsClient } from "@/components/materials/materials-client";
-import { cn } from "@/lib/utils";
+import type { StateResponse } from "@/lib/types";
 
-const TABS = [
+const SECTIONS = [
   { id: "overview", label: "hub.tab.overview", icon: LayoutDashboard },
-  { id: "map", label: "hub.tab.map", icon: Network },
   { id: "materials", label: "hub.tab.materials", icon: FileText },
-  { id: "progress", label: "hub.tab.progress", icon: Activity },
-];
+] as const;
 
 /**
- * Unified Learning hub (§4): ONE top-level destination containing Overview,
- * Knowledge Map, Materials and Progress as internal views. Old routes redirect
- * here with a preselected tab, so nothing is duplicated.
+ * Unified Learning hub (§4): ONE destination that renders Overview and
+ * Materials as sections of a single page — no inner tabs.
+ *
+ * Every section reads the SAME snapshot of the deterministic competency core
+ * (`/api/state`), so every metric agrees across the page and nothing is
+ * re-derived per view (§12, §28).
  */
 export function LearningHub() {
   const { t } = useI18n();
-  const router = useRouter();
-  const pathname = usePathname();
   const params = useSearchParams();
-  const requested = params.get("tab") ?? "overview";
-  const tab = TABS.some((x) => x.id === requested) ? requested : "overview";
+  const [state, setState] = useState<StateResponse | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const setTab = useCallback(
-    (next: string) => router.replace(`${pathname}?tab=${next}`, { scroll: false }),
-    [pathname, router],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/state")
+      .then((r) => r.json())
+      .then((s) => {
+        if (cancelled) return;
+        if (s.error) setError(s.error);
+        else setState(s);
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : t("common.error")))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  const scrollTo = useCallback((id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // The old `/materials` route redirects here with `?tab=materials`; scroll to
+  // the matching section instead of switching a tab.
+  useEffect(() => {
+    if (loading) return;
+    const target = params.get("tab");
+    if (target) scrollTo(target);
+  }, [params, loading, scrollTo]);
+
+  if (error) return <p className="text-rose">{error}</p>;
+  if (loading || !state) {
+    return <div className="grid min-h-[40vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin text-accent-soft" /></div>;
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-10">
       <div>
         <p className="eyebrow">{t("hub.title")}</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-text">{t("hub.subtitle")}</h1>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-2">
-        {TABS.map((x) => {
-          const Icon = x.icon;
-          const active = tab === x.id;
-          return (
-            <button
-              key={x.id}
-              onClick={() => setTab(x.id)}
-              className={cn(
-                "relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-colors",
-                active ? "text-text" : "text-text-muted hover:text-text",
-              )}
-            >
-              {active && (
-                <motion.span layoutId="hub-tab" className="absolute inset-0 rounded-xl border border-white/[0.1] bg-white/[0.05]" transition={{ type: "spring", stiffness: 400, damping: 32 }} />
-              )}
-              <Icon className="relative h-4 w-4" />
-              <span className="relative">{t(x.label)}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-        {tab === "overview" && <OverviewView onOpenTab={setTab} />}
-        {tab === "map" && <MapView />}
-        {tab === "materials" && <MaterialsClient />}
-        {tab === "progress" && <ProgressView />}
-      </motion.div>
+      {SECTIONS.map((section) => {
+        const Icon = section.icon;
+        return (
+          <section key={section.id} id={section.id} className="scroll-mt-24 space-y-4">
+            <div className="flex items-center gap-2 border-b border-white/[0.06] pb-2">
+              <Icon className="h-4 w-4 text-accent-soft" />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">{t(section.label)}</h2>
+            </div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+              {section.id === "overview" && <OverviewView state={state} />}
+              {section.id === "materials" && <MaterialsClient />}
+            </motion.div>
+          </section>
+        );
+      })}
     </div>
   );
 }

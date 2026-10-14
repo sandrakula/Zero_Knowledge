@@ -145,6 +145,16 @@ export type StateResponse = {
   materialCount: number;
   /** Which goal target skills are covered by uploaded/shared materials (§45). */
   coverage: { skillId: string; name: string; covered: boolean }[];
+  /** Every goal target skill with deterministic metrics (incl. not assessed). */
+  targetSkills: {
+    skillId: string;
+    name: string;
+    domain: string;
+    status: SkillStatus;
+    mastery: number | null;
+    evidenceCount: number;
+    sufficiency: EvidenceSufficiency;
+  }[];
   /** Ring metrics for the topic currently being worked through; null = not assessed. */
   goalMetrics: {
     mastery: number | null;

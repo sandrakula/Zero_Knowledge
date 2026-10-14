@@ -219,7 +219,7 @@ async function applyMisconceptionSignal(
   }
 }
 
-/** All skills' metrics in one pass — used by the knowledge map and hub. */
+/** All skills' metrics in one pass — used by the materials editor and hub. */
 export async function getAllSkillMetrics(learnerId: string) {
   const [states, misconceptions] = await Promise.all([
     prisma.competencyState.findMany({ where: { learnerId } }),

@@ -1,8 +1,9 @@
 import { prisma, ensureLearner } from "@/lib/db";
-import { getLearnerSummary, getActiveMisconceptions, recommendNext } from "@/lib/core/student-twin";
+import { getLearnerSummary, getActiveMisconceptions, recommendNext, getAllSkillMetrics } from "@/lib/core/student-twin";
 import { getRoadmapView } from "@/lib/core/roadmap";
 import { handle, requireUser } from "@/lib/api";
 import { DOMAINS, SKILLS } from "@/lib/core/knowledge-graph";
+import { emptySkillState, skillMetrics } from "@/lib/core/competency";
 import { safeJson } from "@/lib/core/json";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,25 @@ export async function GET() {
       return { skillId: g.skillId, name: def?.name ?? g.skillId, covered: coveredSet.has(g.skillId) };
     });
 
+    // Every target skill of the goal, with its deterministic evidence-based
+    // metrics — including "not assessed" ones, so the learner can see the whole
+    // set of skills they own and what is still ahead (§7, §22).
+    const skillMetricsMap = await getAllSkillMetrics(userId);
+    const blank = skillMetrics(emptySkillState());
+    const targetSkills = goalSkillRows.map((g) => {
+      const def = SKILLS.find((s) => s.id === g.skillId);
+      const m = skillMetricsMap.get(g.skillId) ?? blank;
+      return {
+        skillId: g.skillId,
+        name: def?.name ?? g.skillId,
+        domain: def?.domain ?? "",
+        status: m.status,
+        mastery: m.mastery.value,
+        evidenceCount: m.evidenceCount,
+        sufficiency: m.sufficiency,
+      };
+    });
+
     // Ring metrics follow the topic currently being worked through. Only
     // assessed values are averaged; if nothing is assessed the ring is null.
     const roots = roadmap?.items ?? [];
@@ -85,6 +105,7 @@ export async function GET() {
       domainStats,
       materialCount,
       coverage,
+      targetSkills,
       goalMetrics: {
         mastery: avgOf((s) => s.mastery),
         independence: avgOf((s) => s.independence),

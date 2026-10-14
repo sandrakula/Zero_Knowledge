@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   Route,
-  Network,
+  Layers,
   MessageSquare,
   ShieldCheck,
   LogOut,
@@ -23,8 +23,8 @@ const NAV = [
   { href: "/tutor", label: "nav.tutor", icon: MessageSquare },
   { href: "/home", label: "nav.home", icon: LayoutDashboard },
   { href: "/roadmap", label: "nav.roadmap", icon: Route },
-  // One unified entry for Knowledge Map + Materials + Progress (§4).
-  { href: "/learning", label: "hub.title", icon: Network },
+  // One unified entry for Overview + Progress + Materials (§4).
+  { href: "/learning", label: "hub.title", icon: Layers },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

@@ -38,11 +38,10 @@ and no AI provider, model, or API key is baked into the core.
 - **Student Learning Twin** — per-skill competency vectors (Beta-Binomial mastery posterior,
   evidence sufficiency, depth, independence, application, transfer, retention,
   misconception states) with deterministic status classification.
-- **Unified Learning hub** — overview, knowledge map, materials and progress in one section;
+- **Unified Learning hub** — overview and materials in one section;
   every metric shows «Not assessed» until real evidence exists.
 - **Next-best-action** — a recommendation engine, not a fixed sequence.
 - **Contextual tutor** — intent-aware, grounded in your current task, following the hint ladder.
-- **Knowledge map** — inspect what you know, what's weak, what blocks you, what's next.
 
 ## Stack
 
