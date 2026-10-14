@@ -8,6 +8,7 @@ import {
   emptySkillState,
   skillMetrics,
   RULES,
+  AGGREGATE_SCOPE,
   type SkillState,
 } from "./competency";
 import { effectiveWeight, observedScore, TASK_VALIDITY } from "./evidence";
@@ -61,15 +62,19 @@ function safeJson<T>(raw: string, fallback: T): T {
   }
 }
 
-async function ensureCompetency(learnerId: string, skillId: string) {
+/** The aggregate scope: the skill-level AVERAGE across every subtopic. */
+export { AGGREGATE_SCOPE };
+
+async function ensureCompetency(learnerId: string, skillId: string, topicId: string) {
   const existing = await prisma.competencyState.findUnique({
-    where: { learnerId_skillId: { learnerId, skillId } },
+    where: { learnerId_skillId_topicId: { learnerId, skillId, topicId } },
   });
   if (existing) return existing;
   return prisma.competencyState.create({
     data: {
       learnerId,
       skillId,
+      topicId,
       masteryAlpha: 1,
       masteryBeta: 3,
       mastery: 0.25,
@@ -85,6 +90,70 @@ function roleFor(skillId: string, primarySkillId: string | undefined, skillIds: 
 }
 
 /**
+ * Apply one piece of evidence to a skill WITHIN one scope.
+ *
+ * Evidence that comes from a subtopic is written twice: to that subtopic's own
+ * state (so a roadmap node reflects only its own work) and to the aggregate
+ * state (the average across subtopics the Learning hub shows).
+ */
+async function applyEvidenceToScope(input: {
+  learnerId: string;
+  skillId: string;
+  scope: string;
+  q: number;
+  weight: number;
+  value: EvidencePayload;
+  at: Date;
+}): Promise<void> {
+  const { learnerId, skillId, scope, q, weight, value, at } = input;
+  const row = await ensureCompetency(learnerId, skillId, scope);
+
+  const next = applyEvidenceToSkill(toSkillState(row), {
+    q,
+    weight,
+    correct: value.correct,
+    supportUsed: value.supportUsed,
+    integrationLevel: value.integrationLevel ?? 0,
+    transferLevel: value.transferLevel ?? 0,
+    retentionCheck: value.retentionCheck,
+    retentionDelayed: value.retentionDelayed ?? false,
+    cognitiveLevel: value.cognitiveLevel,
+    taskFamily: value.taskFamily ?? "",
+    at,
+  });
+
+  await prisma.competencyState.update({
+    where: { id: row.id },
+    data: {
+      masteryAlpha: next.alpha,
+      masteryBeta: next.beta,
+      mastery: posteriorMean({ alpha: next.alpha, beta: next.beta }),
+      masteryUncertainty: posteriorStd({ alpha: next.alpha, beta: next.beta }),
+      depth: next.depth,
+      independence: next.independence,
+      application: next.application,
+      transfer: next.transfer,
+      retention: next.retention,
+      evidenceCount: next.evidenceCount,
+      attempts: next.attempts,
+      successes: value.correct ? { increment: 1 } : undefined,
+      independentSuccesses: next.independentSuccesses,
+      successStreak: next.successStreak,
+      integrationAttempts: next.integrationAttempts,
+      transferAttempts: next.transferAttempts,
+      retentionChecks: next.retentionChecks,
+      retentionSuccesses: next.retentionSuccesses,
+      supportDependence: next.supportDependence,
+      taskFamilies: JSON.stringify(next.taskFamilies),
+      depthCounts: JSON.stringify(next.depthCounts),
+      lastSeenAt: at,
+      lastAssessmentAt: next.lastAssessmentAt,
+      lastRetrievedAt: next.lastRetrievedAt,
+    },
+  });
+}
+
+/**
  * Apply one piece of evidence to every affected skill's competency vector.
  *
  * The primary target skill receives full evidence weight; supporting skills
@@ -95,6 +164,8 @@ export async function applyEvidence(input: {
   learnerId: string;
   skillIds: string[];
   primarySkillId?: string;
+  /** Roadmap subtopic the evidence came from. Writes that scope AND the aggregate. */
+  topicId?: string;
   value: EvidencePayload;
 }): Promise<void> {
   const { learnerId, skillIds, value } = input;
@@ -107,9 +178,11 @@ export async function applyEvidence(input: {
     supportUsed: value.supportUsed,
   });
   const at = new Date();
+  // Subtopic work updates the subtopic scope AND the aggregate; evidence with
+  // no subtopic (diagnostic, tutor, teach-back) updates the aggregate only.
+  const scopes = input.topicId ? [input.topicId, AGGREGATE_SCOPE] : [AGGREGATE_SCOPE];
 
   for (const skillId of skillIds) {
-    const row = await ensureCompetency(learnerId, skillId);
     const role = roleFor(skillId, input.primarySkillId, skillIds);
     const weight = effectiveWeight({
       method: value.method,
@@ -117,59 +190,20 @@ export async function applyEvidence(input: {
       taskValidity,
       relevance: role === "primary" ? 1 : 0.6,
     });
-
-    const next = applyEvidenceToSkill(toSkillState(row), {
-      q,
-      weight,
-      correct: value.correct,
-      supportUsed: value.supportUsed,
-      integrationLevel: value.integrationLevel ?? 0,
-      transferLevel: value.transferLevel ?? 0,
-      retentionCheck: value.retentionCheck,
-      retentionDelayed: value.retentionDelayed ?? false,
-      cognitiveLevel: value.cognitiveLevel,
-      taskFamily: value.taskFamily ?? "",
-      at,
-    });
-
-    await prisma.competencyState.update({
-      where: { id: row.id },
-      data: {
-        masteryAlpha: next.alpha,
-        masteryBeta: next.beta,
-        mastery: posteriorMean({ alpha: next.alpha, beta: next.beta }),
-        masteryUncertainty: posteriorStd({ alpha: next.alpha, beta: next.beta }),
-        depth: next.depth,
-        independence: next.independence,
-        application: next.application,
-        transfer: next.transfer,
-        retention: next.retention,
-        evidenceCount: next.evidenceCount,
-        attempts: next.attempts,
-        successes: value.correct ? { increment: 1 } : undefined,
-        independentSuccesses: next.independentSuccesses,
-        successStreak: next.successStreak,
-        integrationAttempts: next.integrationAttempts,
-        transferAttempts: next.transferAttempts,
-        retentionChecks: next.retentionChecks,
-        retentionSuccesses: next.retentionSuccesses,
-        supportDependence: next.supportDependence,
-        taskFamilies: JSON.stringify(next.taskFamilies),
-        depthCounts: JSON.stringify(next.depthCounts),
-        lastSeenAt: at,
-        lastAssessmentAt: next.lastAssessmentAt,
-        lastRetrievedAt: next.lastRetrievedAt,
-      },
-    });
+    for (const scope of scopes) {
+      await applyEvidenceToScope({ learnerId, skillId, scope, q, weight, value, at });
+    }
   }
 
-  // Misconception bookkeeping (§19, §83–85).
+  // Misconception bookkeeping (§19, §83–85) — scoped the same way.
   const detected = value.misconceptions ?? [];
   for (const skillId of skillIds) {
     for (const code of detected) {
       const def = misconceptionOf(code);
       if (!def || !def.affectedSkills.includes(skillId)) continue;
-      await applyMisconceptionSignal(learnerId, skillId, code, value);
+      for (const scope of scopes) {
+        await applyMisconceptionSignal(learnerId, skillId, scope, code, value);
+      }
     }
   }
 }
@@ -181,11 +215,12 @@ function misconceptionOf(code: string) {
 async function applyMisconceptionSignal(
   learnerId: string,
   skillId: string,
+  topicId: string,
   code: string,
   value: EvidencePayload,
 ) {
   const existing = await prisma.misconception.findUnique({
-    where: { learnerId_skillId_code: { learnerId, skillId, code } },
+    where: { learnerId_skillId_code_topicId: { learnerId, skillId, code, topicId } },
   });
 
   if (value.correct && value.supportUsed < RULES.independenceThreshold) {
@@ -208,7 +243,7 @@ async function applyMisconceptionSignal(
   const def = misconceptionOf(code);
   if (!existing) {
     await prisma.misconception.create({
-      data: { learnerId, skillId, code, description: def?.name ?? code, confidence: 0.5, status: "active" },
+      data: { learnerId, skillId, topicId, code, description: def?.name ?? code, confidence: 0.5, status: "active" },
     });
   } else {
     await prisma.misconception.update({
@@ -224,8 +259,8 @@ async function applyMisconceptionSignal(
 /** All skills' metrics in one pass — used by the materials editor and hub. */
 export async function getAllSkillMetrics(learnerId: string) {
   const [states, misconceptions] = await Promise.all([
-    prisma.competencyState.findMany({ where: { learnerId } }),
-    prisma.misconception.findMany({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
+    prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } }),
+    prisma.misconception.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } } }),
   ]);
   const miscBySkill = new Map<string, { status: string; confidence: number }[]>();
   for (const m of misconceptions) {
@@ -249,11 +284,11 @@ export async function getCompetencyView(
   const skill = getSkill(skillId);
   if (!skill) return null;
   const row = await prisma.competencyState.findUnique({
-    where: { learnerId_skillId: { learnerId, skillId } },
+    where: { learnerId_skillId_topicId: { learnerId, skillId, topicId: AGGREGATE_SCOPE } },
   });
   const misconceptions = row
     ? await prisma.misconception.findMany({
-        where: { learnerId, skillId, status: { in: ["active", "monitoring"] } },
+        where: { learnerId, skillId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } },
       })
     : [];
   const state = row ? toSkillState(row) : emptySkillState();
@@ -289,7 +324,7 @@ export async function getCompetencyView(
 
 /** Skills currently due for spaced retrieval review (§87–88). */
 export async function getDueReviews(learnerId: string) {
-  const states = await prisma.competencyState.findMany({ where: { learnerId } });
+  const states = await prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } });
   const now = new Date();
   const due = states
     .filter((c) => c.retentionChecks > 0 && retentionEstimate(c.retention, c.lastRetrievedAt, now) < RETENTION_DUE_THRESHOLD)
@@ -307,7 +342,7 @@ export async function getDueReviews(learnerId: string) {
 
 export async function getActiveMisconceptions(learnerId: string): Promise<MisconceptionView[]> {
   const rows = await prisma.misconception.findMany({
-    where: { learnerId, status: { in: ["active", "monitoring"] } },
+    where: { learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } },
     orderBy: { confidence: "desc" },
   });
   return rows.map((r) => {
@@ -327,8 +362,8 @@ export async function getActiveMisconceptions(learnerId: string): Promise<Miscon
 /** Aggregate learner summary used by the home page and the Learning hub. */
 export async function getLearnerSummary(learnerId: string) {
   const [competencies, misconceptions, evidence, recommendations, events, attempts] = await Promise.all([
-    prisma.competencyState.findMany({ where: { learnerId } }),
-    prisma.misconception.findMany({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
+    prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } }),
+    prisma.misconception.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } } }),
     prisma.evidence.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 40 }),
     prisma.recommendation.findMany({ where: { learnerId, status: "pending" }, orderBy: { priority: "desc" }, take: 5 }),
     prisma.learningEvent.findMany({ where: { learnerId }, orderBy: { createdAt: "desc" }, take: 25 }),
@@ -425,11 +460,11 @@ export async function getLearnerSummary(learnerId: string) {
 export async function recommendNext(learnerId: string, roadmapId?: string) {
   const now = new Date();
   const [competencies, roadmapItems, activeMisconceptions] = await Promise.all([
-    prisma.competencyState.findMany({ where: { learnerId } }),
+    prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } }),
     roadmapId
       ? prisma.roadmapItem.findMany({ where: { roadmapId, origin: "main" }, orderBy: { index: "asc" } })
       : Promise.resolve([]),
-    prisma.misconception.findMany({ where: { learnerId, status: "active" }, orderBy: { confidence: "desc" }, take: 3 }),
+    prisma.misconception.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE, status: "active" }, orderBy: { confidence: "desc" }, take: 3 }),
   ]);
 
   const comp = new Map(competencies.map((c) => [c.skillId, c]));

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getSkill } from "./knowledge-graph";
 import { ensureLessonForItem } from "./content";
-import { findExistingValidatedTask, generateTask, persistTask } from "./taskgen";
+import { findValidatedTasksByItem, generateTask, persistTask } from "./taskgen";
 import { getCompetencyView } from "./student-twin";
 import { classifyActivity, instructionFormat } from "./competency";
 import { getOwnedNode, getFlattenedOrder } from "./roadmap";
@@ -15,8 +15,10 @@ export async function openLearnItem(input: {
   learnerId: string;
   itemId: string;
   language?: string;
-  /** Generate a fresh task for this topic instead of reusing the current one. */
+  /** Generate an extra task for this subtopic instead of reusing the current one. */
   newTask?: boolean;
+  /** Open a specific task from the subtopic's bank. */
+  taskId?: string;
 }): Promise<{
   item: {
     id: string;
@@ -48,6 +50,9 @@ export async function openLearnItem(input: {
     testCount: number;
     format: string;
   };
+  /** Every validated task for this subtopic (at least 3). */
+  taskBank: { id: string; title: string }[];
+  taskIndex: number;
   competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: string }>;
   nav: { prevId: string | null; nextId: string | null };
 }> {
@@ -70,49 +75,41 @@ export async function openLearnItem(input: {
 
   const lesson = await ensureLessonForItem({ learnerId: input.learnerId, itemId: item.id, language: input.language });
 
-  // Reuse the item's existing validated task, or generate + validate a new one.
-  let taskRecord = !input.newTask && item.taskId
-    ? await prisma.task.findUnique({ where: { id: item.taskId } })
-    : null;
-
   // Adaptive support fading (§70, §74): worked example → independent.
-  let format: string = "guided";
+  const primary = skillIds[0];
+  const comp = await getCompetencyView(input.learnerId, primary);
+  const fmt = instructionFormat(comp?.mastery ?? null);
+  const format = fmt.format;
+  const activity = classifyActivity(item.type, skillIds.length);
 
-  if (!taskRecord) {
-    const primary = skillIds[0];
-    const comp = await getCompetencyView(input.learnerId, primary);
-    const difficulty = clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3);
-    const fmt = instructionFormat(comp?.mastery ?? null);
-    format = fmt.format;
+  // Every subtopic is practised with a BANK of tasks (>= MIN_TASKS_PER_TOPIC),
+  // not a single exercise. Generation is topic-locked and variety-aware.
+  const bankInput: TaskBankInput = {
+    itemId: item.id,
+    topic: item.title,
+    skillIds,
+    difficulty: clampDifficulty(comp?.mastery ?? 0.2, getSkill(primary)?.difficulty ?? 0.3),
+    cognitiveLevel: activity.cognitiveLevel,
+    transferLevel: activity.transferLevel,
+    integrationLevel: activity.integrationLevel,
+    independenceRequired: item.type === "assessment" ? 0.9 : fmt.independenceRequired,
+    misconceptions: comp?.misconceptions ?? [],
+    language: input.language,
+  };
+  await ensureTaskBank({ ...bankInput, legacyTaskId: item.taskId });
+  if (input.newTask) await generateIntoBank(bankInput);
 
-    // Prefer a validated existing task for the same skill before generating (§134).
-    const existingId = input.newTask ? null : await findExistingValidatedTask({ skillIds, topic: item.title });
-    if (existingId) {
-      taskRecord = await prisma.task.findUnique({ where: { id: existingId } });
-      if (taskRecord) await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId: existingId } });
-    }
-
-    if (!taskRecord) {
-      const activity = classifyActivity(item.type, skillIds.length);
-      const task = await generateTask({
-        skillIds,
-        topic: item.title,
-        difficulty,
-        cognitiveLevel: activity.cognitiveLevel,
-        transferLevel: activity.transferLevel,
-        integrationLevel: activity.integrationLevel,
-        independenceRequired: item.type === "assessment" ? 0.9 : fmt.independenceRequired,
-        misconceptions: comp?.misconceptions ?? [],
-        language: input.language,
-      });
-
-      const taskId = await persistTask(task);
-      await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId } });
-      taskRecord = await prisma.task.findUnique({ where: { id: taskId } });
-    }
+  const bank = await findValidatedTasksByItem(item.id);
+  const chosen =
+    (input.taskId ? bank.find((t) => t.id === input.taskId) : undefined) ??
+    (item.taskId ? bank.find((t) => t.id === item.taskId) : undefined) ??
+    bank[0];
+  if (!chosen) throw new Error("Failed to produce a task");
+  if (item.taskId !== chosen.id) {
+    await prisma.roadmapItem.update({ where: { id: item.id }, data: { taskId: chosen.id } });
   }
-
-  if (!taskRecord) throw new Error("Failed to produce a task");
+  const taskRecord = chosen;
+  const taskIndex = Math.max(0, bank.findIndex((t) => t.id === taskRecord.id));
 
   const tests = JSON.parse(taskRecord.tests) as { input: string; expected: string }[];
 
@@ -155,8 +152,78 @@ export async function openLearnItem(input: {
       format,
     },
     competency,
+    taskBank: bank.map((t) => ({ id: t.id, title: t.title })),
+    taskIndex,
     nav,
   };
+}
+
+/**
+ * How many validated tasks a single subtopic must offer. One exercise is not
+ * practice — a learner needs several tries on the same topic.
+ */
+export const MIN_TASKS_PER_TOPIC = 3;
+
+type TaskBankInput = {
+  itemId: string;
+  topic: string;
+  skillIds: string[];
+  difficulty: number;
+  cognitiveLevel: string;
+  transferLevel: number;
+  integrationLevel: number;
+  independenceRequired: number;
+  misconceptions: string[];
+  language?: string;
+};
+
+/** Generate one more validated task for a subtopic and add it to its bank. */
+async function generateIntoBank(input: TaskBankInput): Promise<void> {
+  const bank = await findValidatedTasksByItem(input.itemId);
+  const task = await generateTask({
+    skillIds: input.skillIds,
+    topic: input.topic,
+    difficulty: input.difficulty,
+    cognitiveLevel: input.cognitiveLevel,
+    transferLevel: input.transferLevel,
+    integrationLevel: input.integrationLevel,
+    independenceRequired: input.independenceRequired,
+    misconceptions: input.misconceptions,
+    language: input.language,
+    avoid: bank.map((t) => t.title),
+    variant: { index: bank.length, total: Math.max(MIN_TASKS_PER_TOPIC, bank.length + 1) },
+  });
+  await persistTask(task, input.itemId);
+}
+
+/**
+ * Guarantee a subtopic has at least MIN_TASKS_PER_TOPIC validated tasks.
+ * Tasks are generated one after another so each new one can avoid the titles
+ * already in the bank (and stays within provider rate limits). A generation
+ * failure never blocks learning — whatever exists is kept.
+ */
+async function ensureTaskBank(input: TaskBankInput & { legacyTaskId: string | null }): Promise<void> {
+  if (input.skillIds.length === 0) return;
+
+  // Adopt a legacy single-task link into the bank.
+  if (input.legacyTaskId) {
+    await prisma.task.updateMany({
+      where: { id: input.legacyTaskId, roadmapItemId: null },
+      data: { roadmapItemId: input.itemId },
+    });
+  }
+
+  let bank = await findValidatedTasksByItem(input.itemId);
+  while (bank.length < MIN_TASKS_PER_TOPIC) {
+    try {
+      await generateIntoBank(input);
+    } catch {
+      break;
+    }
+    const next = await findValidatedTasksByItem(input.itemId);
+    if (next.length === bank.length) break; // no progress
+    bank = next;
+  }
 }
 
 function clampDifficulty(mastery: number, base: number): number {

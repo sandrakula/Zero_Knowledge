@@ -210,6 +210,13 @@ export function applyEvidenceToSkill(state: SkillState, ev: EvidenceInput): Skil
 
 export type SkillStatus = "not_assessed" | "needs_attention" | "developing" | "demonstrated";
 
+/**
+ * The aggregate competency scope id. Competency is tracked per
+ * (skill, scope): a roadmap subtopic id scopes evidence to that subtopic,
+ * while "" is the skill-level AVERAGE across subtopics shown under Learning.
+ */
+export const AGGREGATE_SCOPE = "";
+
 export const CLASSIFICATION = {
   /** Below this evidence count the skill is simply not assessed. */
   minEvidenceForAssessment: 1,

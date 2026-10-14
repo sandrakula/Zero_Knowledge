@@ -103,6 +103,30 @@ export function LearnClient({ itemId }: { itemId: string }) {
     }
   }
 
+  // Switch to another task already in this subtopic's bank (no generation).
+  async function selectTask(nextTaskId: string) {
+    if (!data || nextTaskId === data.task.id) return;
+    setError("");
+    setAttempt(null);
+    setRunOutput(null);
+    setHintsShown(0);
+    try {
+      const res = await fetch("/api/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, lang, taskId: nextTaskId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? t("common.error"));
+      setData(d);
+      setCode(d.task.starterCode || "");
+      setCustomInput(d.task.example.input ?? "");
+      startTime.current = Date.now();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    }
+  }
+
   async function run() {
     if (!data) return;
     setRunning(true);
@@ -264,6 +288,26 @@ export function LearnClient({ itemId }: { itemId: string }) {
                 {t("learn.anotherTask")}
               </button>
             </div>
+            {data.taskBank.length > 1 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-text-faint">
+                  {t("learn.task")} {data.taskIndex + 1} / {data.taskBank.length} {t("learn.taskBank")}
+                </span>
+                {data.taskBank.map((entry, i) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => selectTask(entry.id)}
+                    title={entry.title}
+                    className={cn(
+                      "h-6 min-w-6 rounded-md px-2 text-[11px] font-semibold transition-colors",
+                      entry.id === task.id ? "bg-accent/20 text-accent-soft" : "bg-white/[0.05] text-text-faint hover:text-text",
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-3">
               <Markdown>{task.statement}</Markdown>
             </div>

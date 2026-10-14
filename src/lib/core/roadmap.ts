@@ -4,7 +4,7 @@ import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
 import { langInstruction } from "@/lib/lang";
 import { SKILLS, getSkill } from "./knowledge-graph";
-import { classifySkill, type SkillStatus } from "./competency";
+import { classifySkill, AGGREGATE_SCOPE, type SkillStatus } from "./competency";
 import { safeJson } from "./json";
 import type { GoalSpec } from "./goal-compiler";
 import { skillCatalogForPrompt } from "./goal-compiler";
@@ -207,7 +207,7 @@ export async function buildRoadmapFromGoal(input: {
     reframedStatement: "",
   };
   const comps = await prisma.competencyState.findMany({
-    where: { learnerId: input.learnerId, skillId: { in: spec.targetSkills } },
+    where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, skillId: { in: spec.targetSkills } },
   });
   await generateRoadmap({
     goalId: input.goalId,
@@ -328,7 +328,7 @@ export async function regenerateRoadmap(input: {
     reframedStatement: "",
   };
   const comps = await prisma.competencyState.findMany({
-    where: { learnerId: input.learnerId, skillId: { in: spec.targetSkills } },
+    where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, skillId: { in: spec.targetSkills } },
   });
 
   await generateRoadmap({
@@ -417,21 +417,32 @@ export function nodeDisplayStatus(itemStatus: string, rolled: SkillStatus): Skil
   return rolled;
 }
 
-async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatus>> {
+function scopeKey(topicId: string, skillId: string): string {
+  return `${topicId}::${skillId}`;
+}
+
+/**
+ * Classify every stored competency scope, keyed by `<topicId>::<skillId>`.
+ * The aggregate scope ("") is the average across subtopics; a subtopic scope
+ * holds only that subtopic's own work, so one topic never repaints another.
+ */
+async function classifyScopedStates(learnerId: string): Promise<Map<string, SkillStatus>> {
   const [states, misconceptions] = await Promise.all([
     prisma.competencyState.findMany({ where: { learnerId } }),
     prisma.misconception.findMany({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
   ]);
-  const miscBySkill = new Map<string, { status: string; confidence: number }[]>();
+  const miscByScope = new Map<string, { status: string; confidence: number }[]>();
   for (const m of misconceptions) {
-    const arr = miscBySkill.get(m.skillId) ?? [];
+    const key = scopeKey(m.topicId, m.skillId);
+    const arr = miscByScope.get(key) ?? [];
     arr.push({ status: m.status, confidence: m.confidence });
-    miscBySkill.set(m.skillId, arr);
+    miscByScope.set(key, arr);
   }
   const map = new Map<string, SkillStatus>();
   for (const s of states) {
+    const key = scopeKey(s.topicId, s.skillId);
     map.set(
-      s.skillId,
+      key,
       classifySkill(
         {
           alpha: s.masteryAlpha,
@@ -455,9 +466,20 @@ async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatu
           lastRetrievedAt: s.lastRetrievedAt,
           lastAssessmentAt: s.lastAssessmentAt,
         },
-        miscBySkill.get(s.skillId) ?? [],
+        miscByScope.get(key) ?? [],
       ),
     );
+  }
+  return map;
+}
+
+/** Aggregate (average across subtopics) status per skill — used for staleness. */
+async function skillStatusMap(learnerId: string): Promise<Map<string, SkillStatus>> {
+  const scoped = await classifyScopedStates(learnerId);
+  const map = new Map<string, SkillStatus>();
+  for (const [key, status] of scoped) {
+    const sep = key.indexOf("::");
+    if (key.slice(0, sep) === AGGREGATE_SCOPE) map.set(key.slice(sep + 2), status);
   }
   return map;
 }
@@ -467,14 +489,18 @@ export async function getRoadmapView(goalId: string, learnerId: string) {
   const roadmap = await prisma.roadmap.findUnique({ where: { goalId }, include: { goal: true } });
   if (!roadmap) return null;
 
-  const [items, statuses] = await Promise.all([
+  const [items, scopedStatuses] = await Promise.all([
     prisma.roadmapItem.findMany({ where: { roadmapId: roadmap.id }, orderBy: [{ index: "asc" }] }),
-    skillStatusMap(learnerId),
+    classifyScopedStates(learnerId),
   ]);
 
   const view = (i: (typeof items)[number], depth: number): RoadmapItemView => {
     const skillIds = safeJson<string[]>(i.skillIds, []);
-    const skillStatuses = skillIds.map((id) => statuses.get(id) ?? "not_assessed");
+    // A node shows ITS OWN subtopic evidence; only if it has none yet does it
+    // fall back to the aggregate (the average across subtopics).
+    const skillStatuses = skillIds.map(
+      (id) => scopedStatuses.get(scopeKey(i.id, id)) ?? scopedStatuses.get(scopeKey(AGGREGATE_SCOPE, id)) ?? "not_assessed",
+    );
     return {
       id: i.id,
       index: i.index,

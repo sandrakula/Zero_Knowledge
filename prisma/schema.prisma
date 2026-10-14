@@ -104,6 +104,11 @@ model CompetencyState {
   skillId       String
   skill         Skill    @relation(fields: [skillId], references: [id])
 
+  // "" = skill-level aggregate — the AVERAGE across subtopics, shown in the
+  // Learning hub. A RoadmapItem id scopes the same skill to ONE subtopic, so
+  // one subtopic's mistakes never repaint another.
+  topicId       String   @default("")
+
   // Beta-Binomial posterior, stored explicitly so it is never reconstructed
   // from a rounded percentage. Prior: alpha0 = 1, beta0 = 3 (mean 0.25).
   masteryAlpha  Float    @default(1)
@@ -145,7 +150,7 @@ model CompetencyState {
   lastRetrievedAt DateTime?
   updatedAt     DateTime @updatedAt
 
-  @@unique([learnerId, skillId])
+  @@unique([learnerId, skillId, topicId])
 }
 
 model Misconception {
@@ -153,6 +158,8 @@ model Misconception {
   learnerId   String
   learner     Learner  @relation(fields: [learnerId], references: [id])
   skillId     String
+  // Same scoping as CompetencyState: "" = aggregate, else the roadmap item.
+  topicId     String   @default("")
   code        String
   description String
   confidence  Float    @default(0.5)
@@ -162,7 +169,7 @@ model Misconception {
   updatedAt   DateTime @updatedAt
   resolvedAt  DateTime?
 
-  @@unique([learnerId, skillId, code])
+  @@unique([learnerId, skillId, code, topicId])
 }
 
 model Roadmap {
@@ -248,7 +255,10 @@ model Task {
   skillIds      String   @default("[]")
   family        String
   title         String
-  topic         String   @default("") // roadmap topic the task was written for
+  topic         String   @default("") // roadmap topic title the task was written for
+  // The roadmap subtopic this task belongs to (task bank). Several tasks per
+  // subtopic so a learner gets at least 3 exercises, not one.
+  roadmapItemId String?
   statement     String   // markdown
   difficulty    Float    @default(0.5)
   cognitiveLevel String  @default("apply")

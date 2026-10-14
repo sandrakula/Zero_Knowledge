@@ -4,7 +4,7 @@ import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
 import { langInstruction } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
-import { getCompetencyView } from "./student-twin";
+import { getCompetencyView, AGGREGATE_SCOPE } from "./student-twin";
 import { retrieveChunks } from "./materials";
 
 // ─────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ export async function generateLesson(input: {
     }
   }
   const mis = await prisma.misconception.findMany({
-    where: { learnerId: input.learnerId, status: { in: ["active", "monitoring"] }, skillId: { in: input.skillIds } },
+    where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] }, skillId: { in: input.skillIds } },
   });
 
   // Grounding: retrieve relevant chunks from the learner's uploaded materials.

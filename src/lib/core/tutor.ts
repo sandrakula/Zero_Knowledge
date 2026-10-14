@@ -5,7 +5,7 @@ import { getPrompt } from "@/lib/prompts/registry";
 import { langInstruction, normalizeLang } from "@/lib/lang";
 import { getSkill } from "./knowledge-graph";
 import { createEvidence, effectiveWeight, TASK_VALIDITY } from "./evidence";
-import { applyEvidence } from "./student-twin";
+import { applyEvidence, AGGREGATE_SCOPE } from "./student-twin";
 import { createGoalFromStatement } from "./goal";
 import {
   appendMessage,
@@ -139,7 +139,7 @@ export async function buildTutorContext(input: {
   // Competency vector for the relevant skills only.
   if (skillIds.length) {
     const comps = await prisma.competencyState.findMany({
-      where: { learnerId: input.learnerId, skillId: { in: skillIds } },
+      where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, skillId: { in: skillIds } },
     });
     for (const c of comps) {
       const name = getSkill(c.skillId)?.name ?? c.skillId;
@@ -171,7 +171,7 @@ export async function buildTutorContext(input: {
   }
 
   const misconceptions = await prisma.misconception.findMany({
-    where: { learnerId: input.learnerId, status: { in: ["active", "monitoring"] } },
+    where: { learnerId: input.learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } },
     orderBy: { confidence: "desc" },
     take: 5,
   });

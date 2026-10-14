@@ -88,6 +88,10 @@ export async function generateTask(input: {
   independenceRequired: number;
   misconceptions?: string[];
   language?: string;
+  /** Titles already written for this subtopic — the new task must differ. */
+  avoid?: string[];
+  /** Position in a batch of N tasks for the same subtopic (drives variety). */
+  variant?: { index: number; total: number };
 }): Promise<GeneratedTask> {
   const prompt = getPrompt("task")!;
   const skills = input.skillIds.map((id) => getSkill(id)).filter(Boolean);
@@ -101,6 +105,10 @@ export async function generateTask(input: {
     `Transfer level: ${input.transferLevel}`,
     `Misconception targets to consider: ${(input.misconceptions ?? []).join(", ") || "none"}`,
     `The task must be solvable with ONLY these concepts.`,
+    ...(input.variant
+      ? [`This is exercise ${input.variant.index + 1} of ${input.variant.total} for the same topic. Use a DIFFERENT exercise idea and a DIFFERENT "family" slug from the other variants — do not paraphrase the same problem.`]
+      : []),
+    ...(input.avoid?.length ? [`Do NOT reuse these existing task titles for this topic: ${input.avoid.join(" | ")}`] : []),
     langInstruction(input.language),
   ].join("\n");
 
@@ -165,14 +173,23 @@ export async function findExistingValidatedTask(input: {
   return null;
 }
 
+/** Validated tasks that belong to one roadmap subtopic (its task bank). */
+export async function findValidatedTasksByItem(roadmapItemId: string) {
+  return prisma.task.findMany({
+    where: { roadmapItemId, status: "validated" },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 /** Persist a validated task (provenance = generated). */
-export async function persistTask(task: GeneratedTask): Promise<string> {
+export async function persistTask(task: GeneratedTask, roadmapItemId?: string): Promise<string> {
   const saved = await prisma.task.create({
     data: {
       skillIds: JSON.stringify(task.skillIds),
       family: task.family,
       title: task.title,
       topic: task.topic,
+      roadmapItemId: roadmapItemId ?? null,
       statement: task.statement,
       difficulty: task.difficulty,
       cognitiveLevel: task.cognitiveLevel,

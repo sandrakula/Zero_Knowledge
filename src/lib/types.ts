@@ -196,6 +196,9 @@ export type LearnResponse = {
     testCount: number;
     format: string;
   };
+  /** Every validated task for this subtopic (at least 3). */
+  taskBank: { id: string; title: string }[];
+  taskIndex: number;
   competency: Record<string, { mastery: number | null; depth: string | null; independence: number | null; status: SkillStatus }>;
   nav: { prevId: string | null; nextId: string | null };
 };

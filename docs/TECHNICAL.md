@@ -679,8 +679,16 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 Цвета узлов плана вычисляются из `STATUS_COLOR` в `competency.ts` — компоненты никогда
 не выводят цвета сами (§27). `rollupStatus()` сворачивает статусы навыков на узел плана.
 
+**Скоуп доказательств (подтема vs навык).** `CompetencyState` (и `Misconception`) хранятся
+на пару `(learnerId, skillId, topicId)`. `topicId = ""` — это **агрегат** (среднее по всем
+подтемам), который показывает раздел «Обучение»; `topicId = <id пункта плана>` — состояние
+конкретной подтемы. `applyEvidence({…, topicId})` пишет доказательство сразу в оба скоупа,
+поэтому ошибки одной подтемы не перекрашивают другую, а агрегат остаётся средним.
+Узел плана берёт свой `topicId` и падает на агрегат, только пока своих наблюдений нет.
+
 `student-twin.ts` предоставляет read-модель `getCompetencyView()` / `getAllSkillMetrics()` /
 `getLearnerSummary()` (единственные формы, которые UI может потреблять) и `recommendNext()`.
+Все они читают **агрегатный** скоуп.
 
 **Жизненный цикл заблуждения** (`applyMisconceptionSignal`):
 
@@ -772,11 +780,18 @@ evaluation → creation → transfer`. `depthFromCognitiveLevel()` мапит у
 2. `validateTask()` — **эталонное решение исполняется против собственных тестов** в песочнице.
 3. Если не прошло — **один повтор** промпта с текстом ошибок валидации; если и он не валиден —
    задача не публикуется, бросается исключение (требование ТЗ §126).
-4. `persistTask()` — запись `Task` со `status: "validated"`, `provenance: "generated"`,
-   `sourceIds: "[]"`, `language`.
+4. `persistTask(task, roadmapItemId?)` — запись `Task` со `status: "validated"`, `provenance: "generated"`,
+   `sourceIds: "[]"`, `language`; `roadmapItemId` привязывает задачу к подтеме (банк задач).
 
 Тесты исполняются через stdin/stdout: `input` подаётся на вход, `expected` сравнивается с
 `stdout.trim()`.
+
+**Банк задач подтемы.** У каждой подтемы — не одна, а минимум `MIN_TASKS_PER_TOPIC = 3`
+проверенных задачи. `openLearnItem` вызывает `ensureTaskBank`: недостающие генерируются
+последовательно (`generateIntoBank`), причём следующая задача получает `avoid` — заголовки уже
+существующих и `variant {index,total}`, поэтому варианты не повторяются. Сбой генерации не
+блокирует обучение. `openLearnItem({taskId})` переключает задачу внутри банка без генерации,
+`{newTask:true}` добавляет ещё одну.
 
 ### 11.9 Оценка попытки (`evaluation.ts`)
 

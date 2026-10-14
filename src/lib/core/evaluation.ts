@@ -4,7 +4,7 @@ import { generateObject } from "@/lib/llm";
 import { getPrompt } from "@/lib/prompts/registry";
 import { runTests } from "./code-runner";
 import { createEvidence, effectiveWeight, TASK_VALIDITY } from "./evidence";
-import { applyEvidence, getCompetencyView } from "./student-twin";
+import { applyEvidence, getCompetencyView, AGGREGATE_SCOPE } from "./student-twin";
 import { getOwnedNode, markItemCompleted, maybeRegenerateRoadmap } from "./roadmap";
 import { getSkill } from "./knowledge-graph";
 import { classifyFailureCause, RULES } from "./competency";
@@ -107,7 +107,7 @@ export async function evaluateAttempt(input: {
     const [before, raw] = await Promise.all([
       primarySkillId ? getCompetencyView(input.learnerId, primarySkillId) : Promise.resolve(null),
       primarySkillId
-        ? prisma.competencyState.findUnique({ where: { learnerId_skillId: { learnerId: input.learnerId, skillId: primarySkillId } } })
+        ? prisma.competencyState.findUnique({ where: { learnerId_skillId_topicId: { learnerId: input.learnerId, skillId: primarySkillId, topicId: input.roadmapItemId ?? AGGREGATE_SCOPE } } })
         : Promise.resolve(null),
     ]);
     const retentionStale = Boolean(
@@ -153,7 +153,7 @@ export async function evaluateAttempt(input: {
     misconceptions,
   };
 
-  await applyEvidence({ learnerId: input.learnerId, skillIds, primarySkillId, value });
+  await applyEvidence({ learnerId: input.learnerId, skillIds, primarySkillId, topicId: input.roadmapItemId, value });
   const evidenceId = await createEvidence({
     learnerId: input.learnerId,
     skillIds,

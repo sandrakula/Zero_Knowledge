@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { AGGREGATE_SCOPE } from "./competency";
 
 // ─────────────────────────────────────────────────────────────
 // Admin overview (§222, §208): a short, evidence-based digest of every
@@ -36,11 +37,11 @@ export async function getAdminOverview() {
         orderBy: { createdAt: "desc" },
         include: { roadmap: { include: { items: true } } },
       }),
-      prisma.competencyState.findMany({ where: { learnerId } }),
+      prisma.competencyState.findMany({ where: { learnerId, topicId: AGGREGATE_SCOPE } }),
       prisma.taskAttempt.count({ where: { learnerId } }),
       prisma.taskAttempt.count({ where: { learnerId, createdAt: { gte: weekAgo } } }),
       prisma.evidence.count({ where: { learnerId } }),
-      prisma.misconception.count({ where: { learnerId, status: { in: ["active", "monitoring"] } } }),
+      prisma.misconception.count({ where: { learnerId, topicId: AGGREGATE_SCOPE, status: { in: ["active", "monitoring"] } } }),
       prisma.material.count({ where: { learnerId } }),
       prisma.learningEvent.findFirst({ where: { learnerId }, orderBy: { createdAt: "desc" } }),
       prisma.evidence.findFirst({ where: { learnerId, kind: "diagnostic" } }),
