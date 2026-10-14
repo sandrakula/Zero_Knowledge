@@ -51,6 +51,9 @@ export function DiagnosticFlow() {
   // Guard against double-mount / dependency changes re-triggering the same
   // diagnostic start (which would generate a second, different first question).
   const startedRef = useRef<string | null>(null);
+  // Guard the roadmap build so React StrictMode's double effect (dev) can't
+  // launch two concurrent, racing generations of the same plan.
+  const roadmapStartedRef = useRef(false);
 
   // Read the saved language directly so the first question is generated in the
   // right language even before the i18n context finishes hydrating.
@@ -160,9 +163,11 @@ export function DiagnosticFlow() {
   }, [goalId, lang, t]);
 
   useEffect(() => {
-    if (done && goalId && !roadmapReady) void prepareRoadmap();
+    if (!done || !goalId || roadmapReady || roadmapStartedRef.current) return;
+    roadmapStartedRef.current = true;
+    void prepareRoadmap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [done, goalId]);
+  }, [done, goalId, roadmapReady]);
 
   function next() {
     if (!pending) return;

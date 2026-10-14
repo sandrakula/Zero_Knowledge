@@ -88,6 +88,7 @@ export async function generateRoadmap(input: {
 
   const result = await generateObject(RoadmapSchema, prompt.capability, prompt.system, user, {
     maxTokens: 20000,
+    disableThinking: true,
   });
 
   const validIds = new Set(SKILLS.map((s) => s.id));

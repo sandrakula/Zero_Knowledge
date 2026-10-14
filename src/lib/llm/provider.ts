@@ -29,6 +29,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       max_tokens: opts.maxTokens ?? 4096,
     };
     if (opts.json) body.response_format = { type: "json_object" };
+    // DeepSeek-compatible reasoning models: turn off chain-of-thought for
+    // latency-sensitive structured calls. Unknown gateways safely ignore it.
+    if (opts.disableThinking) body.thinking = { type: "disabled" };
 
     let res: Response;
     try {

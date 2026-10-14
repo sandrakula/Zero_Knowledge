@@ -51,7 +51,7 @@ export async function generateObject<T>(
   capability: Capability,
   system: string,
   user: string,
-  opts?: { temperature?: number; maxTokens?: number },
+  opts?: { temperature?: number; maxTokens?: number; disableThinking?: boolean },
 ): Promise<T> {
   // Reasoning models intermittently return empty or malformed JSON. Retry the
   // whole operation (empty content, parse failure, or schema mismatch).
@@ -64,7 +64,7 @@ export async function generateObject<T>(
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        { temperature: opts?.temperature ?? 0.3, maxTokens: opts?.maxTokens ?? 16000, json: true },
+        { temperature: opts?.temperature ?? 0.3, maxTokens: opts?.maxTokens ?? 16000, json: true, disableThinking: opts?.disableThinking },
       );
 
       const text = extractJsonObject(res.content);
@@ -88,7 +88,7 @@ export async function generateText(
   capability: Capability,
   system: string,
   user: string,
-  opts?: { temperature?: number; maxTokens?: number },
+  opts?: { temperature?: number; maxTokens?: number; disableThinking?: boolean },
 ): Promise<string> {
   const res = await complete(
     capability,
@@ -96,7 +96,7 @@ export async function generateText(
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    { temperature: opts?.temperature ?? 0.5, maxTokens: opts?.maxTokens ?? 8000 },
+    { temperature: opts?.temperature ?? 0.5, maxTokens: opts?.maxTokens ?? 8000, disableThinking: opts?.disableThinking },
   );
   return res.content.trim();
 }

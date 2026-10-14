@@ -60,7 +60,7 @@ export async function generateQuestion(
     prompt.capability,
     prompt.system,
     `Skill: ${skill.name} (${skill.id})\nDescription: ${skill.description}\nTarget difficulty: ${level}\n${langInstruction(language)}`,
-    { maxTokens: 8000 },
+    { maxTokens: 2000, disableThinking: true },
   );
   const id = `dq_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
   // Persist the answer key so an in-progress diagnostic survives a restart.

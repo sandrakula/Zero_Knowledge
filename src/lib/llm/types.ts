@@ -17,6 +17,11 @@ export type ChatOptions = {
   /** Request structured JSON output (provider best-effort via response_format). */
   json?: boolean;
   signal?: AbortSignal;
+  /**
+   * Ask a reasoning model to skip its hidden chain-of-thought. Latency for
+   * small structured tasks drops several-fold with no loss of output quality.
+   */
+  disableThinking?: boolean;
 };
 
 export type Usage = {
