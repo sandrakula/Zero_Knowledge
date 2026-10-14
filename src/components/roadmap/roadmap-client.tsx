@@ -187,6 +187,28 @@ export function RoadmapClient() {
     }
   }
 
+  async function importFile(file: File) {
+    if (!state?.goal) return;
+    setImporting(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("goalId", state.goal.id);
+      fd.append("lang", savedLang());
+      fd.append("file", file);
+      const res = await fetch("/api/roadmap/import", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? t("common.error"));
+      setImportOpen(false);
+      setOutline("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function breakDown(nodeId: string) {
     setBusy(nodeId);
     try {
@@ -253,6 +275,23 @@ export function RoadmapClient() {
                 placeholder={t("roadmap.import.placeholder")}
                 className="mt-3 w-full resize-y rounded-xl border border-white/[0.08] bg-ink-950/60 p-3 font-mono text-xs leading-6 text-text outline-none placeholder:text-text-faint focus:border-accent/50"
               />
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-faint">
+                <span>{t("roadmap.import.or")}</span>
+                <label className="btn-ghost cursor-pointer px-3 py-1.5 text-xs">
+                  <Upload className="h-3.5 w-3.5" />
+                  {t("roadmap.import.file")}
+                  <input
+                    type="file"
+                    accept=".txt,.md,.pdf,.docx"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void importFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
               <div className="mt-3 flex items-center justify-end gap-2">
                 <button onClick={() => setImportOpen(false)} className="btn-ghost px-3 py-1.5 text-xs">{t("common.cancel")}</button>
                 <button onClick={importOutline} disabled={importing || !outline.trim()} className="btn-primary px-3 py-1.5 text-xs disabled:opacity-50">

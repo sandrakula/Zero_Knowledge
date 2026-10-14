@@ -279,6 +279,8 @@ export const en: Dict = {
   "roadmap.import.placeholder": "e.g.\n1. Python basics\n   - variables and types\n   - operators\n2. Control flow\n3. Functions",
   "roadmap.import.generate": "Build my course",
   "roadmap.import.building": "Building…",
+  "roadmap.import.or": "or",
+  "roadmap.import.file": "Upload a file (.txt, .md, .pdf, .docx)",
 
   // ── admin
   "admin.title": "Administration",
@@ -563,6 +565,8 @@ export const ru: Dict = {
   "roadmap.import.placeholder": "Например:\n1. Основы Python\n   - переменные и типы\n   - операторы\n2. Управляющие конструкции\n3. Функции",
   "roadmap.import.generate": "Построить курс",
   "roadmap.import.building": "Строю…",
+  "roadmap.import.or": "или",
+  "roadmap.import.file": "Загрузить файл (.txt, .md, .pdf, .docx)",
 
   "admin.title": "Администрирование",
   "admin.subtitle": "Ученики, их прогресс, уровень знаний и активность",
