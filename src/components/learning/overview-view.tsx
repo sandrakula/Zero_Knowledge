@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Layers, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, Clock, Layers, Sparkles, Target, TrendingUp, Upload } from "lucide-react";
 import { useI18n } from "@/components/i18n";
 import { StatusBadge, StatusDot } from "@/components/learning/status";
 import { cn, timeAgo } from "@/lib/utils";
@@ -17,6 +18,7 @@ import type { StateResponse } from "@/lib/types";
  */
 export function OverviewView({ state }: { state: StateResponse }) {
   const { t } = useI18n();
+  const [skillsOpen, setSkillsOpen] = useState(false);
 
   const { goal, roadmap, summary, misconceptions, nextBest, materialCount, targetSkills, domainStats } = state;
   const counts = summary.counts;
@@ -141,40 +143,50 @@ export function OverviewView({ state }: { state: StateResponse }) {
         </section>
       </div>
 
-      <section className="card p-5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-text">
+      <section className="card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setSkillsOpen((v) => !v)}
+          aria-expanded={skillsOpen}
+          className="flex w-full items-center gap-2 p-5 text-left text-sm font-semibold text-text transition-colors hover:bg-white/[0.02]"
+        >
           <Layers className="h-4 w-4 text-accent-soft" />
           {t("skills.title")}
           <span className="chip ml-auto">{targetSkills.length}</span>
-        </div>
-        <p className="mt-1 text-[11px] leading-relaxed text-text-faint">{t("skills.hint")}</p>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-text-faint transition-transform", skillsOpen && "rotate-180")} />
+        </button>
 
-        <div className="mt-4 space-y-5">
-          {skillsByDomain.map(({ domain, skills }) => (
-            <div key={domain.id}>
-              <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
-                <span className="text-sm" style={{ color: domain.color }}>{domain.icon}</span>
-                {domain.name}
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {skills.map((s) => (
-                  <div
-                    key={s.skillId}
-                    title={t(`status.${s.status}`)}
-                    className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2"
-                  >
-                    <StatusDot status={s.status} />
-                    <span className="truncate text-sm text-text">{s.name}</span>
-                    <span className="ml-auto shrink-0 text-[11px] text-text-faint">
-                      {s.mastery === null ? t("metric.notAssessed") : `${Math.round(s.mastery * 100)}%`}
-                    </span>
+        {skillsOpen && (
+          <div className="px-5 pb-5">
+            <p className="text-[11px] leading-relaxed text-text-faint">{t("skills.hint")}</p>
+            <div className="mt-4 space-y-5">
+              {skillsByDomain.map(({ domain, skills }) => (
+                <div key={domain.id}>
+                  <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-faint">
+                    <span className="text-sm" style={{ color: domain.color }}>{domain.icon}</span>
+                    {domain.name}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {skills.map((s) => (
+                      <div
+                        key={s.skillId}
+                        title={t(`status.${s.status}`)}
+                        className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                      >
+                        <StatusDot status={s.status} />
+                        <span className="truncate text-sm text-text">{s.name}</span>
+                        <span className="ml-auto shrink-0 text-[11px] text-text-faint">
+                          {s.mastery === null ? t("metric.notAssessed") : `${Math.round(s.mastery * 100)}%`}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+              {targetSkills.length === 0 && <p className="text-sm text-text-faint">{t("skills.empty")}</p>}
             </div>
-          ))}
-          {targetSkills.length === 0 && <p className="text-sm text-text-faint">{t("skills.empty")}</p>}
-        </div>
+          </div>
+        )}
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
