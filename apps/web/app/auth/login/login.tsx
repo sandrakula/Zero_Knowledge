@@ -24,6 +24,8 @@ interface LoginClientProps {
   org: any
 }
 
+const USERNAME_ONLY_SIGNUP = process.env.NEXT_PUBLIC_USERNAME_SIGNUP === 'true'
+
 const LoginClient = (props: LoginClientProps) => {
   const { t } = useTranslation()
   const { signIn, completeMfaLogin, requestMagicLink } = useAuth()
@@ -145,7 +147,7 @@ const LoginClient = (props: LoginClientProps) => {
     // `redirect_to` is what the magic-link consume endpoint forwards when it
     // bounces a 2FA-enabled user here instead of signing them straight in.
     const raw = params.get('next') ?? params.get('redirect') ?? params.get('redirect_to')
-    const dest = raw && /^\/(?!\/)/.test(raw) ? raw : '/home'
+    const dest = raw && /^\/(?!\/)/.test(raw) ? raw : '/after-login'
     return `${window.location.origin}/redirect_from_auth?next=${encodeURIComponent(dest)}`
   }
 
@@ -279,14 +281,16 @@ const LoginClient = (props: LoginClientProps) => {
 
     if (!values.email) {
       errors.email = t('validation.required')
-    } else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(values.email)) {
+    } else if (!USERNAME_ONLY_SIGNUP && !/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(values.email)) {
       errors.email = t('validation.invalid_email')
     }
 
-    if (!values.password) {
-      errors.password = t('validation.required')
-    } else if (values.password.length < 8) {
-      errors.password = t('validation.password_min_length')
+    if (!USERNAME_ONLY_SIGNUP) {
+      if (!values.password) {
+        errors.password = t('validation.required')
+      } else if (values.password.length < 8) {
+        errors.password = t('validation.password_min_length')
+      }
     }
 
     return errors
@@ -451,7 +455,7 @@ const LoginClient = (props: LoginClientProps) => {
     <AuthLayout
       org={props.org}
       welcomeText={t('auth.login_to')}
-      title={t('auth.image_title_login', { defaultValue: 'Welcome back to LearnHouse.' })}
+      title={t('auth.image_title_login', { defaultValue: 'Welcome back to ZeroKnowledge.' })}
       subtitle={t('auth.image_subtitle_login', {
         defaultValue: 'Pick up where you left off. Your courses, students, and tools are waiting.',
       })}
@@ -747,7 +751,7 @@ const LoginClient = (props: LoginClientProps) => {
               <FormLayout onSubmit={formik.handleSubmit}>
                 <FormField name="email">
                   <div className="flex items-center space-x-2 mb-1.5">
-                    <Form.Label className="grow text-[13px] font-semibold text-black/70">{t('auth.email')}</Form.Label>
+                    <Form.Label className="grow text-[13px] font-semibold text-black/70">{USERNAME_ONLY_SIGNUP ? 'Login' : t('auth.email')}</Form.Label>
                     {formik.touched.email && formik.errors.email && (
                       <span className="text-red-500 text-xs flex items-center space-x-1">
                         <Info size={11} />
@@ -760,12 +764,13 @@ const LoginClient = (props: LoginClientProps) => {
                       onChange={formik.handleChange}
                       onBlur={formik.handleBlur}
                       value={formik.values.email}
-                      type="email"
+                      type={USERNAME_ONLY_SIGNUP ? 'text' : 'email'}
                       className="box-border w-full bg-neutral-50 text-black rounded-lg px-4 border border-neutral-200 inline-flex h-[44px] appearance-none items-center focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-neutral-400 transition-all placeholder:text-black/25 text-sm"
                     />
                   </Form.Control>
                 </FormField>
 
+                {!USERNAME_ONLY_SIGNUP && (
                 <FormField name="password">
                   <div className="flex items-center space-x-2 mb-1.5">
                     <Form.Label className="grow text-[13px] font-semibold text-black/70">{t('auth.password')}</Form.Label>
@@ -775,12 +780,14 @@ const LoginClient = (props: LoginClientProps) => {
                         <span>{formik.errors.password}</span>
                       </span>
                     )}
+                    {!USERNAME_ONLY_SIGNUP && (
                     <Link
                       href="/forgot"
                       className="text-xs text-black/60 hover:text-black font-semibold transition-colors"
                     >
                       {t('auth.forgot_password')}
                     </Link>
+                    )}
                   </div>
                   <Form.Control asChild>
                     <input
@@ -793,6 +800,7 @@ const LoginClient = (props: LoginClientProps) => {
                     />
                   </Form.Control>
                 </FormField>
+                )}
 
                 <TurnstileWidget
                   ref={turnstileRef}
@@ -819,7 +827,7 @@ const LoginClient = (props: LoginClientProps) => {
               )}
 
               {/* Divider: only earns its place between two sets of options. */}
-              {passwordAllowed && hasAlternativeMethods && (
+              {passwordAllowed && hasAlternativeMethods && !USERNAME_ONLY_SIGNUP && (
                 <div className="relative my-6">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-neutral-200" />
@@ -832,7 +840,7 @@ const LoginClient = (props: LoginClientProps) => {
 
               {/* Social & SSO Buttons */}
               <div className="space-y-2.5">
-                {googleAllowed && (
+                {googleAllowed && !USERNAME_ONLY_SIGNUP && (
                 <button
                   onClick={handleGoogleSignIn}
                   disabled={isSubmitting}
@@ -843,7 +851,7 @@ const LoginClient = (props: LoginClientProps) => {
                 </button>
                 )}
 
-                {ssoEnabled && (
+                {ssoEnabled && !USERNAME_ONLY_SIGNUP && (
                   <button
                     onClick={handleSSOLogin}
                     disabled={ssoLoading}
@@ -854,7 +862,7 @@ const LoginClient = (props: LoginClientProps) => {
                   </button>
                 )}
 
-                {magicLoginAllowed && (
+                {magicLoginAllowed && !USERNAME_ONLY_SIGNUP && (
                 <button
                   type="button"
                   onClick={openMagicMode}

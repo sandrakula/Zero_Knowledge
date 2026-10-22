@@ -2,7 +2,7 @@ import { useAssignments } from '@components/Contexts/Assignments/AssignmentConte
 import { useAssignmentSubmission } from '@components/Contexts/Assignments/AssignmentSubmissionContext'
 import { useAssignmentDirtyTasks } from '@components/Contexts/Assignments/AssignmentDirtyTasksContext'
 import { useAutoSave, type SaveResult } from './useAutoSave'
-import { BookPlus, BookUser, Check, Code2, EllipsisVertical, FileUp, ListTodo, Loader2, MessageSquare, Save, TriangleAlert, Type } from 'lucide-react'
+import { BookPlus, BookUser, Check, Code2, EllipsisVertical, FileUp, ListTodo, Loader2, MessageSquare, NotebookPen, Save, TriangleAlert, Type } from 'lucide-react'
 import React from 'react'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useTranslation } from 'react-i18next'
@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 export type TaskSubmitOptions = { silent?: boolean }
 
 type AssignmentBoxProps = {
-    type: 'quiz' | 'file' | 'form' | 'code'
+    type: 'quiz' | 'file' | 'form' | 'code' | 'notebook'
     view?: 'teacher' | 'student' | 'grading' | 'custom-grading'
     maxPoints?: number
     currentPoints?: number
@@ -144,6 +144,11 @@ function AssignmentBoxUI({ type, view, currentPoints, currentFeedback, maxPoints
                             <div className='flex space-x-1.5 items-center'>
                                 <Code2 size={17} />
                                 <p>{t('activities.code')}</p>
+                            </div>}
+                        {type === 'notebook' &&
+                            <div className='flex space-x-1.5 items-center'>
+                                <NotebookPen size={17} />
+                                <p>{t('activities.notebook', { defaultValue: 'Notebook' })}</p>
                             </div>}
                     </div>
 

@@ -12,7 +12,7 @@ from src.security.features_utils.usage import (
 from src.db.courses.courses import Course, CourseRead
 from src.core.events.database import get_db_session
 from src.db.users import PublicUser
-from src.db.courses.activities import Activity, ActivityRead
+from src.db.courses.activities import Activity, ActivityRead, ActivityTypeEnum
 from src.security.auth import get_current_user, resolve_acting_user_id
 from src.security.org_auth import enforce_org_mfa, is_org_member
 from src.services.ai.base import (
@@ -184,6 +184,14 @@ async def ai_start_activity_chat_session(
     ai_friendly_text = serialize_activity_text_to_ai_comprehensible_text(
         structured, course, activity, isActivityEmpty=isEmpty
     )
+    assignment_context = await _assignment_ai_context(
+        activity,
+        resolve_acting_user_id(current_user),
+        db_session,
+        getattr(chat_session_object, "assignment_task_uuid", None),
+    )
+    if assignment_context:
+        ai_friendly_text = f"{ai_friendly_text}\n\n{assignment_context}"
 
     # Get Activity Organization
     statement = select(Organization).where(Organization.id == course.org_id)
@@ -333,6 +341,14 @@ async def ai_send_activity_chat_message(
     ai_friendly_text = serialize_activity_text_to_ai_comprehensible_text(
         structured, course, activity
     )
+    assignment_context = await _assignment_ai_context(
+        activity,
+        resolve_acting_user_id(current_user),
+        db_session,
+        getattr(chat_session_object, "assignment_task_uuid", None),
+    )
+    if assignment_context:
+        ai_friendly_text = f"{ai_friendly_text}\n\n{assignment_context}"
 
     # Get Activity Organization
     statement = select(Organization).where(Organization.id == course.org_id)
@@ -392,11 +408,118 @@ async def ai_send_activity_chat_message(
     )
 
 
+async def _assignment_ai_context(
+    activity: ActivityRead,
+    user_id: int,
+    db_session: AsyncSession,
+    task_uuid: Optional[str] = None,
+) -> str:
+    """Student-safe context for the practice assignment attached to an activity.
+
+    Answer keys, hidden tests and reference solutions are never included; the
+    learner's own submission is, so the assistant can discuss what they wrote.
+    """
+    if activity.activity_type != ActivityTypeEnum.TYPE_ASSIGNMENT:
+        return ""
+    from src.db.courses.assignments import (
+        Assignment,
+        AssignmentTask,
+        AssignmentTaskSubmission,
+        AssignmentUserSubmission,
+    )
+
+    assignment = (
+        await db_session.execute(
+            select(Assignment).where(Assignment.activity_id == activity.id)
+        )
+    ).scalars().first()
+    if not assignment:
+        return ""
+
+    tasks = (
+        await db_session.execute(
+            select(AssignmentTask)
+            .where(AssignmentTask.assignment_id == assignment.id)
+            .order_by(AssignmentTask.order.asc())
+        )
+    ).scalars().all()
+    if not tasks:
+        return ""
+
+    lines = [
+        "PRACTICE ASSIGNMENT: " + assignment.title,
+        assignment.description or "",
+        f"Tasks ({len(tasks)}):",
+    ]
+    for task in tasks:
+        marker = " <-- CURRENT TASK" if task.assignment_task_uuid == task_uuid else ""
+        lines.append(f"- {task.title} [{task.assignment_type.value}]{marker}")
+        if task.description:
+            lines.append("  " + task.description.strip()[:1200])
+        contents = task.contents or {}
+        if task.assignment_type.value == "QUIZ":
+            for question in contents.get("questions") or []:
+                options = "; ".join(
+                    str(option.get("text") or "")
+                    for option in (question.get("options") or [])
+                )
+                lines.append(f"  Q: {question.get('questionText')} ({options})")
+        elif task.assignment_type.value == "CODE":
+            if contents.get("starter_code"):
+                lines.append("  Starter code:\n" + str(contents["starter_code"])[:2000])
+            visible_tests = [
+                test
+                for test in (contents.get("test_cases") or [])
+                if not test.get("hidden")
+            ]
+            lines.append(f"  Visible tests: {len(visible_tests)}")
+
+    submission = (
+        await db_session.execute(
+            select(AssignmentUserSubmission).where(
+                AssignmentUserSubmission.assignment_id == assignment.id,
+                AssignmentUserSubmission.user_id == user_id,
+            )
+        )
+    ).scalars().first()
+    if submission:
+        lines.append(
+            f"LEARNER SUBMISSION: status={submission.submission_status.value}, "
+            f"grade={submission.grade}, attempt={submission.attempt_number}"
+        )
+
+    if task_uuid:
+        task = next(
+            (item for item in tasks if item.assignment_task_uuid == task_uuid), None
+        )
+        if task:
+            task_submission = (
+                await db_session.execute(
+                    select(AssignmentTaskSubmission).where(
+                        AssignmentTaskSubmission.assignment_task_id == task.id,
+                        AssignmentTaskSubmission.user_id == user_id,
+                    )
+                )
+            ).scalars().first()
+            if task_submission:
+                lines.append(
+                    "LEARNER ANSWER FOR CURRENT TASK:\n"
+                    + str(task_submission.task_submission)[:4000]
+                )
+                if task_submission.task_submission_grade_feedback:
+                    lines.append(
+                        "GRADER FEEDBACK: "
+                        + task_submission.task_submission_grade_feedback[:1500]
+                    )
+    return "\n".join(line for line in lines if line)
+
+
 async def _get_activity_and_course_info(
     activity_uuid: str,
     db_session: AsyncSession,
     request: Request,
     current_user: PublicUser,
+    assignment_task_uuid: Optional[str] = None,
 ) -> Tuple[ActivityRead, CourseRead, Organization, str, str]:
     """
     Helper function to get activity, course, and organization info with AI model.
@@ -494,6 +617,15 @@ async def _get_activity_and_course_info(
     # Default chat model (provider-agnostic; resolved from AI config)
     ai_model = model_for_tier("standard")
 
+    assignment_context = await _assignment_ai_context(
+        activity,
+        resolve_acting_user_id(current_user),
+        db_session,
+        assignment_task_uuid,
+    )
+    if assignment_context:
+        ai_friendly_text = f"{ai_friendly_text}\n\n{assignment_context}"
+
     return activity, course, org, ai_model, ai_friendly_text
 
 
@@ -508,7 +640,11 @@ async def ai_start_activity_chat_session_stream(
     Returns context needed for streaming.
     """
     activity, course, org, ai_model, ai_friendly_text = await _get_activity_and_course_info(
-        chat_session_object.activity_uuid, db_session, request, current_user
+        chat_session_object.activity_uuid,
+        db_session,
+        request,
+        current_user,
+        assignment_task_uuid=chat_session_object.assignment_task_uuid,
     )
 
     # F-9: per-user + per-org rate limit before any compute / credit spend.
@@ -557,7 +693,11 @@ async def ai_send_activity_chat_message_stream(
     Returns context needed for streaming.
     """
     activity, course, org, ai_model, ai_friendly_text = await _get_activity_and_course_info(
-        chat_session_object.activity_uuid, db_session, request, current_user
+        chat_session_object.activity_uuid,
+        db_session,
+        request,
+        current_user,
+        assignment_task_uuid=chat_session_object.assignment_task_uuid,
     )
     _require_own_chat_session(chat_session_object.aichat_uuid, current_user)
 

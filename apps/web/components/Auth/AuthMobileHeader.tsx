@@ -20,7 +20,7 @@ export default function AuthMobileHeader({ org }: AuthMobileHeaderProps) {
     unsplash_photographer_url = '',
     unsplash_photo_url = '',
   } = authBranding
-  const UNSPLASH_UTM = '?utm_source=LearnHouse&utm_medium=referral'
+  const UNSPLASH_UTM = '?utm_source=ZeroKnowledge&utm_medium=referral'
   const withUtm = (url: string) => (url ? `${url}${UNSPLASH_UTM}` : '')
 
   const getBackgroundStyle = (): React.CSSProperties => {
@@ -70,7 +70,7 @@ export default function AuthMobileHeader({ org }: AuthMobileHeaderProps) {
                 width={40}
                 height={40}
                 src={learnhouseIcon}
-                alt="LearnHouse"
+                alt="ZeroKnowledge"
                 className="object-contain"
               />
             }
@@ -79,7 +79,7 @@ export default function AuthMobileHeader({ org }: AuthMobileHeaderProps) {
       </Link>
 
       <span className="relative z-10 font-semibold text-white text-lg truncate">
-        {org?.name || 'LearnHouse'}
+        {org?.name || 'ZeroKnowledge'}
       </span>
 
       {/* Unsplash attribution (required by Unsplash API guidelines) */}

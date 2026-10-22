@@ -14,6 +14,7 @@ import {
 } from '@services/courses/activities'
 import { revalidateTags } from '@services/utils/ts/requests'
 import LockPopover, { LockType } from './LockPopover'
+import ContentOriginBadge from '@components/Objects/Activities/ContentOriginBadge'
 import {
   Backpack,
   Check,
@@ -317,9 +318,15 @@ function ActivityElement(props: ActivitiyElementProps) {
               </div>
             ) : (
               <ActivityPreviewHoverCard activity={props.activity}>
-                <p className="text-sm text-gray-600 truncate cursor-default">
-                  {props.activity.name}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-600 truncate cursor-default">
+                    {props.activity.name}
+                  </p>
+                  <ContentOriginBadge
+                    aiGenerated={Boolean(props.activity.extra_metadata?.ai_generated ?? props.activity.details?.ai_generated)}
+                    sources={props.activity.extra_metadata?.ai_sources ?? props.activity.details?.ai_sources ?? []}
+                  />
+                </div>
               </ActivityPreviewHoverCard>
             )}
           </div>

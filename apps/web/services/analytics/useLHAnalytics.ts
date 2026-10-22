@@ -13,7 +13,7 @@ let lastGroupedOrg: string | null = null
 
 /**
  * The ONE analytics hook. A single `track()` fans every event out to:
- *   1. the existing LearnHouse backend (token-gated; anonymous no-op by design), and
+ *   1. the existing ZeroKnowledge backend (token-gated; anonymous no-op by design), and
  *   2. PostHog (captures anonymous users too, which unlocks logged-out funnels).
  *
  * Standard props (org/plan/surface/locale/role/…) are injected automatically;

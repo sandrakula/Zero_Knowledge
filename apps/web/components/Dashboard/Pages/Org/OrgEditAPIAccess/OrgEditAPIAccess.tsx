@@ -234,7 +234,7 @@ const OrgEditAPIAccess: React.FC = () => {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border border-gray-200"
-            title="Contact LearnHouse support"
+            title="Contact ZeroKnowledge support"
           >
             <LifeBuoy size={14} />
             {t('dashboard.organization.api_access.something_not_working')}

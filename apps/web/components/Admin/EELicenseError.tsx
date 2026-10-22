@@ -72,7 +72,7 @@ export default function EELicenseError({ error }: { error: unknown }) {
               Enterprise Edition license required
             </div>
             <p className="text-xs text-sky-200/80 mt-1.5 leading-relaxed">
-              This endpoint is part of LearnHouse Enterprise Edition and is not
+              This endpoint is part of ZeroKnowledge Enterprise Edition and is not
               available on this deployment.
             </p>
           </div>

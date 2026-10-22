@@ -45,6 +45,7 @@ import {
   AI_STREAMING_MARK,
   insertAIContent,
   prepareAIContent,
+  unwrapAIContent,
 } from './aiEditorContent'
 
 type AIEditorSidePanelProps = {
@@ -406,6 +407,18 @@ function AIEditorSidePanel(props: AIEditorSidePanelProps) {
 
     if (nodes.length === 0) {
       if (error) {
+        const fallbackSource = unwrapAIContent(fullContent)
+        const fallbackNodes = fallbackSource
+          .split('\n')
+          .filter((line) => line.trim().length > 0)
+          .map((line) => ({
+            type: 'paragraph',
+            content: [{ type: 'text', text: line }],
+          }))
+        if (fallbackNodes.length > 0) {
+          const fallback = insertAIContent(props.editor, fallbackNodes, SPECIAL_BLOCK_TYPE_SET)
+          if (fallback.inserted > 0) return
+        }
         reportInsertFailure()
       }
       return
@@ -414,8 +427,20 @@ function AIEditorSidePanel(props: AIEditorSidePanelProps) {
     const result = insertAIContent(props.editor, nodes, SPECIAL_BLOCK_TYPE_SET)
 
     if (result.inserted === 0) {
-      reportInsertFailure()
-      return
+      // Schema-incompatible JSON (or an unknown block type) must not lose the
+      // whole answer: insert its lines as plain paragraphs instead.
+      const fallbackNodes = unwrapAIContent(fullContent)
+        .split('\n')
+        .filter((line) => line.trim().length > 0)
+        .map((line) => ({
+          type: 'paragraph',
+          content: [{ type: 'text', text: line }],
+        }))
+      const fallback = insertAIContent(props.editor, fallbackNodes, SPECIAL_BLOCK_TYPE_SET)
+      if (fallback.inserted === 0) {
+        reportInsertFailure()
+        return
+      }
     }
 
     // Schedule removal of streaming marks after animation

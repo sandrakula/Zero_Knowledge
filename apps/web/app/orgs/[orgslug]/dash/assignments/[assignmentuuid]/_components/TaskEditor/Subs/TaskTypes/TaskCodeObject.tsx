@@ -14,6 +14,7 @@ import {
   getAssignmentTask,
   getAssignmentTaskSubmissionsUser,
   handleAssignmentTaskSubmission,
+  submitAssignmentForGrading,
   updateAssignmentTask,
 } from '@services/courses/assignments'
 import { getAPIUrl } from '@services/config/config'
@@ -36,7 +37,7 @@ import {
   Lock,
   Settings2,
 } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { v4 as uuidv4 } from 'uuid'
 import { useTranslation } from 'react-i18next'
@@ -214,6 +215,24 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   const [isRunning, setIsRunning] = useState(false)
   const [results, setResults] = useState<CodeTestResult[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [plainResult, setPlainResult] = useState<{
+    stdout: string | null
+    stderr: string | null
+    compile_output: string | null
+    status: { id: number; description: string } | null
+    time: string | null
+  } | null>(null)
+  const [runStdin, setRunStdin] = useState('')
+  const stdinHydratedRef = useRef(false)
+
+  useEffect(() => {
+    if (stdinHydratedRef.current) return
+    const first = contents.test_cases?.[0]?.stdin
+    if (typeof first === 'string' && first.length > 0) {
+      setRunStdin(first)
+      stdinHydratedRef.current = true
+    }
+  }, [contents.test_cases])
 
   // Submission state (student/grading)
   const [userSubmissions, setUserSubmissions] = useState<any>(null)
@@ -432,7 +451,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   const submissionBlocked = submissionGatedByPassing && !allVisiblePassing
 
   // --- SUBMIT (student) ---
-  async function submitFC(opts?: { silent?: boolean }) {
+  async function submitFC(opts?: { silent?: boolean; submittedResults?: CodeTestResult[] }) {
     if (!assignmentTaskUUID) return true
     // Enforce "must pass all visible tests" gate if the teacher enabled it.
     // This is a POLICY refusal, not a failure: returning `false` would make
@@ -451,7 +470,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
       task_submission: {
         source_code: code,
         language_id: contents.language_id,
-        results: results,
+        results: opts?.submittedResults ?? results,
       },
       grade: 0,
       task_submission_grade_feedback: '',
@@ -480,6 +499,81 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
     } else {
       if (!opts?.silent) toast.error(t('dashboard.assignments.editor.toasts.task_save_error'))
       return false
+    }
+  }
+
+  // --- RUN WITHOUT TESTS ---
+  async function runCodePlain() {
+    if (isRunning) return
+    setIsRunning(true)
+    setPlainResult(null)
+    try {
+      const resp = await fetch(`${getAPIUrl()}code/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${access_token}`,
+        },
+        body: JSON.stringify({
+          activity_uuid: assignment?.activity_object?.activity_uuid,
+          language_id: contents.language_id,
+          source_code: code,
+          stdin: runStdin,
+        }),
+      })
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        toast.error(data?.detail || `Code execution failed (${resp.status})`)
+        return
+      }
+      const data = await resp.json()
+      setPlainResult({
+        stdout: data.stdout ?? null,
+        stderr: data.stderr ?? null,
+        compile_output: data.compile_output ?? null,
+        status: data.status ?? null,
+        time: data.time ?? null,
+      })
+    } catch (err) {
+      console.error('Code execution error:', err)
+      toast.error('Code execution failed')
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  // --- SUBMIT TASK (run all tests, then save the submission) ---
+  async function submitCodeTask() {
+    if (isRunning || submissionBlocked) return
+    const testResults = await runCode()
+    if (!testResults) return
+    const allPassed = testResults.length > 0 && testResults.every((r) => r.passed)
+    if (!allPassed) {
+      toast.error('Не все тесты пройдены — задача не отправлена')
+      return
+    }
+    const saved = await submitFC({ submittedResults: testResults })
+    if (saved !== true) return
+    const submitted = await submitAssignmentForGrading(
+      assignment.assignment_object.assignment_uuid,
+      access_token
+    )
+    if (submitted.success) {
+      toast.success('Все тесты пройдены. Задача сдана.')
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.submission(assignment.assignment_object.assignment_uuid),
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.taskSubmission(assignment.assignment_object.assignment_uuid),
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.tasks(assignment.assignment_object.assignment_uuid),
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.detail(assignment.assignment_object.assignment_uuid),
+      })
+    } else {
+      toast.error('Не удалось сдать задачу')
     }
   }
 
@@ -554,6 +648,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         }
       })
       setResults(newResults)
+      return newResults
     } catch (err) {
       console.error('Code execution error:', err)
       toast.error('Code execution failed')
@@ -1006,17 +1101,70 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
               </div>
             )}
 
-            {/* Run Button: only if the task allows students to run */}
-            {contents.allow_student_run !== false && (
-              <div className="flex items-center space-x-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-slate-500">
+                Input (stdin) for Run
+              </label>
+              <textarea
+                value={runStdin}
+                onChange={(event) => setRunStdin(event.target.value)}
+                rows={2}
+                placeholder="Данные, которые программа прочитает через cin"
+                className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-300"
+              />
+            </div>
+
+            {/* Run: plain execution with the input above, shows raw output. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={runCodePlain}
+                disabled={isRunning || !canStudentSave}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800 disabled:opacity-50"
+              >
+                {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                <span>Run</span>
+              </button>
+
+              {contents.allow_student_run !== false && (
                 <button
                   onClick={runCode}
-                  disabled={isRunning}
+                  disabled={isRunning || !canStudentSave}
                   className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                  <span>{isRunning ? 'Running...' : 'Run Tests'}</span>
+                  <span>Run Tests</span>
                 </button>
+              )}
+
+              <button
+                onClick={submitCodeTask}
+                disabled={isRunning || !canStudentSave || submissionBlocked || !allVisiblePassing}
+                title={!allVisiblePassing ? 'Сначала пройдите все тесты' : undefined}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50"
+              >
+                {isRunning ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                <span>Submit</span>
+              </button>
+            </div>
+
+            {plainResult && (
+              <div className="rounded-md border border-slate-200 bg-slate-950 text-slate-100 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 text-[11px]">
+                  <span className="font-semibold">
+                    {plainResult.status?.description || 'Output'}
+                    {plainResult.time ? ` · ${plainResult.time}s` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPlainResult(null)}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    <XCircle size={13} />
+                  </button>
+                </div>
+                <pre className="p-3 text-xs whitespace-pre-wrap overflow-x-auto max-h-64">
+                  {plainResult.compile_output || plainResult.stderr || plainResult.stdout || '(no output)'}
+                </pre>
               </div>
             )}
 
@@ -1150,13 +1298,30 @@ function TestResultsPanel({
   const passedCount = results.filter((r) => r.passed).length
   const totalCount = results.length
   const maskedShown = showMaskedCount ? maskedTestCases : []
+  const compileError = results.some((r) => !!r.compile_output)
+  const runtimeError = results.some((r) => !!r.stderr && !r.compile_output)
+  const verdict =
+    passedCount === totalCount
+      ? 'Accepted'
+      : compileError
+        ? 'Compilation error'
+        : runtimeError
+          ? 'Runtime error'
+          : 'Wrong answer'
 
   return (
     <div className="flex flex-col space-y-2 p-3 bg-slate-50 rounded-md border border-slate-200">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-slate-600">
-          Results: {passedCount}/{totalCount} passed
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-lg font-black ${
+              passedCount === totalCount ? 'text-emerald-600' : 'text-red-600'
+            }`}
+          >
+            {passedCount}/{totalCount}
+          </span>
+          <span className="text-xs text-slate-500">tests</span>
+        </div>
         <span
           className={`px-2 py-0.5 text-xs font-bold rounded-full ${
             passedCount === totalCount
@@ -1164,11 +1329,9 @@ function TestResultsPanel({
               : 'bg-red-100 text-red-700'
           }`}
         >
-          {passedCount === totalCount
-            ? maskedShown.length > 0
-              ? 'Visible Tests Passed'
-              : 'All Passed'
-            : 'Some Failed'}
+          {passedCount === totalCount && maskedShown.length > 0
+            ? 'Visible Tests Passed'
+            : verdict}
         </span>
       </div>
       <div className="flex flex-col space-y-1.5">

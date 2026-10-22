@@ -1,3 +1,5 @@
+import base64
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -13,6 +15,12 @@ from src.db.courses.chapters import Chapter
 from src.db.courses.activities import Activity, ActivityTypeEnum, ActivitySubTypeEnum
 from src.db.courses.course_chapters import CourseChapter
 from src.db.courses.chapter_activities import ChapterActivity
+from src.db.courses.assignments import (
+    Assignment,
+    AssignmentTask,
+    AssignmentTaskTypeEnum,
+    GradingTypeEnum,
+)
 from src.db.resource_authors import ResourceAuthor, ResourceAuthorshipEnum, ResourceAuthorshipStatusEnum
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.core.events.database import get_db_session
@@ -26,12 +34,15 @@ from src.security.features_utils.usage import (
     reserve_ai_credit,
 )
 from src.services.ai.llm import resolve_model_for_org, model_for_tier
+from src.services.ai.assignment_gen import generate_assignment_plan
 from src.services.ai.courseplanning import (
     get_course_planning_session,
     create_course_planning_session,
     save_course_planning_session,
     generate_course_plan_stream,
     generate_activity_content_stream,
+    build_attachment_context,
+    build_user_notes_context,
     MAX_PLANNING_ITERATIONS,
     MAX_ACTIVITY_ITERATIONS,
     ENABLE_ACTIVITY_CONTENT_GENERATION,
@@ -42,6 +53,7 @@ from src.services.ai.schemas.courseplanning import (
     SendCoursePlanningMessage,
     FinalizeCoursePlanRequest,
     GenerateActivityContentRequest,
+    GenerateCourseAssignmentsRequest,
     SaveActivityContentRequest,
     CoursePlanningSessionResponse,
     FinalizeCoursePlanResponse,
@@ -51,6 +63,92 @@ from src.services.ai.schemas.courseplanning import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _notebook_cells_from_attachment(attachment) -> list[dict]:
+    """Turn a .ipynb attachment into the notebook-task cell format."""
+    if not attachment.content_base64:
+        return []
+    try:
+        raw = base64.b64decode(attachment.content_base64).decode("utf-8")
+        notebook = json.loads(raw)
+    except Exception:
+        logger.warning("Skipping unreadable notebook attachment %s", attachment.name)
+        return []
+
+    cells = []
+    for index, cell in enumerate(notebook.get("cells") or []):
+        if not isinstance(cell, dict):
+            continue
+        cell_type = cell.get("cell_type")
+        if cell_type not in ("markdown", "code", "raw"):
+            continue
+        source = cell.get("source")
+        if isinstance(source, list):
+            source = "".join(str(part) for part in source)
+        if not isinstance(source, str):
+            source = ""
+        cells.append({
+            "id": f"cell_{index}",
+            "cell_type": cell_type,
+            "source": source,
+        })
+    return cells
+
+
+def _source_names(session) -> list[str]:
+    names = [attachment.name for attachment in (session.attachments or []) if attachment.name]
+    if not names and session.message_history:
+        names = ["материалы из чата"]
+    return names
+
+
+async def _keep_passing_code_tests(task) -> bool:
+    """Drop CODE test cases that the generated solution does not actually pass.
+
+    The model can invent plausible stdin/expected_stdout pairs that are
+    inconsistent with its own solution. Persisting those makes every learner
+    fail through no fault of their own, so each test is executed once against
+    the reference solution and only passing cases survive.
+    """
+    contents = task.contents or {}
+    tests = contents.get("test_cases") or []
+    solution = (contents.get("solution_code") or "").strip()
+    if not solution or not tests:
+        return False
+
+    try:
+        from src.routers.code_execution import _get_judge0_config, _submit_single
+        judge0_cfg = _get_judge0_config()
+    except Exception:
+        logger.warning("Judge0 not configured; dropping generated CODE task")
+        return False
+
+    language_id = int(contents.get("language_id") or 71)
+    results = await asyncio.gather(
+        *[
+            _submit_single(
+                judge0_cfg, language_id, solution, test.get("stdin") or ""
+            )
+            for test in tests
+        ],
+        return_exceptions=True,
+    )
+
+    passing = []
+    for test, result in zip(tests, results):
+        if isinstance(result, Exception):
+            continue
+        status_id = (result.get("status") or {}).get("id")
+        actual = (result.get("stdout") or "").rstrip()
+        expected = (test.get("expectedStdout") or "").rstrip()
+        if status_id == 3 and actual == expected:
+            passing.append(test)
+
+    if not passing:
+        return False
+    contents["test_cases"] = passing
+    return True
 
 
 async def event_generator(generator, session_uuid: str):
@@ -180,6 +278,8 @@ async def start_course_planning_session(
         org_id=org.id, language=session_request.language,
         user_id=resolve_acting_user_id(current_user),
     )
+    session.attachments = session_request.attachments or []
+    save_course_planning_session(session)
 
     # Generate with streaming (include attachments if provided)
     stream = generate_course_plan_stream(
@@ -262,6 +362,15 @@ async def iterate_course_planning_session(
     # Use provided plan or session's current plan
     current_plan = message_request.current_plan or session.current_plan
 
+    # Keep every material the learner provided across iterations so activity
+    # generation can use all of them, not just the latest message's files.
+    if message_request.attachments:
+        existing_names = {a.name for a in session.attachments}
+        session.attachments.extend(
+            a for a in message_request.attachments if a.name not in existing_names
+        )
+        save_course_planning_session(session)
+
     # Generate with streaming (include attachments if provided)
     stream = generate_course_plan_stream(
         prompt=message_request.message,
@@ -343,7 +452,7 @@ async def finalize_course_plan(
         about=plan.description,
         learnings=plan.learnings,
         tags="|".join(plan.tags),
-        public=False,  # Start as unpublished
+        public=True,  # Access is open by default; restrict via course settings
         published=False,
         open_to_contributors=False,
         org_id=org.id,
@@ -370,6 +479,8 @@ async def finalize_course_plan(
     await db_session.commit()
 
     created_chapters = []
+    created_chapter_objects = []
+    source_names = _source_names(session)
 
     # Create chapters and activities
     for chapter_index, chapter_plan in enumerate(plan.chapters):
@@ -411,7 +522,12 @@ async def finalize_course_plan(
                 activity_type=ActivityTypeEnum.TYPE_DYNAMIC,
                 activity_sub_type=ActivitySubTypeEnum.SUBTYPE_DYNAMIC_PAGE,
                 content={},  # Empty dict, content will be generated later
-                details={"description": activity_plan.description},
+                details={
+                    "description": activity_plan.description,
+                    "ai_generated": True,
+                    "ai_sources": source_names,
+                },
+                extra_metadata={"ai_generated": True, "ai_sources": source_names},
                 published=False,
                 course_id=course.id,
                 org_id=org.id,
@@ -451,6 +567,97 @@ async def finalize_course_plan(
             "name": chapter.name,
             "activities": created_activities,
         })
+        created_chapter_objects.append(chapter)
+
+    # Uploaded notebooks are also persisted as an executable Notebook
+    # assignment, not just used as planning context. That way the learner's
+    # own .ipynb remains in the course after generation.
+    notebook_attachments = [
+        attachment
+        for attachment in (session.attachments or [])
+        if attachment.name.lower().endswith(".ipynb")
+    ]
+    if notebook_attachments and created_chapter_objects:
+        attachment = notebook_attachments[0]
+        cells = _notebook_cells_from_attachment(attachment)
+        if cells:
+            target_chapter = created_chapter_objects[-1]
+            target_order = len(created_chapters[-1]["activities"])
+
+            assignment_activity = Activity(
+                activity_uuid=f"activity_{uuid4()}",
+                name=f"Практикум: {attachment.name}",
+                activity_type=ActivityTypeEnum.TYPE_ASSIGNMENT,
+                activity_sub_type=ActivitySubTypeEnum.SUBTYPE_ASSIGNMENT_ANY,
+                content={},
+                details={
+                    "description": "Практическое задание по прикреплённому ноутбуку.",
+                    "ai_generated": True,
+                    "ai_sources": source_names,
+                },
+                extra_metadata={"ai_generated": True, "ai_sources": source_names},
+                published=True,
+                course_id=course.id,
+                org_id=org.id,
+                creation_date=str(datetime.now()),
+                update_date=str(datetime.now()),
+            )
+            db_session.add(assignment_activity)
+            await db_session.commit()
+            await db_session.refresh(assignment_activity)
+
+            db_session.add(ChapterActivity(
+                chapter_id=target_chapter.id,
+                activity_id=assignment_activity.id,
+                course_id=course.id,
+                org_id=org.id,
+                creation_date=str(datetime.now()),
+                update_date=str(datetime.now()),
+                order=target_order,
+            ))
+
+            assignment = Assignment(
+                title=f"Notebook: {attachment.name}",
+                description="Выполните ячейки загруженного ноутбука.",
+                grading_type=GradingTypeEnum.PERCENTAGE,
+                auto_grading=False,
+                published=True,
+                org_id=org.id,
+                course_id=course.id,
+                chapter_id=target_chapter.id,
+                activity_id=assignment_activity.id,
+            )
+            assignment.assignment_uuid = f"assignment_{uuid4()}"
+            assignment.creation_date = str(datetime.now())
+            assignment.update_date = str(datetime.now())
+            db_session.add(assignment)
+            await db_session.commit()
+            await db_session.refresh(assignment)
+
+            task = AssignmentTask(
+                assignment_task_uuid=f"assignmenttask_{uuid4()}",
+                title=f"Notebook: {attachment.name}",
+                description="Выполните ячейки и сохраните результаты.",
+                hint="",
+                assignment_type=AssignmentTaskTypeEnum.CUSTOM,
+                contents={
+                    "kind": "notebook",
+                    "language_id": 71,
+                    "cells": cells,
+                    "_meta": {"ai_generated": True, "source": "ai"},
+                },
+                max_grade_value=100,
+                order=0,
+                creation_date=str(datetime.now()),
+                update_date=str(datetime.now()),
+                assignment_id=assignment.id,
+                org_id=org.id,
+                course_id=course.id,
+                chapter_id=target_chapter.id,
+                activity_id=assignment_activity.id,
+            )
+            db_session.add(task)
+            await db_session.commit()
 
     # Update session with course_id
     session.course_id = course.id
@@ -461,6 +668,194 @@ async def finalize_course_plan(
         course_id=course.id,  # type: ignore
         chapters=created_chapters,
     )
+
+
+@router.post(
+    "/courseplanning/generate-assignments",
+    summary="Generate graded tasks for a finalized AI course",
+    description="Generates one practical assignment with several graded tasks from the course content, and persists it as an assignment activity. Safe to call again: an existing AI assignment is returned instead of duplicated.",
+)
+async def generate_course_assignments(
+    request: Request,
+    body: GenerateCourseAssignmentsRequest,
+    current_user: PublicUser | AnonymousUser | APITokenUser = Depends(get_current_user),
+    db_session: AsyncSession = Depends(get_db_session),
+):
+    session = _load_owned_session(body.session_uuid, current_user)
+    if session.course_id is None:
+        raise HTTPException(status_code=400, detail="Course is not finalized yet")
+
+    course = (await db_session.execute(
+        select(Course).where(Course.id == session.course_id)
+    )).scalars().first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if not await verify_user_org_membership(resolve_acting_user_id(current_user), course.org_id, db_session):
+        raise HTTPException(status_code=403, detail="User is not a member of this organization")
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
+
+    activity_name = "Практические задания (AI)"
+    existing = (await db_session.execute(
+        select(Activity).where(
+            Activity.course_id == course.id,
+            Activity.name == activity_name,
+        )
+    )).scalars().first()
+    if existing:
+        existing_assignment = (await db_session.execute(
+            select(Assignment).where(Assignment.activity_id == existing.id)
+        )).scalars().first()
+        return {
+            "created": False,
+            "activity_uuid": existing.activity_uuid,
+            "assignment_uuid": existing_assignment.assignment_uuid if existing_assignment else None,
+            "tasks_created": 0,
+        }
+
+    chapter = (await db_session.execute(
+        select(Chapter)
+        .join(CourseChapter, CourseChapter.chapter_id == Chapter.id)
+        .where(CourseChapter.course_id == course.id)
+        .order_by(CourseChapter.order.desc())
+        .limit(1)
+    )).scalars().first()
+    if not chapter:
+        raise HTTPException(status_code=400, detail="Course has no chapters")
+
+    await check_limits_with_usage("assignments", course.org_id, db_session)
+    from src.services.security.rate_limiting import enforce_ai_rate_limit
+    enforce_ai_rate_limit(resolve_acting_user_id(current_user), course.org_id)
+    await reserve_ai_credit(course.org_id, db_session, amount=1)
+
+    attachment_context = build_attachment_context(session.attachments) if session.attachments else ""
+    notes = build_user_notes_context(session)
+    prompt = (
+        f"Создай итоговое практическое задание по курсу «{course.name}». "
+        "Сделай 5 заданий разных типов: квиз, короткий ответ, числовой расчёт, "
+        "заполнение пропусков и ОБЯЗАТЕЛЬНО одно задание CODE по Python. "
+        "Code-задание должно быть практическим: решение на Python, 2-4 теста "
+        "с ожидаемым stdout, проверяющие разные случаи. "
+        "Задания должны проверять понимание материала, а не пересказ."
+    )
+    if attachment_context or notes:
+        prompt += f"\n\nМатериалы курса:\n{attachment_context}\n{notes}"
+
+    ai_model = await get_org_ai_model(course.org_id, db_session)
+    plan, _ = await generate_assignment_plan(
+        org_id=course.org_id,
+        course_id=course.id,
+        prompt=prompt,
+        model_name=ai_model,
+        db_session=db_session,
+        num_tasks=5,
+        allowed_task_types=["QUIZ", "FORM", "SHORT_ANSWER", "NUMBER_ANSWER", "CODE"],
+    )
+
+    if not plan.tasks:
+        raise HTTPException(status_code=502, detail="AI did not produce usable tasks")
+
+    validated_tasks = []
+    for task in plan.tasks:
+        if task.assignment_type == "CODE":
+            if not await _keep_passing_code_tests(task):
+                logger.warning("Dropping generated CODE task with no passing tests")
+                continue
+        validated_tasks.append(task)
+    plan.tasks = validated_tasks
+    if not plan.tasks:
+        raise HTTPException(status_code=502, detail="AI did not produce usable tasks")
+
+    chapter_activities = (await db_session.execute(
+        select(ChapterActivity).where(ChapterActivity.chapter_id == chapter.id)
+    )).scalars().all()
+
+    activity = Activity(
+        activity_uuid=f"activity_{uuid4()}",
+        name=activity_name,
+        activity_type=ActivityTypeEnum.TYPE_ASSIGNMENT,
+        activity_sub_type=ActivitySubTypeEnum.SUBTYPE_ASSIGNMENT_ANY,
+        content={},
+        details={
+            "description": plan.description,
+            "ai_generated": True,
+            "ai_sources": _source_names(session),
+        },
+        extra_metadata={"ai_generated": True, "ai_sources": _source_names(session)},
+        published=True,
+        course_id=course.id,
+        org_id=course.org_id,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+    db_session.add(activity)
+    await db_session.commit()
+    await db_session.refresh(activity)
+
+    db_session.add(ChapterActivity(
+        chapter_id=chapter.id,
+        activity_id=activity.id,
+        course_id=course.id,
+        org_id=course.org_id,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+        order=len(chapter_activities),
+    ))
+
+    try:
+        grading_type = GradingTypeEnum(plan.grading_type)
+    except ValueError:
+        grading_type = GradingTypeEnum.PERCENTAGE
+
+    assignment = Assignment(
+        title=plan.title or activity_name,
+        description=plan.description,
+        grading_type=grading_type,
+        auto_grading=True,
+        published=True,
+        org_id=course.org_id,
+        course_id=course.id,
+        chapter_id=chapter.id,
+        activity_id=activity.id,
+    )
+    assignment.assignment_uuid = f"assignment_{uuid4()}"
+    assignment.creation_date = str(datetime.now())
+    assignment.update_date = str(datetime.now())
+    db_session.add(assignment)
+    await db_session.commit()
+    await db_session.refresh(assignment)
+
+    for index, task in enumerate(plan.tasks):
+        contents = dict(task.contents or {})
+        contents["_meta"] = {"ai_generated": True, "source": "ai"}
+        db_session.add(AssignmentTask(
+            assignment_task_uuid=f"assignmenttask_{uuid4()}",
+            title=task.title,
+            description=task.description,
+            hint=task.hint,
+            assignment_type=AssignmentTaskTypeEnum(task.assignment_type),
+            contents=contents,
+            max_grade_value=task.max_grade_value,
+            order=index,
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+            assignment_id=assignment.id,
+            org_id=course.org_id,
+            course_id=course.id,
+            chapter_id=chapter.id,
+            activity_id=activity.id,
+        ))
+    await db_session.commit()
+    await increase_feature_usage("assignments", course.org_id, db_session)
+
+    return {
+        "created": True,
+        "activity_uuid": activity.activity_uuid,
+        "assignment_uuid": assignment.assignment_uuid,
+        "tasks_created": len(plan.tasks),
+    }
 
 
 @router.post(

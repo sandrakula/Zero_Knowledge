@@ -24,21 +24,27 @@ import CustomSignupFields, {
 } from '@components/Auth/CustomSignupFields'
 import { readSignupFields, type SignupFieldItem } from '@services/settings/org'
 
+const USERNAME_ONLY_SIGNUP = process.env.NEXT_PUBLIC_USERNAME_SIGNUP === 'true'
+
 const validate = (values: any, t: any, customFields: SignupFieldItem[]) => {
   const errors: any = {}
 
-  if (!values.email) {
-    errors.email = t('validation.required')
-  } else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(values.email)) {
-    errors.email = t('validation.invalid_email')
+  if (!USERNAME_ONLY_SIGNUP) {
+    if (!values.email) {
+      errors.email = t('validation.required')
+    } else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(values.email)) {
+      errors.email = t('validation.invalid_email')
+    }
   }
 
-  if (!values.password) {
-    errors.password = t('validation.required')
-  } else {
-    const passwordValidation = validatePasswordStrength(values.password)
-    if (!passwordValidation.isValid) {
-      errors.password = t('auth.password_requirements_not_met')
+  if (!USERNAME_ONLY_SIGNUP) {
+    if (!values.password) {
+      errors.password = t('validation.required')
+    } else {
+      const passwordValidation = validatePasswordStrength(values.password)
+      if (!passwordValidation.isValid) {
+        errors.password = t('auth.password_requirements_not_met')
+      }
     }
   }
 
@@ -51,9 +57,11 @@ const validate = (values: any, t: any, customFields: SignupFieldItem[]) => {
   // Bio is optional - no validation required
 
   // The org's admin-defined fields. Client-side only; the server revalidates.
-  const customFieldErrors = validateCustomFields(customFields, values.custom_fields, t)
-  if (Object.keys(customFieldErrors).length > 0) {
-    errors.custom_fields = customFieldErrors
+  if (!USERNAME_ONLY_SIGNUP) {
+    const customFieldErrors = validateCustomFields(customFields, values.custom_fields, t)
+    if (Object.keys(customFieldErrors).length > 0) {
+      errors.custom_fields = customFieldErrors
+    }
   }
 
   return errors
@@ -244,6 +252,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
 
         {passwordAllowed && (
         <FormLayout onSubmit={formik.handleSubmit}>
+          {!USERNAME_ONLY_SIGNUP && (
           <FormField name="email">
             <div className="flex items-center space-x-2 mb-1.5">
               <Form.Label className="grow text-[13px] font-semibold text-black/70">{t('auth.email')}</Form.Label>
@@ -265,7 +274,9 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
               />
             </Form.Control>
           </FormField>
+          )}
 
+          {!USERNAME_ONLY_SIGNUP && (
           <div className="flex flex-row space-x-2">
             <FormField name="first_name">
               <div className="flex items-center space-x-2 mb-1.5">
@@ -308,7 +319,9 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
               </Form.Control>
             </FormField>
           </div>
+          )}
 
+          {!USERNAME_ONLY_SIGNUP && (
           <FormField name="password">
             <div className="flex items-center space-x-2 mb-1.5">
               <Form.Label className="grow text-[13px] font-semibold text-black/70">{t('auth.password')}</Form.Label>
@@ -332,10 +345,11 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
             </Form.Control>
             <PasswordStrengthIndicator password={formik.values.password} />
           </FormField>
+          )}
 
           <FormField name="username">
             <div className="flex items-center space-x-2 mb-1.5">
-              <Form.Label className="grow text-[13px] font-semibold text-black/70">{t('user.username')}</Form.Label>
+              <Form.Label className="grow text-[13px] font-semibold text-black/70">{USERNAME_ONLY_SIGNUP ? 'Login' : t('user.username')}</Form.Label>
               {formik.touched.username && formik.errors.username && (
                 <span className="text-red-500 text-xs flex items-center space-x-1">
                   <Info size={11} />
@@ -355,6 +369,8 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
             </Form.Control>
           </FormField>
 
+          {!USERNAME_ONLY_SIGNUP && (
+          <>
           <FormField name="bio">
             <div className="flex items-center space-x-2 mb-1.5">
               <Form.Label className="grow text-[13px] font-semibold text-black/70">{`${t('user.bio')} (${t('common.optional')})`}</Form.Label>
@@ -371,6 +387,8 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
           </FormField>
 
           <CustomSignupFields fields={customFields} formik={formik} />
+          </>
+          )}
 
           <TurnstileWidget
             ref={turnstileRef}
@@ -397,7 +415,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
         )}
 
         {/* Divider: only earns its place between two sets of options. */}
-        {passwordAllowed && googleAllowed && (
+        {passwordAllowed && googleAllowed && !USERNAME_ONLY_SIGNUP && (
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-neutral-200" />
@@ -409,7 +427,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
         )}
 
         {/* Google Sign In */}
-        {googleAllowed && (
+        {googleAllowed && !USERNAME_ONLY_SIGNUP && (
         <button
           onClick={handleGoogleSignIn}
           disabled={isSubmitting}

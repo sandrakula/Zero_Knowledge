@@ -7,6 +7,7 @@ import Toast from '@components/Objects/StyledElements/Toast/Toast'
 import '@styles/globals.css'
 import Footer from '@components/Footer/Footer'
 import CompleteSignupFields from '@components/Auth/CompleteSignupFields'
+import TutorLauncher from '@components/Copilot/TutorLauncher'
 import { getOrganizationContextInfo } from '@services/organizations/orgs'
 import { getOrgFaviconMediaDirectory } from '@services/media/media'
 
@@ -47,6 +48,7 @@ export default async function RootLayout(props: {
         <Toast />
         <CompleteSignupFields />
         {props.children}
+        <TutorLauncher orgslug={params.orgslug} />
         <Footer />
       </OrgProvider>
     </div>

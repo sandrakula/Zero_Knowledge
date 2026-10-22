@@ -10,6 +10,7 @@ import { OfferCard } from './OfferCard'
 import { applyForContributor } from '@services/courses/courses'
 import toast from 'react-hot-toast'
 import { useContributorStatus } from '../../../../hooks/useContributorStatus'
+import useAdminStatus from '@components/Hooks/useAdminStatus'
 import CourseProgress from '../CourseProgress/CourseProgress'
 import UserAvatar from '@components/Objects/UserAvatar'
 import { useOrg, useOrgMembership } from '@components/Contexts/OrgContext'
@@ -65,6 +66,8 @@ function CoursesActions({ courseuuid, orgslug, course, trailData }: CourseAction
   const { isUserPartOfTheOrg } = useOrgMembership()
   const queryClient = useQueryClient()
   const { track } = useLHAnalytics('learner')
+  const { rights } = useAdminStatus()
+  const isAdminViewer = !!rights?.dashboard?.action_access
 
   // Clean up course UUID by removing 'course_' prefix if it exists
   const cleanCourseUuid = course.course_uuid?.replace('course_', '');
@@ -85,6 +88,27 @@ function CoursesActions({ courseuuid, orgslug, course, trailData }: CourseAction
     staleTime: 60_000,
   });
   const linkedOffers: any[] = asArray(offersResult);
+
+  if (isAdminViewer) {
+    return (
+      <div className="bg-white nice-shadow rounded-lg p-4 space-y-2">
+        <h3 className="text-sm font-bold text-gray-900">Управление курсом</h3>
+        <p className="text-xs text-gray-500">
+          Администратор не проходит курс. Откройте редактор, чтобы менять структуру,
+          задания и доступ.
+        </p>
+        <button
+          type="button"
+          onClick={() =>
+            router.push(`/dash/courses/course/${(course.course_uuid || '').replace('course_', '')}/content`)
+          }
+          className="w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800"
+        >
+          Открыть админку курса
+        </button>
+      </div>
+    )
+  }
 
   const handleCourseAction = async () => {
     if (!session.data?.user) {

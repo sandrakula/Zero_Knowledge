@@ -9,8 +9,7 @@ import { getCourseThumbnailMediaDirectory } from '@services/media/media'
 import Link from 'next/link'
 import Image from 'next/image'
 import EmptyThumbnailImage from '../../../public/empty_thumbnail.png'
-import { BookCopy, BrainCircuit, Eye, Globe, GlobeLock, Loader2, Check } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@components/ui/tooltip'
+import { BookCopy, Eye, Globe, GlobeLock, Loader2, Check } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { updateCourse } from '@services/courses/courses'
 import { getAPIUrl } from '@services/config/config'
@@ -35,46 +34,9 @@ export function CourseOverviewTop({
   const session = useLHSession() as any
   const queryClient = useQueryClient()
   const [isPublishing, setIsPublishing] = useState(false)
-  const [isIndexing, setIsIndexing] = useState(false)
-  const [isIndexed, setIsIndexed] = useState(false)
 
   const courseStructure = course?.courseStructure
   const isPublished = courseStructure?.published
-  const isAIEnabled = org?.config?.config?.resolved_features?.ai?.enabled ?? org?.config?.config?.features?.ai?.enabled !== false
-
-  const indexCourseForAI = useCallback(async () => {
-    if (isIndexing || !courseStructure?.course_uuid) return
-    setIsIndexing(true)
-    setIsIndexed(false)
-
-    const toastId = toast.loading('Indexing course for AI...')
-
-    try {
-      const response = await fetch(`${getAPIUrl()}ai/rag/index`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.data?.tokens?.access_token}`,
-        },
-        body: JSON.stringify({ course_uuid: courseStructure.course_uuid }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-        throw new Error(error.detail || `HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-      toast.dismiss(toastId)
-      toast.success(`Indexed ${data.chunks_indexed} chunks for AI`)
-      setIsIndexed(true)
-    } catch (error: any) {
-      toast.dismiss(toastId)
-      toast.error(error.message || 'Failed to index course')
-    } finally {
-      setIsIndexing(false)
-    }
-  }, [isIndexing, courseStructure, session.data?.tokens?.access_token])
 
   const togglePublishStatus = useCallback(async () => {
     if (isPublishing || !courseStructure?.course_uuid) return
@@ -100,8 +62,18 @@ export function CourseOverviewTop({
         session.data?.tokens?.access_token
       )
 
-      // Invalidate course meta cache so other components see the update
-      queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(params.courseuuid) })
+      // Update the cached course in place instead of invalidating it. An
+      // invalidate puts the provider back into its loading state, which makes
+      // the whole editor collapse to skeletons for a frame — the visible
+      // "shake" when publishing.
+      const cleanUuid = params.courseuuid.replace('course_', '')
+      const patchPublished = (old: any) =>
+        old ? { ...old, published: newPublishedStatus } : old
+      queryClient.setQueryData(queryKeys.courses.meta(cleanUuid), patchPublished)
+      queryClient.setQueryData(
+        ['course', cleanUuid, 'meta', 'withUnpublished'],
+        patchPublished
+      )
 
       // Revalidate server-side cache
       await revalidateTags(['courses'], params.orgslug)
@@ -224,41 +196,6 @@ export function CourseOverviewTop({
               </span>
             )}
           </button>
-          {isAIEnabled && (
-            <>
-              <div className="w-px self-stretch bg-neutral-200/80" />
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={indexCourseForAI}
-                      disabled={isIndexing}
-                      aria-label={isIndexing ? 'Indexing course' : isIndexed ? 'Course indexed' : 'Index course for AI'}
-                      className={`group px-2.5 sm:px-3.5 py-2 text-sm font-semibold flex items-center space-x-1.5 transition-colors ${
-                        isIndexed
-                          ? 'bg-blue-50/70 text-blue-700'
-                          : 'bg-purple-50/70 text-purple-700 hover:bg-purple-100/70'
-                      } ${isIndexing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      {isIndexing ? (
-                        <Loader2 className="w-4 h-4 animate-spin flex-none" />
-                      ) : isIndexed ? (
-                        <Check className="w-4 h-4 flex-none" />
-                      ) : (
-                        <BrainCircuit className="w-4 h-4 flex-none" />
-                      )}
-                      <span className="hidden sm:inline">
-                        {isIndexing ? 'Indexing...' : isIndexed ? 'Indexed' : 'Index for AI'}
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    <p>Indexes this course's content so the AI Copilot can search and reference it when answering questions. Content is automatically re-indexed when activities are updated.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </>
-          )}
           <div className="w-px self-stretch bg-neutral-200/80" />
           <Link
             href={getUriWithOrg(org?.slug, '') + `/course/${params.courseuuid}`}

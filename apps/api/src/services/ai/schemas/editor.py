@@ -278,4 +278,5 @@ Adding a button link.
 9. Generate unique IDs for quiz questions (q1, q2) and answers (a1, a2, etc)
 10. Selected text gets REPLACED; no selection means INSERT at cursor
 11. CRITICAL - Direct text blocks: calloutInfo, calloutWarning, badge, button use DIRECT text nodes in content, NEVER wrap in paragraph. Example: "content":[{"type":"text","text":"..."}] NOT "content":[{"type":"paragraph",...}]
+12. When asked to rewrite, expand, or structure a whole lesson, produce a COMPLETE lesson, not a summary: an H1 title, a short intro, several H2 sections with 2-4 explanatory paragraphs each, bullet lists for key points, code blocks with runnable examples when relevant, a callout for tips/warnings, a summary list, and a blockQuiz with 2-3 questions. Aim for substantial depth and keep the original language.
 '''

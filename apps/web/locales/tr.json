@@ -44,11 +44,11 @@
     "help": "Yardım",
     "help_menu": {
       "documentation": "Dokümantasyon",
-      "website": "LearnHouse Web Sitesi",
+      "website": "ZeroKnowledge Web Sitesi",
       "discord": "Discord",
       "report_feedback": "Sorun veya Geri Bildirim Bildir",
       "feedback_title": "Geri Bildirim Gönder",
-      "feedback_description": "Düşüncelerinizi paylaşarak, hata bildirerek veya yeni özellikler önererek LearnHouse'u geliştirmemize yardımcı olun.",
+      "feedback_description": "Düşüncelerinizi paylaşarak, hata bildirerek veya yeni özellikler önererek ZeroKnowledge'u geliştirmemize yardımcı olun.",
       "feedback_placeholder": "Aklınızdakileri bize söyleyin...",
       "feedback_success": "Geri bildiriminiz için teşekkürler!",
       "send_feedback": "Geri Bildirim Gönder",
@@ -215,7 +215,7 @@
     "organizations": "Organizasyonlar",
     "billing": "Faturalandırma",
     "create_organization": "Organizasyon oluştur",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "Bu organizasyon silinemedi. Lütfen tekrar deneyin.",
     "org_actions": "Organizasyon işlemleri",
     "manage_upgrade": "Yönet / Yükselt",
@@ -375,17 +375,17 @@
     "verifying_email": "E-posta adresiniz doğrulanıyor...",
     "error_generic": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     "sign_in": "Giriş Yap",
-    "terms_text": "Devam ederek LearnHouse'un",
+    "terms_text": "Devam ederek ZeroKnowledge'un",
     "terms_of_service": "Hizmet Şartları",
     "and": "ve",
     "privacy_policy": "Gizlilik Politikası",
     "image_title_forgot": "Şifrenizi sıfırlayın.",
     "image_subtitle_forgot": "Kısa sürede hesabınıza yeniden erişmenize yardımcı olacağız.",
-    "image_title_login": "LearnHouse'a tekrar hoş geldiniz.",
+    "image_title_login": "ZeroKnowledge'a tekrar hoş geldiniz.",
     "image_subtitle_login": "Kaldığınız yerden devam edin; kurslarınız, öğrencileriniz ve araçlarınız sizi bekliyor.",
     "image_title_reset": "Neredeyse tamam.",
     "image_subtitle_reset": "Hesabınızı güvende tutmak için güçlü bir şifre oluşturun.",
-    "image_title_signup": "LearnHouse ile eğitime başlayın.",
+    "image_title_signup": "ZeroKnowledge ile eğitime başlayın.",
     "image_subtitle_signup": "Hesabınızı oluşturun ve ilk kursunuzu dakikalar içinde yayınlayın.",
     "image_title_verify": "E-postanızı doğrulayın.",
     "image_subtitle_verify": "Hesabınızı güvene almak ve başlamak için tek bir hızlı adım.",
@@ -576,14 +576,14 @@
     "import": {
       "scorm_package": "SCORM Paketi",
       "scorm_description": "SCORM 1.2 veya SCORM 2004 paketlerini içe aktar",
-      "learnhouse_courses": "LearnHouse Kursları",
-      "learnhouse_description": "LearnHouse'dan dışa aktarılan kursları içe aktar",
+      "learnhouse_courses": "ZeroKnowledge Kursları",
+      "learnhouse_description": "ZeroKnowledge'dan dışa aktarılan kursları içe aktar",
       "upload_package": "Paket Yükle",
       "configure": "Yapılandır",
       "complete": "Tamamlandı",
       "click_to_upload": "Yüklemek için tıklayın veya sürükleyip bırakın",
-      "learnhouse_format": "LearnHouse kurs dışa aktarımı (.zip)",
-      "learnhouse_info": "LearnHouse kurs dışa aktarma paketi (.zip) yükleyin. Hangi kursların içe aktarılacağını seçebilir ve içe aktarma seçeneklerini yapılandırabilirsiniz.",
+      "learnhouse_format": "ZeroKnowledge kurs dışa aktarımı (.zip)",
+      "learnhouse_info": "ZeroKnowledge kurs dışa aktarma paketi (.zip) yükleyin. Hangi kursların içe aktarılacağını seçebilir ve içe aktarma seçeneklerini yapılandırabilirsiniz.",
       "analyze_package": "Paketi Analiz Et",
       "ready_to_analyze": "Analiz için hazır",
       "invalid_file_format": "Lütfen bir .zip dosyası yükleyin",
@@ -1456,7 +1456,7 @@
           "description": "Kişisel ayarlarınızı, şifrelerinizi ve e-postanızı yapılandırın"
         }
       },
-      "learnhouse_university": "LearnHouse Üniversitesi",
+      "learnhouse_university": "ZeroKnowledge Üniversitesi",
       "welcome_back": "Tekrar hoş geldiniz",
       "plan": "plan",
       "create_course": "Kurs Oluştur",
@@ -1513,8 +1513,8 @@
       "import_course": "Kurs içe aktar",
       "import_scorm": "SCORM Paketi İçe Aktar",
       "import_scorm_description": "Yeni bir kurs oluşturmak için bir SCORM paketi içe aktarın",
-      "import_learnhouse": "LearnHouse Kurslarını İçe Aktar",
-      "import_learnhouse_description": "LearnHouse dışa aktarma paketinden kursları içe aktarın",
+      "import_learnhouse": "ZeroKnowledge Kurslarını İçe Aktar",
+      "import_learnhouse_description": "ZeroKnowledge dışa aktarma paketinden kursları içe aktarın",
       "import_select_type": "İçe aktarmak istediğiniz paket türünü seçin",
       "no_courses": "Henüz kurs yok",
       "create_course_placeholder": "İçerik eklemek için bir kurs oluşturun",
@@ -2352,8 +2352,8 @@
         "label_placeholder": "Bir organizasyon etiketi seçin",
         "about": "Organizasyon Hakkında",
         "about_placeholder": "Organizasyonunuzun detaylı açıklaması",
-        "showcase_explore": "LearnHouse Explore'da göster",
-        "showcase_description": "Organizasyonunuzun kurslarını ve içeriklerini LearnHouse topluluğuyla paylaşın. Öğrencilerin değerli eğitim kaynaklarını keşfetmelerine yardımcı olmak için bunu etkinleştirin.",
+        "showcase_explore": "ZeroKnowledge Explore'da göster",
+        "showcase_description": "Organizasyonunuzun kurslarını ve içeriklerini ZeroKnowledge topluluğuyla paylaşın. Öğrencilerin değerli eğitim kaynaklarını keşfetmelerine yardımcı olmak için bunu etkinleştirin.",
         "save_changes": "Değişiklikleri Kaydet",
         "saving": "Kaydediliyor...",
         "update_success": "Organizasyon bilgileri güncellendi",
@@ -2364,9 +2364,9 @@
         "footer_text_desc": "Kuruluş sayfalarınızın altında görüntülenen özel metin",
         "default_language": "Varsayılan dil",
         "default_language_desc": "Yeni ziyaretçilerin varsayılan olarak gördüğü ve bu kuruluş adına gönderilen e-postalarda kullanılan dil. Üyeler kendi arayüz dillerini değiştirmeye devam edebilir.",
-        "watermark_desc": "Organizasyon sayfalarınızda LearnHouse marka filigranını gösterin",
+        "watermark_desc": "Organizasyon sayfalarınızda ZeroKnowledge marka filigranını gösterin",
         "watermark_free_plan": "Filigran ücretsiz planda her zaman gösterilir",
-        "watermark_label": "\"Made with LearnHouse\" filigranı",
+        "watermark_label": "\"Made with ZeroKnowledge\" filigranı",
         "watermark_ee": "Enterprise Edition lisansınız tarafından gizlendi"
       },
       "images": {
@@ -4823,10 +4823,10 @@
       },
       "teach_the_world": {
         "title": "Öğrenin ve büyüyün",
-        "description": "LearnHouse'dan en iyi şekilde yararlanmanıza yardımcı olacak kaynaklar.",
+        "description": "ZeroKnowledge'dan en iyi şekilde yararlanmanıza yardımcı olacak kaynaklar.",
         "classroom": "Sınıf",
         "classroom_desc": "Kurslarınızı nasıl büyüteceğinizi ve yöneteceğinizi öğrenin",
-        "university": "LearnHouse Üniversitesi",
+        "university": "ZeroKnowledge Üniversitesi",
         "university_desc": "Kılavuzlar, ipuçları ve en iyi uygulamalar"
       },
       "add_content": {
@@ -4856,7 +4856,7 @@
       }
     },
     "welcome": {
-      "title": "LearnHouse'a hoş geldiniz",
+      "title": "ZeroKnowledge'a hoş geldiniz",
       "subtitle": "Kurslar oluşturun, öğrencileri davet edin ve bilgiyi dünyayla paylaşın.",
       "get_started": "Başla",
       "features_title": "İhtiyacınız olan her şey",
@@ -5156,7 +5156,7 @@
   "embed": {
     "not_supported_description": "Bu tür etkinlik kimlik doğrulama gerektirir ve yerleştirilemez.",
     "not_supported_title": "Bu etkinlik desteklenmiyor",
-    "powered_by": "LearnHouse tarafından desteklenmektedir",
+    "powered_by": "ZeroKnowledge tarafından desteklenmektedir",
     "visit_activity": "Etkinlik Sayfasını Ziyaret Et"
   },
   "migration": {
@@ -5669,7 +5669,7 @@
         "title": "Denemek mi istiyorsunuz?",
         "body": "Şuraya gidin:",
         "link": "Geliştiriciler sayfası",
-        "suffix": "ve LearnHouse'u deneyin."
+        "suffix": "ve ZeroKnowledge'u deneyin."
       },
       "validation": {
         "required": "Zorunlu",

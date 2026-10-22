@@ -364,7 +364,7 @@ function H5PBlockComponent(props: any) {
         its own origin. That means the frame is isolated from US, not from
         itself; it keeps its own cookies and storage. Which is exactly why
         this block only ever points at an author-supplied URL on someone
-        else's host and carries no LearnHouse credentials of any kind.
+        else's host and carries no ZeroKnowledge credentials of any kind.
       */
       sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
       allow="autoplay; fullscreen; encrypted-media; picture-in-picture"

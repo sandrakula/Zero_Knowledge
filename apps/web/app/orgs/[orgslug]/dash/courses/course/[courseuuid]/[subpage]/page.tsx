@@ -3,21 +3,16 @@ import React, { use, useEffect } from 'react';
 import { CourseProvider } from '../../../../../../../../components/Contexts/CourseContext'
 import { CourseOverviewTop } from '@components/Dashboard/Misc/CourseOverviewTop'
 import { motion } from 'motion/react'
-import { GalleryVerticalEnd, Globe, Info, UserPen, Award, Lock, Search } from 'lucide-react'
-import { ChartBar } from '@phosphor-icons/react'
+import { GalleryVerticalEnd, Info, UserPen, Lock, Sparkles, MessageSquare } from 'lucide-react'
 import EditCourseStructure from '@components/Dashboard/Pages/Course/EditCourseStructure/EditCourseStructure'
 import EditCourseGeneral from '@components/Dashboard/Pages/Course/EditCourseGeneral/EditCourseGeneral'
-import EditCourseAccess from '@components/Dashboard/Pages/Course/EditCourseAccess/EditCourseAccess'
 import EditCourseContributors from '@components/Dashboard/Pages/Course/EditCourseContributors/EditCourseContributors'
-import EditCourseCertification from '@components/Dashboard/Pages/Course/EditCourseCertification/EditCourseCertification'
-import EditCourseSEO from '@components/Dashboard/Pages/Course/EditCourseSEO/EditCourseSEO'
+import EditCourseRoadmap from '@components/Dashboard/Pages/Course/EditCourseRoadmap/EditCourseRoadmap'
+import EditCourseFeedback from '@components/Dashboard/Pages/Course/EditCourseFeedback/EditCourseFeedback'
 import { useCourseRights } from '@hooks/useCourseRights'
 import { useRouter } from 'next/navigation'
 import { getUriWithOrg } from '@services/config/config';
 import { useTranslation } from 'react-i18next';
-import { PlanLevel } from '@services/plans/plans';
-import FeatureGate from '@components/Dashboard/Shared/FeatureGate/FeatureGate';
-import CourseAnalyticsTab from '@components/Dashboard/Analytics/Course/CourseAnalyticsTab';
 import { DashTabBar, DashTabItem } from '@components/Dashboard/Shared/DashTabBar/DashTabBar';
 
 export type CourseOverviewParams = {
@@ -56,11 +51,18 @@ function CourseOverviewPage(props: { params: Promise<CourseOverviewParams> }) {
       requiredPermission: 'update_content' as const
     },
     {
-      key: 'access',
-      label: t('dashboard.courses.settings.tabs.access'),
-      icon: Globe,
-      href: `/dash/courses/course/${params.courseuuid}/access`,
-      requiredPermission: 'manage_access' as const
+      key: 'roadmap',
+      label: 'Roadmap',
+      icon: Sparkles,
+      href: `/dash/courses/course/${params.courseuuid}/roadmap`,
+      requiredPermission: 'update' as const
+    },
+    {
+      key: 'feedback',
+      label: 'Feedback',
+      icon: MessageSquare,
+      href: `/dash/courses/course/${params.courseuuid}/feedback`,
+      requiredPermission: 'update' as const
     },
     {
       key: 'contributors',
@@ -68,30 +70,6 @@ function CourseOverviewPage(props: { params: Promise<CourseOverviewParams> }) {
       icon: UserPen,
       href: `/dash/courses/course/${params.courseuuid}/contributors`,
       requiredPermission: 'manage_contributors' as const
-    },
-    {
-      key: 'seo',
-      label: t('dashboard.courses.settings.tabs.seo'),
-      icon: Search,
-      href: `/dash/courses/course/${params.courseuuid}/seo`,
-      requiredPermission: 'update' as const,
-      requiresPlan: 'standard' as PlanLevel
-    },
-    {
-      key: 'certification',
-      label: t('dashboard.courses.settings.tabs.certification'),
-      icon: Award,
-      href: `/dash/courses/course/${params.courseuuid}/certification`,
-      requiredPermission: 'create_certifications' as const,
-      requiresPlan: 'pro' as PlanLevel
-    },
-    {
-      key: 'analytics',
-      label: t('dashboard.courses.settings.tabs.analytics'),
-      icon: ChartBar,
-      href: `/dash/courses/course/${params.courseuuid}/analytics`,
-      requiredPermission: 'update' as const,
-      requiresPlan: 'pro' as PlanLevel
     }
   ]
 
@@ -149,7 +127,6 @@ function CourseOverviewPage(props: { params: Promise<CourseOverviewParams> }) {
                   </div>
                 </div>
               ) : undefined,
-              requiresPlan: tab.requiresPlan,
             } as DashTabItem
           })} />
         </div>
@@ -172,35 +149,17 @@ function CourseOverviewPage(props: { params: Promise<CourseOverviewParams> }) {
             {!rightsLoading && params.subpage == 'content' && hasPermission('update_content') ? (
               <EditCourseStructure orgslug={params.orgslug} />
             ) : null}
+            {!rightsLoading && params.subpage == 'roadmap' && hasPermission('update') ? (
+              <EditCourseRoadmap />
+            ) : null}
+            {!rightsLoading && params.subpage == 'feedback' && hasPermission('update') ? (
+              <EditCourseFeedback />
+            ) : null}
             {!rightsLoading && params.subpage == 'general' && hasPermission('update') ? (
               <EditCourseGeneral orgslug={params.orgslug} />
             ) : null}
-            {!rightsLoading && params.subpage == 'access' && hasPermission('manage_access') ? (
-              <EditCourseAccess orgslug={params.orgslug} />
-            ) : null}
             {!rightsLoading && params.subpage == 'contributors' && hasPermission('manage_contributors') ? (
               <EditCourseContributors orgslug={params.orgslug} />
-            ) : null}
-            {!rightsLoading && params.subpage == 'seo' && hasPermission('update') ? (
-              <>
-                <div className="h-6" />
-                <FeatureGate feature="seo">
-                  <EditCourseSEO orgslug={params.orgslug} />
-                </FeatureGate>
-              </>
-            ) : null}
-            {!rightsLoading && params.subpage == 'certification' && hasPermission('create_certifications') ? (
-              <>
-                <div className="h-6" />
-                <FeatureGate feature="certifications">
-                  <EditCourseCertification orgslug={params.orgslug} />
-                </FeatureGate>
-              </>
-            ) : null}
-            {!rightsLoading && params.subpage == 'analytics' && hasPermission('update') ? (
-              <FeatureGate feature="course_analytics">
-                <CourseAnalyticsTab courseUUID={courseuuid} />
-              </FeatureGate>
             ) : null}
           </div>
         </motion.div>

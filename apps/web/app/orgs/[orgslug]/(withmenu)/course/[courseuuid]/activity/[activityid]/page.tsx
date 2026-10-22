@@ -37,8 +37,8 @@ export async function generateMetadata(props: MetadataProps): Promise<Metadata> 
   // sign-in prompt.
   if (!course_meta || !activity) {
     return {
-      title: `Activity | ${org?.name || 'LearnHouse'}`,
-      description: 'View this activity on LearnHouse',
+      title: `Activity | ${org?.name || 'ZeroKnowledge'}`,
+      description: 'View this activity on ZeroKnowledge',
     }
   }
 

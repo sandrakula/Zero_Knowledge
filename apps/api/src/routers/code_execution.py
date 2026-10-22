@@ -457,6 +457,14 @@ async def execute_code(
     return result
 
 
+def _numeric_equal(actual: str, expected: str) -> bool:
+    """Treat 5 and 5.0 as the same answer for numeric test outputs."""
+    try:
+        return abs(float(actual) - float(expected)) <= 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
 @router.post(
     "/execute-batch",
     summary="Execute code against a batch of test cases",
@@ -472,6 +480,8 @@ async def execute_code(
         503: {"description": "Code execution is not configured on this instance"},
     },
 )
+
+
 async def execute_batch(
     request: Request,
     body: ExecuteBatchRequest,
@@ -536,7 +546,9 @@ async def execute_batch(
 
         actual = normalize_output(r.get("stdout"))
         expected = normalize_output(tc.expected_stdout)
-        passed = status.get("id") == 3 and actual == expected
+        passed = status.get("id") == 3 and (
+            actual == expected or _numeric_equal(actual, expected)
+        )
         return {
             "id": tc.id,
             "label": tc.label,

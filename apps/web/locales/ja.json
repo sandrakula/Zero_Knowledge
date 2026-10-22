@@ -46,11 +46,11 @@
     "help": "ヘルプ",
     "help_menu": {
       "documentation": "ドキュメント",
-      "website": "LearnHouse ウェブサイト",
+      "website": "ZeroKnowledge ウェブサイト",
       "discord": "Discord",
       "report_feedback": "問題の報告またはフィードバック",
       "feedback_title": "フィードバックを送信",
-      "feedback_description": "ご意見の共有、バグの報告、新機能のご提案で LearnHouse の改善にご協力ください。",
+      "feedback_description": "ご意見の共有、バグの報告、新機能のご提案で ZeroKnowledge の改善にご協力ください。",
       "feedback_placeholder": "お気づきの点をお聞かせください...",
       "feedback_success": "フィードバックありがとうございます！",
       "send_feedback": "フィードバックを送信",
@@ -215,7 +215,7 @@
     "organizations": "組織",
     "billing": "請求",
     "create_organization": "組織を作成",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "この組織を削除できませんでした。もう一度お試しください。",
     "org_actions": "組織の操作",
     "manage_upgrade": "管理 / アップグレード",
@@ -352,17 +352,17 @@
     "try_again_in": "{{minutes}}分後に再試行してください",
     "error_generic": "問題が発生しました。もう一度お試しください。",
     "sign_in": "サインイン",
-    "terms_text": "続行することで、LearnHouse の",
+    "terms_text": "続行することで、ZeroKnowledge の",
     "terms_of_service": "利用規約",
     "and": "および",
     "privacy_policy": "プライバシーポリシー",
     "image_title_forgot": "パスワードをリセット。",
     "image_subtitle_forgot": "すぐにアカウントへ戻れるようサポートします。",
-    "image_title_login": "LearnHouse へおかえりなさい。",
+    "image_title_login": "ZeroKnowledge へおかえりなさい。",
     "image_subtitle_login": "続きから再開しましょう。コース、受講者、ツールが待っています。",
     "image_title_reset": "あと少しです。",
     "image_subtitle_reset": "アカウントを安全に保つため、強力なパスワードを作成してください。",
-    "image_title_signup": "LearnHouse で教え始めましょう。",
+    "image_title_signup": "ZeroKnowledge で教え始めましょう。",
     "image_subtitle_signup": "アカウントを作成し、最初のコースを数分で公開しましょう。",
     "image_title_verify": "メールアドレスを確認。",
     "image_subtitle_verify": "アカウントを保護して始めるための、ほんの一手間です。",
@@ -564,14 +564,14 @@
     "import": {
       "scorm_package": "SCORMパッケージ",
       "scorm_description": "SCORM 1.2 または SCORM 2004 パッケージをインポート",
-      "learnhouse_courses": "LearnHouseコース",
-      "learnhouse_description": "LearnHouseからエクスポートしたコースをインポート",
+      "learnhouse_courses": "ZeroKnowledgeコース",
+      "learnhouse_description": "ZeroKnowledgeからエクスポートしたコースをインポート",
       "upload_package": "パッケージをアップロード",
       "configure": "設定",
       "complete": "完了",
       "click_to_upload": "クリックしてアップロードまたはドラッグ＆ドロップ",
-      "learnhouse_format": "LearnHouseコースエクスポート (.zip)",
-      "learnhouse_info": "LearnHouseコースエクスポートパッケージ (.zip) をアップロードします。インポートするコースを選択し、インポートオプションを設定できます。",
+      "learnhouse_format": "ZeroKnowledgeコースエクスポート (.zip)",
+      "learnhouse_info": "ZeroKnowledgeコースエクスポートパッケージ (.zip) をアップロードします。インポートするコースを選択し、インポートオプションを設定できます。",
       "analyze_package": "パッケージを分析",
       "ready_to_analyze": "分析準備完了",
       "invalid_file_format": ".zip ファイルをアップロードしてください",
@@ -1444,7 +1444,7 @@
           "description": "個人設定、パスワード、メールを構成する"
         }
       },
-      "learnhouse_university": "LearnHouse大学",
+      "learnhouse_university": "ZeroKnowledge大学",
       "welcome_back": "おかえりなさい",
       "plan": "プラン",
       "create_course": "コースを作成",
@@ -1501,8 +1501,8 @@
       "import_course": "コースをインポート",
       "import_scorm": "SCORMパッケージをインポート",
       "import_scorm_description": "SCORMパッケージをインポートして新しいコースを作成",
-      "import_learnhouse": "LearnHouseコースをインポート",
-      "import_learnhouse_description": "LearnHouseエクスポートパッケージからコースをインポート",
+      "import_learnhouse": "ZeroKnowledgeコースをインポート",
+      "import_learnhouse_description": "ZeroKnowledgeエクスポートパッケージからコースをインポート",
       "import_select_type": "インポートするパッケージの種類を選択",
       "no_courses": "コースがまだありません",
       "create_course_placeholder": "コースを作成してコンテンツを追加しましょう",
@@ -2350,9 +2350,9 @@
         "footer_text_desc": "組織ページの下部に表示されるカスタムテキスト",
         "default_language": "デフォルト言語",
         "default_language_desc": "新しい訪問者にデフォルトで表示される言語であり、この組織を代表して送信されるメールに使用される言語です。メンバーは自分のUI言語を引き続き切り替えできます。",
-        "watermark_desc": "組織ページにLearnHouseブランドの透かしを表示",
+        "watermark_desc": "組織ページにZeroKnowledgeブランドの透かしを表示",
         "watermark_free_plan": "無料プランでは透かしが常に表示されます",
-        "watermark_label": "\"Made with LearnHouse\"透かし",
+        "watermark_label": "\"Made with ZeroKnowledge\"透かし",
         "watermark_ee": "Enterprise Editionライセンスによって非表示になっています"
       },
       "images": {
@@ -5065,10 +5065,10 @@
       },
       "teach_the_world": {
         "title": "学んで成長する",
-        "description": "LearnHouseを最大限に活用するためのリソース。",
+        "description": "ZeroKnowledgeを最大限に活用するためのリソース。",
         "classroom": "クラスルーム",
         "classroom_desc": "コースの成長と管理の方法を学ぶ",
-        "university": "LearnHouse大学",
+        "university": "ZeroKnowledge大学",
         "university_desc": "ガイド、ヒント、ベストプラクティス"
       },
       "add_content": {
@@ -5098,7 +5098,7 @@
       }
     },
     "welcome": {
-      "title": "LearnHouseへようこそ",
+      "title": "ZeroKnowledgeへようこそ",
       "subtitle": "コースを作成し、学習者を招待し、世界と知識を共有しましょう。",
       "get_started": "始める",
       "features_title": "必要なものがすべて揃っています",
@@ -5142,7 +5142,7 @@
   "embed": {
     "not_supported_description": "このタイプのアクティビティは認証が必要で、埋め込みできません。",
     "not_supported_title": "このアクティビティはサポートされていません",
-    "powered_by": "Powered by LearnHouse",
+    "powered_by": "Powered by ZeroKnowledge",
     "visit_activity": "アクティビティページを訪問"
   },
   "migration": {
@@ -5647,7 +5647,7 @@
         "title": "お試しをご希望ですか？",
         "body": "代わりに",
         "link": "開発者ページ",
-        "suffix": "で LearnHouse をお試しください。"
+        "suffix": "で ZeroKnowledge をお試しください。"
       },
       "validation": {
         "required": "必須",

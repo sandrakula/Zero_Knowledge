@@ -20,6 +20,7 @@ import ConfirmationModal from '@components/Objects/StyledElements/ConfirmationMo
 import { deleteActivity, updateActivity } from '@services/courses/activities'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { useCourse } from '@components/Contexts/CourseContext'
+import ContentOriginBadge from '@components/Objects/Activities/ContentOriginBadge'
 
 interface ModifiedActivityInterface {
   activityId: string
@@ -139,7 +140,12 @@ function Activity(props: any) {
                 </button>
               </div>
             ) : (
-              <p> {props.activity.name} </p>
+              <div className="flex items-center gap-1.5">
+                <p> {props.activity.name} </p>
+                {(props.activity.extra_metadata?.ai_generated ?? props.activity.details?.ai_generated) ? (
+                  <ContentOriginBadge aiGenerated />
+                ) : null}
+              </div>
             )}
             <Pencil
               onClick={() => setSelectedActivity(props.activity.id)}

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from src.services.ai.schemas.limits import AI_MESSAGE_MAX_CHARS
@@ -7,6 +7,8 @@ from src.services.ai.schemas.limits import AI_MESSAGE_MAX_CHARS
 class StartActivityAIChatSession(BaseModel):
     activity_uuid: str
     message: str = Field(max_length=AI_MESSAGE_MAX_CHARS)
+    # Optional: the assignment task the learner is currently working on.
+    assignment_task_uuid: Optional[str] = None
 
 class ActivityAIChatSessionResponse(BaseModel):
     aichat_uuid: str
@@ -18,6 +20,7 @@ class SendActivityAIChatMessage(BaseModel):
     aichat_uuid: str
     activity_uuid: str
     message: str = Field(max_length=AI_MESSAGE_MAX_CHARS)
+    assignment_task_uuid: Optional[str] = None
 
 
 # Streaming response types

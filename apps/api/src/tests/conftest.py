@@ -481,6 +481,22 @@ async def folder(db, org, course):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
+def no_local_test_mode_auth_flags(monkeypatch):
+    """A developer's .env may enable username-only/passwordless sign-in.
+
+    Those are local test-mode switches; they must never change what the suite
+    asserts. Individual tests opt in with monkeypatch.setenv.
+    """
+    for name in (
+        "LEARNHOUSE_USERNAME_ONLY_AUTH",
+        "LEARNHOUSE_PASSWORDLESS_AUTH",
+        "LEARNHOUSE_USERNAME_SIGNUP",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def no_legacy_link_markers():
     """Keep sign-in link redemption off any real Redis.
 

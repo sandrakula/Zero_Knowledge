@@ -2,6 +2,8 @@ import { useAssignments } from '@components/Contexts/Assignments/AssignmentConte
 import { BookOpenCheck, Check, CircleHelp, ClipboardCheck, Download, Info, MessageSquare, UserCheck, X } from 'lucide-react';
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/keys';
 import ConfirmationModal from '@components/Objects/StyledElements/ConfirmationModal/ConfirmationModal';
@@ -12,6 +14,7 @@ import TaskFormObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskForm
 import TaskCodeObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskCodeObject';
 import TaskShortAnswerObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskShortAnswerObject';
 import TaskNumberAnswerObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskNumberAnswerObject';
+import TaskNotebookObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskNotebookObject';
 import { useOrg } from '@components/Contexts/OrgContext';
 import { getTaskRefFileDir } from '@services/media/media';
 import { deleteUserSubmission, getFinalGrade, markActivityAsDoneForUser, putFinalGrade } from '@services/courses/assignments';
@@ -289,7 +292,11 @@ function EvaluateAssignment({ user_id }: any) {
                                 <div className='bg-gray-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full'>
                                     {index + 1}
                                 </div>
-                                <p className='text-sm font-semibold text-gray-800'>{task.description || t('dashboard.assignments.submissions.task_label', { number: index + 1 })}</p>
+                                <div className='prose prose-sm max-w-none text-sm font-normal text-gray-600'>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {task.description || t('dashboard.assignments.submissions.task_label', { number: index + 1 })}
+                                    </ReactMarkdown>
+                                </div>
                                 {tb && !isUngraded && (
                                     <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                                         !taskSubmitted
@@ -349,6 +356,7 @@ function EvaluateAssignment({ user_id }: any) {
                             {task.assignment_type === 'CODE' && <TaskCodeObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {task.assignment_type === 'SHORT_ANSWER' && <TaskShortAnswerObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {task.assignment_type === 'NUMBER_ANSWER' && <TaskNumberAnswerObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
+                            {task.assignment_type === 'CUSTOM' && task.contents?.kind === 'notebook' && <TaskNotebookObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                         </div>
                     </div>
                     );

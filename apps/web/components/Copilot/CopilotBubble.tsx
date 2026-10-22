@@ -97,6 +97,83 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const streamingIndexRef = useRef<number>(-1)
+  const [fabPos, setFabPos] = useState<{ x: number; y: number } | null>(null)
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('zk_tutor_icon_pos_v2')
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
+      if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return
+      const maxX = window.innerWidth - 44 - 8
+      const maxY = window.innerHeight - 44 - 8
+      setFabPos({
+        x: Math.min(Math.max(8, parsed.x), maxX),
+        y: Math.min(Math.max(8, parsed.y), maxY),
+      })
+    } catch {
+      // A corrupt saved position just falls back to the default corner.
+    }
+  }, [])
+
+  const clampPosition = (x: number, y: number) => {
+    const maxX = window.innerWidth - 44 - 8
+    const maxY = window.innerHeight - 44 - 8
+    return { x: Math.min(Math.max(8, x), maxX), y: Math.min(Math.max(8, y), maxY) }
+  }
+
+  const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      moved: false,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return
+    drag.moved = true
+    setFabPos(clampPosition(drag.originX + dx, drag.originY + dy))
+  }
+
+  const onPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.moved) {
+      setFabPos((current) => {
+        if (current) {
+          try {
+            localStorage.setItem('zk_tutor_icon_pos_v2', JSON.stringify(current))
+          } catch {
+            // Storage can be unavailable in private mode; dragging still works.
+          }
+        }
+        return current
+      })
+      return
+    }
+    if (!open) track(AnalyticsEvent.CopilotBubbleOpened, { current_path: pathname })
+    onOpenChange(!open)
+  }
   const isNewChatRef = useRef(true)
   const loadedSessionRef = useRef<string | null>(null)
 
@@ -286,13 +363,24 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
     }
   }, [open])
 
+  const panelPosition =
+    fabPos && typeof window !== 'undefined'
+      ? {
+          left: Math.max(8, Math.min(fabPos.x - 296, window.innerWidth - 348)),
+          top: Math.max(8, Math.min(fabPos.y - 492, window.innerHeight - 560)),
+          bottom: 'auto',
+          right: 'auto',
+        }
+      : {}
+
   return (
     <>
       {/* Floating panel */}
       {panelMounted && (
         <div
-          className="fixed bottom-[72px] end-4 z-[9998] flex flex-col bg-white dark:bg-neutral-900 rounded-2xl overflow-hidden nice-shadow"
+          className="fixed bottom-[72px] end-4 z-[99999] flex flex-col bg-white dark:bg-neutral-900 rounded-2xl overflow-hidden nice-shadow"
           style={{
+            ...panelPosition,
             width: 'min(340px, calc(100vw - 24px))',
             height: 'min(480px, calc(100vh - 110px))',
             opacity: panelVisible ? 1 : 0,
@@ -314,7 +402,7 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                 <List size={14} />
               </button>
               <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                Course Copilot
+                Tutor
               </span>
             </div>
             <div className="flex items-center gap-0.5">
@@ -327,7 +415,7 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                 <Plus size={14} />
               </button>
               <button
-                aria-label="Close copilot"
+                aria-label="Close Tutor"
                 onClick={() => onOpenChange(false)}
                 className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all"
               >
@@ -396,7 +484,7 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                       </svg>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Course Copilot</p>
+                      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Tutor</p>
                       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1 leading-relaxed max-w-[230px]">
                         Ask questions about your courses.
                       </p>
@@ -513,13 +601,27 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
 
       {/* FAB */}
       <button
-        onClick={() => {
-          if (!open) track(AnalyticsEvent.CopilotBubbleOpened, { current_path: pathname })
-          onOpenChange(!open)
+        type="button"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          dragRef.current = null
         }}
-        className="fixed bottom-4 end-4 z-[9999] flex items-center justify-center rounded-full bg-violet-600 hover:bg-violet-700 text-white transition-all duration-200 hover:scale-105 active:scale-95 nice-shadow"
-        style={{ width: 44, height: 44 }}
-        aria-label="Open Copilot"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            if (!open) track(AnalyticsEvent.CopilotBubbleOpened, { current_path: pathname })
+            onOpenChange(!open)
+          }
+        }}
+        className={`fixed ${fabPos ? '' : 'top-1/2 end-4 -translate-y-1/2'} z-[100000] flex items-center justify-center rounded-full bg-violet-600 hover:bg-violet-700 text-white transition-colors duration-200 hover:scale-105 active:scale-95 nice-shadow cursor-grab active:cursor-grabbing touch-none select-none`}
+        style={
+          fabPos
+            ? { width: 44, height: 44, left: fabPos.x, top: fabPos.y, bottom: 'auto', right: 'auto' }
+            : { width: 44, height: 44 }
+        }
+        aria-label={open ? 'Close Tutor' : 'Open Tutor'}
       >
         {open ? <X size={18} weight="bold" /> : <ChatCircle size={20} weight="fill" />}
       </button>

@@ -46,11 +46,11 @@
     "help": "সহায়তা",
     "help_menu": {
       "documentation": "ডকুমেন্টেশন",
-      "website": "LearnHouse ওয়েবসাইট",
+      "website": "ZeroKnowledge ওয়েবসাইট",
       "discord": "Discord",
       "report_feedback": "সমস্যা বা মতামত জানান",
       "feedback_title": "মতামত পাঠান",
-      "feedback_description": "আপনার মতামত শেয়ার করে, বাগ রিপোর্ট করে, অথবা নতুন ফিচার সাজেস্ট করে LearnHouse উন্নত করতে সাহায্য করুন।",
+      "feedback_description": "আপনার মতামত শেয়ার করে, বাগ রিপোর্ট করে, অথবা নতুন ফিচার সাজেস্ট করে ZeroKnowledge উন্নত করতে সাহায্য করুন।",
       "feedback_placeholder": "আপনার মনে কী আছে বলুন...",
       "feedback_success": "আপনার মতামতের জন্য ধন্যবাদ!",
       "send_feedback": "মতামত পাঠান",
@@ -135,7 +135,7 @@
         },
         "api_access": {
           "title": "প্রো ফিচার",
-          "description": "API অ্যাক্সেস একটি প্রিমিয়াম ফিচার যা শুধুমাত্র LearnHouse-এর Pro পরিকল্পনা বা তার উপরের সংস্থাগুলির জন্য উপলব্ধ। আপনার সংস্থার ডেটায় প্রোগ্রামেটিক অ্যাক্সেস আনলক করতে আপগ্রেড করুন।"
+          "description": "API অ্যাক্সেস একটি প্রিমিয়াম ফিচার যা শুধুমাত্র ZeroKnowledge-এর Pro পরিকল্পনা বা তার উপরের সংস্থাগুলির জন্য উপলব্ধ। আপনার সংস্থার ডেটায় প্রোগ্রামেটিক অ্যাক্সেস আনলক করতে আপগ্রেড করুন।"
         }
       },
       "current_plan": "বর্তমান প্ল্যান",
@@ -215,7 +215,7 @@
     "organizations": "প্রতিষ্ঠান",
     "billing": "বিলিং",
     "create_organization": "প্রতিষ্ঠান তৈরি করুন",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "এই প্রতিষ্ঠানটি মুছে ফেলা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।",
     "org_actions": "প্রতিষ্ঠানের কার্যক্রম",
     "manage_upgrade": "পরিচালনা / আপগ্রেড",
@@ -365,17 +365,17 @@
     "verifying_email": "আপনার ইমেল ঠিকানা যাচাই করা হচ্ছে...",
     "error_generic": "কিছু ভুল হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।",
     "sign_in": "সাইন ইন করুন",
-    "terms_text": "চালিয়ে গেলে আপনি LearnHouse-এর সাথে সম্মত হচ্ছেন",
+    "terms_text": "চালিয়ে গেলে আপনি ZeroKnowledge-এর সাথে সম্মত হচ্ছেন",
     "terms_of_service": "পরিষেবার শর্তাবলী",
     "and": "এবং",
     "privacy_policy": "গোপনীয়তা নীতি",
     "image_title_forgot": "আপনার পাসওয়ার্ড রিসেট করুন।",
     "image_subtitle_forgot": "আমরা আপনাকে দ্রুত আপনার অ্যাকাউন্টে ফিরিয়ে আনতে সাহায্য করব।",
-    "image_title_login": "LearnHouse-এ আবার স্বাগতম।",
+    "image_title_login": "ZeroKnowledge-এ আবার স্বাগতম।",
     "image_subtitle_login": "যেখানে থেমেছিলেন সেখান থেকে শুরু করুন: আপনার কোর্স, শিক্ষার্থী ও টুল অপেক্ষা করছে।",
     "image_title_reset": "প্রায় পৌঁছে গেছেন।",
     "image_subtitle_reset": "আপনার অ্যাকাউন্ট নিরাপদ রাখতে একটি শক্তিশালী পাসওয়ার্ড তৈরি করুন।",
-    "image_title_signup": "LearnHouse দিয়ে শেখানো শুরু করুন।",
+    "image_title_signup": "ZeroKnowledge দিয়ে শেখানো শুরু করুন।",
     "image_subtitle_signup": "আপনার অ্যাকাউন্ট তৈরি করুন এবং কয়েক মিনিটে আপনার প্রথম কোর্স চালু করুন।",
     "image_title_verify": "আপনার ইমেইল যাচাই করুন।",
     "image_subtitle_verify": "আপনার অ্যাকাউন্ট নিরাপদ করতে ও শুরু করতে একটি দ্রুত ধাপ।",
@@ -576,14 +576,14 @@
     "import": {
       "scorm_package": "SCORM প্যাকেজ",
       "scorm_description": "SCORM 1.2 বা SCORM 2004 প্যাকেজ আমদানি করুন",
-      "learnhouse_courses": "LearnHouse কোর্স",
-      "learnhouse_description": "LearnHouse থেকে রপ্তানি করা কোর্স আমদানি করুন",
+      "learnhouse_courses": "ZeroKnowledge কোর্স",
+      "learnhouse_description": "ZeroKnowledge থেকে রপ্তানি করা কোর্স আমদানি করুন",
       "upload_package": "প্যাকেজ আপলোড করুন",
       "configure": "কনফিগার করুন",
       "complete": "সম্পূর্ণ",
       "click_to_upload": "আপলোড করতে ক্লিক করুন বা টেনে আনুন",
-      "learnhouse_format": "LearnHouse কোর্স রপ্তানি (.zip)",
-      "learnhouse_info": "LearnHouse কোর্স রপ্তানি প্যাকেজ (.zip) আপলোড করুন। আপনি কোন কোর্স আমদানি করবেন তা নির্বাচন করতে এবং আমদানি বিকল্পগুলি কনফিগার করতে পারবেন।",
+      "learnhouse_format": "ZeroKnowledge কোর্স রপ্তানি (.zip)",
+      "learnhouse_info": "ZeroKnowledge কোর্স রপ্তানি প্যাকেজ (.zip) আপলোড করুন। আপনি কোন কোর্স আমদানি করবেন তা নির্বাচন করতে এবং আমদানি বিকল্পগুলি কনফিগার করতে পারবেন।",
       "analyze_package": "প্যাকেজ বিশ্লেষণ করুন",
       "ready_to_analyze": "বিশ্লেষণের জন্য প্রস্তুত",
       "invalid_file_format": "অনুগ্রহ করে একটি .zip ফাইল আপলোড করুন",
@@ -1513,8 +1513,8 @@
       "import_course": "কোর্স আমদানি করুন",
       "import_scorm": "SCORM প্যাকেজ আমদানি করুন",
       "import_scorm_description": "নতুন কোর্স তৈরি করতে SCORM প্যাকেজ আমদানি করুন",
-      "import_learnhouse": "LearnHouse কোর্স আমদানি করুন",
-      "import_learnhouse_description": "LearnHouse রপ্তানি প্যাকেজ থেকে কোর্স আমদানি করুন",
+      "import_learnhouse": "ZeroKnowledge কোর্স আমদানি করুন",
+      "import_learnhouse_description": "ZeroKnowledge রপ্তানি প্যাকেজ থেকে কোর্স আমদানি করুন",
       "import_select_type": "আমদানি করতে প্যাকেজের ধরন নির্বাচন করুন",
       "no_courses": "এখনও কোনো কোর্স নেই",
       "create_course_placeholder": "কন্টেন্ট যোগ করতে কোর্স তৈরি করুন",
@@ -2362,9 +2362,9 @@
         "footer_text_desc": "আপনার সংস্থার পৃষ্ঠাগুলির নীচে প্রদর্শিত কাস্টম টেক্সট",
         "default_language": "ডিফল্ট ভাষা",
         "default_language_desc": "নতুন ভিজিটররা ডিফল্টভাবে যে ভাষায় সাইটটি দেখেন এবং এই সংস্থার পক্ষ থেকে পাঠানো ইমেইলে যে ভাষা ব্যবহৃত হয়। সদস্যরা এখনও নিজেদের UI ভাষা পরিবর্তন করতে পারেন।",
-        "watermark_desc": "আপনার সংস্থা পেজে LearnHouse ব্র্যান্ডিং ওয়াটারমার্ক দেখান",
+        "watermark_desc": "আপনার সংস্থা পেজে ZeroKnowledge ব্র্যান্ডিং ওয়াটারমার্ক দেখান",
         "watermark_free_plan": "ফ্রি প্ল্যানে ওয়াটারমার্ক সর্বদা প্রদর্শিত হয়",
-        "watermark_label": "\"Made with LearnHouse\" ওয়াটারমার্ক",
+        "watermark_label": "\"Made with ZeroKnowledge\" ওয়াটারমার্ক",
         "watermark_ee": "আপনার এন্টারপ্রাইজ এডিশন লাইসেন্স দ্বারা লুকানো"
       },
       "images": {
@@ -5077,10 +5077,10 @@
       },
       "teach_the_world": {
         "title": "শিখুন ও বেড়ে উঠুন",
-        "description": "LearnHouse থেকে সর্বাধিক সুবিধা পেতে সহায়ক রিসোর্স।",
+        "description": "ZeroKnowledge থেকে সর্বাধিক সুবিধা পেতে সহায়ক রিসোর্স।",
         "classroom": "ক্লাসরুম",
         "classroom_desc": "আপনার কোর্স বৃদ্ধি ও পরিচালনা করতে শিখুন",
-        "university": "LearnHouse বিশ্ববিদ্যালয়",
+        "university": "ZeroKnowledge বিশ্ববিদ্যালয়",
         "university_desc": "গাইড, টিপস এবং সেরা অনুশীলন"
       },
       "add_content": {
@@ -5110,7 +5110,7 @@
       }
     },
     "welcome": {
-      "title": "LearnHouse-এ স্বাগতম",
+      "title": "ZeroKnowledge-এ স্বাগতম",
       "subtitle": "কোর্স তৈরি করুন, শিক্ষার্থীদের আমন্ত্রণ জানান এবং বিশ্বের সাথে জ্ঞান ভাগ করুন।",
       "get_started": "শুরু করুন",
       "features_title": "আপনার যা দরকার সব আছে",
@@ -5154,7 +5154,7 @@
   "embed": {
     "not_supported_description": "এই ধরনের কার্যক্রমের জন্য অথেন্টিকেশন প্রয়োজন এবং এটি এমবেড করা যায় না।",
     "not_supported_title": "এই কার্যক্রম সমর্থিত নয়",
-    "powered_by": "Powered by LearnHouse",
+    "powered_by": "Powered by ZeroKnowledge",
     "visit_activity": "কার্যক্রম পেজে যান"
   },
   "migration": {
@@ -5659,7 +5659,7 @@
         "title": "পরীক্ষা করে দেখতে চান?",
         "body": "চলে যান",
         "link": "ডেভেলপারস পেজে",
-        "suffix": "এবং বরং LearnHouse পরখ করে দেখুন।"
+        "suffix": "এবং বরং ZeroKnowledge পরখ করে দেখুন।"
       },
       "validation": {
         "required": "আবশ্যক",

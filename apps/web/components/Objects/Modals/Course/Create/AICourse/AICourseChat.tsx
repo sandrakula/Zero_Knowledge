@@ -434,7 +434,7 @@ function AICourseChat({
                             type="button"
                             onClick={() => {
                               const input = document.createElement('input')
-                              input.type = 'file'; input.accept = '.pdf,.doc,.docx,.txt,.md'; input.multiple = true
+                              input.type = 'file'; input.accept = '.pdf,.doc,.docx,.txt,.md,.markdown,.ipynb,.py,.json,.csv,.html,.xml,.yaml,.yml'; input.multiple = true
                               input.onchange = (e) => handleFileSelect(e as any, 'file')
                               input.click()
                             }}

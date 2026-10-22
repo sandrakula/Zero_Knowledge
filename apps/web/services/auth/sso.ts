@@ -452,7 +452,7 @@ export function getErrorMessage(errorCode: string, errorDescription?: string): s
     invalid_client: 'Client authentication failed. Please contact your administrator.',
     user_canceled: 'You canceled the login process.',
 
-    // LearnHouse specific
+    // ZeroKnowledge specific
     sso_not_enabled: 'SSO is not enabled for this organization.',
     domain_not_allowed: 'Your email domain is not allowed for this organization.',
     user_creation_failed: 'Failed to create user account. Please contact support.',

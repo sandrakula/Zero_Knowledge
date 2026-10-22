@@ -825,7 +825,12 @@ async def _grade_code_task_async(task, task_submission):
             )
             return (tc, None)
         actual = _normalize_code_output(r.get("stdout"))
-        passed = status_id == 3 and actual == _normalize_code_output(expected)
+        expected_value = _normalize_code_output(expected)
+        try:
+            numeric_match = abs(float(actual) - float(expected_value)) <= 1e-9
+        except (TypeError, ValueError):
+            numeric_match = False
+        passed = status_id == 3 and (actual == expected_value or numeric_match)
         return (tc, passed)
 
     results = await asyncio.gather(*(run_one(tc) for tc in test_cases))
@@ -861,6 +866,58 @@ async def _grade_code_task_async(task, task_submission):
     if total_count <= 0:
         return 0
     return round(passed_count / total_count * task_max)
+
+
+async def _enforce_code_tests_pass(assignment, user_id: int, db_session: AsyncSession) -> None:
+    """Reject submission while any gate-enabled CODE task has failing tests.
+
+    Mirrors the client-side "must pass to submit" switch server-side, so a
+    direct API call cannot turn in code that the configured tests reject.
+    """
+    tasks = (
+        await db_session.execute(
+            select(AssignmentTask).where(AssignmentTask.assignment_id == assignment.id)
+        )
+    ).scalars().all()
+    code_tasks = [
+        task
+        for task in tasks
+        if task.assignment_type == AssignmentTaskTypeEnum.CODE
+        and bool((task.contents or {}).get("require_passing_to_submit"))
+    ]
+    if not code_tasks:
+        return
+
+    submissions = (
+        await db_session.execute(
+            select(AssignmentTaskSubmission).where(
+                AssignmentTaskSubmission.user_id == user_id,
+                AssignmentTaskSubmission.assignment_task_id.in_(
+                    [task.id for task in code_tasks]
+                ),
+            )
+        )
+    ).scalars().all()
+    by_task_id = {sub.assignment_task_id: sub for sub in submissions}
+
+    for task in code_tasks:
+        submission = by_task_id.get(task.id)
+        if submission is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Run the code and pass all tests before submitting.",
+            )
+        verify = await _grade_code_task_async(task, submission)
+        if verify is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Code checking is temporarily unavailable; try again.",
+            )
+        if verify < int(task.max_grade_value or 0):
+            raise HTTPException(
+                status_code=400,
+                detail="Not all tests pass. Fix the code and submit again.",
+            )
 
 
 async def _server_verified_task_grade(task, task_submission):
@@ -2986,6 +3043,12 @@ async def create_assignment_submission(
             status_code=403,
             detail="Assignment deadline has passed",
         )
+
+    # CODE tasks marked "must pass to submit" are verified here too; hiding the
+    # client button is not enough because the submit endpoint is directly
+    # reachable.
+    if not is_instructor:
+        await _enforce_code_tests_pass(assignment, int(submitter.id), db_session)
 
     # Check if the submission has already been made. A row in PENDING /
     # NOT_SUBMITTED state means the learner previously hit "Try again":

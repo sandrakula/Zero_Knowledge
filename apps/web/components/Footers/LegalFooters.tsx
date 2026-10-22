@@ -3,7 +3,7 @@
 //
 // AuthFooter:    the "By continuing, you agree to … Terms of Service and
 //                Privacy Policy." line shown under the auth forms.
-// CopyrightFooter: the "© {year} LearnHouse, Inc." line for app surfaces
+// CopyrightFooter: the "© {year} ZeroKnowledge, Inc." line for app surfaces
 //                (the apex /home hub, the onboarding page, …).
 //
 // Legal pages live on the marketing/platform site, so links resolve via
@@ -21,7 +21,7 @@ export function AuthFooter({ className = '' }: { className?: string }) {
   return (
     <div className={`pb-8 pt-6 text-center px-6 ${className}`}>
       <p className="text-[13px] text-black/30 font-medium">
-        {t('auth.terms_text', { defaultValue: "By continuing, you agree to LearnHouse's" })}{' '}
+        {t('auth.terms_text', { defaultValue: "By continuing, you agree to ZeroKnowledge's" })}{' '}
         <Link
           href={TERMS_URL}
           target="_blank"
@@ -62,7 +62,7 @@ export function CopyrightFooter({
     <footer className={`w-full py-6 px-6 ${className}`}>
       <div className="flex flex-col sm:flex-row items-center justify-center gap-x-5 gap-y-2 text-[13px] font-medium">
         <p className={base}>
-          {t('common.copyright', { defaultValue: '© {{year}} LearnHouse, Inc.', year })}
+          {t('common.copyright', { defaultValue: '© {{year}} ZeroKnowledge, Inc.', year })}
         </p>
         <nav className="flex items-center gap-x-5">
           <Link

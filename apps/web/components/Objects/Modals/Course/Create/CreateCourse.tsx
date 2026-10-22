@@ -21,7 +21,6 @@ import toast from 'react-hot-toast'
 import { useFormik } from 'formik'
 import * as Yup from 'yup'
 import {  UploadCloud, Clipboard } from 'lucide-react'
-import AIImageButton from '@components/Objects/AI/AIImageButton'
 import FormTagInput from "@components/Objects/StyledElements/Form/TagInput"
 import { useTranslation } from "react-i18next"
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
@@ -46,7 +45,6 @@ function CreateCourseModal({ closeModal, orgslug }: any) {
   const session = useLHSession() as any
   const queryClient = useQueryClient()
   const [orgId, setOrgId] = React.useState(null) as any
-  const [isUploading, setIsUploading] = React.useState(false)
   // A free org that hits its course limit gets the shared upgrade paywall.
   const { handlePlanLimit } = useUpgradeModal()
 
@@ -175,23 +173,6 @@ function CreateCourseModal({ closeModal, orgslug }: any) {
     }
   }
 
-  const handleRemoteImageSelect = async (imageUrl: string) => {
-    setIsUploading(true)
-    try {
-      const response = await fetch(imageUrl)
-      const blob = await response.blob()
-      const file = new File([blob], 'ai_image.jpg', { type: 'image/jpeg' })
-      formik.setFieldValue('thumbnail', file)
-    } catch (_error) {
-      toast.error('Failed to load the generated image')
-    }
-    setIsUploading(false)
-  }
-
-  const handleAIImageFile = async (file: File) => {
-    formik.setFieldValue('thumbnail', file)
-  }
-
   const handlePasteFromClipboard = async () => {
     try {
       const clipboardItems = await navigator.clipboard.read()
@@ -262,7 +243,7 @@ function CreateCourseModal({ closeModal, orgslug }: any) {
               {formik.values.thumbnail ? (
                 <img
                   src={URL.createObjectURL(formik.values.thumbnail)}
-                  className={`${isUploading ? 'animate-pulse' : ''} shadow-sm w-[200px] h-[100px] rounded-md`}
+                  className="shadow-sm w-[200px] h-[100px] rounded-md"
                 />
               ) : (
                 <img
@@ -294,11 +275,6 @@ function CreateCourseModal({ closeModal, orgslug }: any) {
                   <Clipboard size={16} className="me-2" />
                   <span>{t('courses.paste_from_clipboard')}</span>
                 </button>
-                <AIImageButton
-                  onSelect={handleRemoteImageSelect}
-                  onSelectFile={handleAIImageFile}
-                  className="font-bold antialiased items-center text-gray text-sm rounded-md px-4 mt-6 flex gap-2"
-                />
               </div>
             </div>
           </div>

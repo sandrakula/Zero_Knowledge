@@ -22,7 +22,7 @@ interface SignupBody {
   org_id?: string | number
   org_slug?: string
   email: string
-  password: string
+  password?: string
   username: string
   first_name?: string
   last_name?: string
@@ -55,9 +55,19 @@ export async function POST(request: NextRequest) {
     custom_fields,
   } = body
 
-  if (!email || !password || !username) {
+  const usernameSignup = process.env.LEARNHOUSE_USERNAME_SIGNUP === 'true'
+  // Test mode: learners register with a login + password only. The backend
+  // account model still requires an email, so the gateway mints a local
+  // placeholder that cannot receive mail; sign-in uses the username.
+  const resolvedEmail = email || (usernameSignup && username ? `${username}@students.example.com` : '')
+  const syntheticEmail = !email && !!resolvedEmail
+
+  if (!resolvedEmail || !username || (!password && !usernameSignup)) {
     return NextResponse.json({ detail: 'Missing required fields' }, { status: 400 })
   }
+  // Passwordless test accounts still need a stored credential for the account
+  // model; it is generated here and never shown or used by the learner.
+  const accountPassword = password || `Zk${crypto.randomUUID().replace(/-/g, '')}!1aA`
 
   // The anti-abuse add-ons run ONLY on the SaaS deployment. On OSS/self-hosted
   // this route is a thin proxy to the backend user-create endpoint.
@@ -87,12 +97,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Disposable-email gate: offline check + optional AbstractAPI.
-    const emailCheck = await validateSignupEmail(email)
-    if (!emailCheck.ok) {
-      return NextResponse.json(
-        { detail: 'Please use a permanent email address; temporary/disposable addresses are not allowed.' },
-        { status: 400 },
-      )
+    if (!syntheticEmail) {
+      const emailCheck = await validateSignupEmail(resolvedEmail)
+      if (!emailCheck.ok) {
+        return NextResponse.json(
+          { detail: 'Please use a permanent email address; temporary/disposable addresses are not allowed.' },
+          { status: 400 },
+        )
+      }
     }
   }
 
@@ -107,8 +119,8 @@ export async function POST(request: NextRequest) {
   // answers travel in their own slot and the backend validates them against the
   // org's declared fields.
   const backendBody = {
-    email,
-    password,
+    email: resolvedEmail,
+    password: accountPassword,
     username,
     first_name,
     last_name,

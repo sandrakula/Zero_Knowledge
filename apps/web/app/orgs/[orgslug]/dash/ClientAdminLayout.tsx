@@ -1,8 +1,6 @@
 'use client';
-import DashLeftMenu from '@components/Dashboard/Menus/DashLeftMenu';
-import DashMobileMenu from '@components/Dashboard/Menus/DashMobileMenu';
+import MinimalAdminNav from '@components/Dashboard/Menus/MinimalAdminNav';
 import OnboardingTracker from '@components/Dashboard/Onboarding/OnboardingTracker';
-import WelcomeModal from '@components/Dashboard/Onboarding/WelcomeModal';
 import DemoBanner from '@components/Objects/Demo/DemoBanner';
 import AdminAuthorization from '@components/Security/AdminAuthorization'
 import { SessionGate } from '@components/Contexts/LHSessionContext'
@@ -10,7 +8,6 @@ import { CommandPaletteProvider } from '@components/Dashboard/CommandPalette/Com
 import CommandPalette from '@components/Dashboard/CommandPalette/CommandPalette'
 import { UpgradeModalProvider } from '@components/Dashboard/Shared/PlanRestricted/UpgradeModalContext'
 import React from 'react'
-import { useMediaQuery } from 'usehooks-ts';
 
 function ClientAdminLayout({
     children,
@@ -19,14 +16,12 @@ function ClientAdminLayout({
     // Accepted (the server layout passes it) but unused here.
     params?: any
 }) {
-    const isMobile = useMediaQuery('(max-width: 1024px)')
 
     return (
         <SessionGate>
             <AdminAuthorization authorizationMode="page">
                 <CommandPaletteProvider>
                     <UpgradeModalProvider>
-                        {isMobile && <DashMobileMenu />}
                         {/* Built-in page translation (Chrome/Edge/Firefox) swaps text
                             nodes out from under React. On the editor, where nodes are
                             constantly inserted and moved, that desyncs the two trees
@@ -35,14 +30,13 @@ function ClientAdminLayout({
                             already translated by i18n, so opting it out costs nothing.
                             Public course pages stay translatable. */}
                         <div translate="no" className="notranslate flex flex-col lg:flex-row min-h-screen bg-[#f8f8f8]">
-                            {!isMobile && <DashLeftMenu />}
+                            <MinimalAdminNav />
                             <div className="flex flex-col w-full min-w-0 relative isolate pb-24 lg:pb-0">
                                 {/* Renders nothing outside the demo organization. */}
                                 <DemoBanner />
                                 {children}
                                 <OnboardingTracker />
                             </div>
-                            <WelcomeModal />
                             <CommandPalette />
                         </div>
                     </UpgradeModalProvider>

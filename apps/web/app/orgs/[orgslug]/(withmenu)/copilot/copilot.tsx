@@ -498,7 +498,7 @@ export function CopilotChat({ orgslug }: CopilotProps) {
               </svg>
               </div>
               <div className="space-y-2">
-                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Course Copilot</h2>
+                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Tutor</h2>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-md leading-relaxed">
                   Ask questions about your courses and get answers grounded in course content, with references to the source material.
                 </p>

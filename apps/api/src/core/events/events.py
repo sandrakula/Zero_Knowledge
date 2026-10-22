@@ -8,6 +8,7 @@ from src.core.events.content import check_content_directory
 from src.core.events.database import close_database, connect_to_db
 from src.core.events.logs import create_logs_dir, init_logging
 from src.core.ee_hooks import run_ee_startup
+from src.services.setup.informatics_course import ensure_default_informatics_course
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ def startup_app(app: FastAPI) -> Callable:
 
         # Check if auto-installation is needed
         await auto_install()
+
+        # Every deployment ships the two-block informatics course; users with
+        # an existing course keep their edits because the seeder is idempotent.
+        await ensure_default_informatics_course()
 
         # Reconcile pack credits (Redis ↔ DB)
         await _reconcile_packs()

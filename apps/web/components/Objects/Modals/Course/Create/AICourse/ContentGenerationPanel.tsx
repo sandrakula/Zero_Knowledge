@@ -105,7 +105,7 @@ function ContentGenerationPanel({
         try {
           // Use the standard activity update endpoint (same as editor uses)
           const result = await updateActivity(
-            { content: parsedContent },
+            { content: parsedContent, published: true },
             activityUuid,
             accessToken
           )

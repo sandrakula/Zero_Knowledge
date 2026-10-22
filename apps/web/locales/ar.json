@@ -46,11 +46,11 @@
     "help": "مساعدة",
     "help_menu": {
       "documentation": "الوثائق",
-      "website": "موقع LearnHouse",
+      "website": "موقع ZeroKnowledge",
       "discord": "Discord",
       "report_feedback": "الإبلاغ عن مشكلة أو ملاحظات",
       "feedback_title": "إرسال ملاحظات",
-      "feedback_description": "ساعدنا في تحسين LearnHouse من خلال مشاركة أفكارك أو الإبلاغ عن الأخطاء أو اقتراح ميزات جديدة.",
+      "feedback_description": "ساعدنا في تحسين ZeroKnowledge من خلال مشاركة أفكارك أو الإبلاغ عن الأخطاء أو اقتراح ميزات جديدة.",
       "feedback_placeholder": "أخبرنا بما يدور في ذهنك...",
       "feedback_success": "شكراً لملاحظاتك!",
       "send_feedback": "إرسال ملاحظات",
@@ -215,7 +215,7 @@
     "organizations": "المؤسسات",
     "billing": "الفوترة",
     "create_organization": "إنشاء مؤسسة",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "تعذّر حذف هذه المؤسسة. يرجى المحاولة مرة أخرى.",
     "org_actions": "إجراءات المؤسسة",
     "manage_upgrade": "إدارة / ترقية",
@@ -366,11 +366,11 @@
     "privacy_policy": "سياسة الخصوصية",
     "image_title_forgot": "أعد تعيين كلمة مرورك.",
     "image_subtitle_forgot": "سنساعدك على العودة إلى حسابك في لمح البصر.",
-    "image_title_login": "مرحبًا بعودتك إلى LearnHouse.",
+    "image_title_login": "مرحبًا بعودتك إلى ZeroKnowledge.",
     "image_subtitle_login": "تابِع من حيث توقفت: دوراتك وطلابك وأدواتك في انتظارك.",
     "image_title_reset": "أوشكت على الانتهاء.",
     "image_subtitle_reset": "أنشئ كلمة مرور قوية للحفاظ على أمان حسابك.",
-    "image_title_signup": "ابدأ التدريس مع LearnHouse.",
+    "image_title_signup": "ابدأ التدريس مع ZeroKnowledge.",
     "image_subtitle_signup": "أنشئ حسابك وأطلق دورتك الأولى في دقائق.",
     "image_title_verify": "تحقّق من بريدك الإلكتروني.",
     "image_subtitle_verify": "خطوة سريعة واحدة لتأمين حسابك والبدء.",
@@ -600,14 +600,14 @@
     "import": {
       "scorm_package": "حزمة SCORM",
       "scorm_description": "استيراد حزم SCORM 1.2 أو SCORM 2004",
-      "learnhouse_courses": "دورات LearnHouse",
-      "learnhouse_description": "استيراد الدورات المصدرة من LearnHouse",
+      "learnhouse_courses": "دورات ZeroKnowledge",
+      "learnhouse_description": "استيراد الدورات المصدرة من ZeroKnowledge",
       "upload_package": "رفع الحزمة",
       "configure": "تكوين",
       "complete": "مكتمل",
       "click_to_upload": "انقر للرفع أو اسحب وأفلت",
-      "learnhouse_format": "تصدير دورة LearnHouse (.zip)",
-      "learnhouse_info": "ارفع حزمة تصدير دورات LearnHouse (.zip). ستتمكن من اختيار الدورات للاستيراد وتكوين خيارات الاستيراد.",
+      "learnhouse_format": "تصدير دورة ZeroKnowledge (.zip)",
+      "learnhouse_info": "ارفع حزمة تصدير دورات ZeroKnowledge (.zip). ستتمكن من اختيار الدورات للاستيراد وتكوين خيارات الاستيراد.",
       "analyze_package": "تحليل الحزمة",
       "ready_to_analyze": "جاهز للتحليل",
       "invalid_file_format": "يرجى رفع ملف .zip",
@@ -1206,7 +1206,7 @@
     "stripe_wait": "يرجى الانتظار بينما نكمل إعداد تكامل Stripe الخاص بك...",
     "stripe_return": "يمكنك الآن العودة إلى لوحة التحكم للبدء في استخدام المدفوعات.",
     "stripe_retry": "يرجى المحاولة مرة أخرى أو الاتصال بالدعم إذا استمرت المشكلة.",
-    "stripe_login_required": "لم تقم بتسجيل الدخول إلى LearnHouse في هذا المتصفح. سجّل الدخول، ثم ابدأ الربط من جديد من إعدادات المدفوعات.",
+    "stripe_login_required": "لم تقم بتسجيل الدخول إلى ZeroKnowledge في هذا المتصفح. سجّل الدخول، ثم ابدأ الربط من جديد من إعدادات المدفوعات.",
     "subscription": "اشتراك",
     "benefits": "المزايا:",
     "min_price": "السعر الأدنى:",
@@ -1477,7 +1477,7 @@
           "rate_limited": "محاولات كثيرة جدًا. يرجى الانتظار قليلًا ثم المحاولة مرة أخرى.",
           "status_error": "تعذّر تحميل إعدادات التحقق بخطوتين.",
           "copy_failed": "تعذّر النسخ. يرجى تحديد النص ونسخه يدويًا.",
-          "codes_file_header": "رموز النسخ الاحتياطي للتحقق بخطوتين في LearnHouse. يمكن استخدام كل رمز مرة واحدة.",
+          "codes_file_header": "رموز النسخ الاحتياطي للتحقق بخطوتين في ZeroKnowledge. يمكن استخدام كل رمز مرة واحدة.",
           "already_enabled": "التحقق بخطوتين مفعّل بالفعل على هذا الحساب.",
           "setup_failed": "تعذّر بدء إعداد التحقق بخطوتين. يرجى المحاولة مرة أخرى.",
           "enabled_toast": "تم تفعيل التحقق بخطوتين.",
@@ -1653,8 +1653,8 @@
       "import_course": "استيراد دورة",
       "import_scorm": "استيراد حزمة SCORM",
       "import_scorm_description": "استيراد حزمة SCORM لإنشاء دورة جديدة",
-      "import_learnhouse": "استيراد دورات LearnHouse",
-      "import_learnhouse_description": "استيراد الدورات من حزمة تصدير LearnHouse",
+      "import_learnhouse": "استيراد دورات ZeroKnowledge",
+      "import_learnhouse_description": "استيراد الدورات من حزمة تصدير ZeroKnowledge",
       "import_select_type": "اختر نوع الحزمة التي تريد استيرادها",
       "no_courses": "لا توجد دورات بعد",
       "create_course_placeholder": "أنشئ دورة لإضافة محتوى",
@@ -2520,9 +2520,9 @@
         "email_sender_name_desc": "الاسم الذي يراه المستلمون في رسائل البريد الإلكتروني المُرسَلة لهذه المنظمة: روابط تسجيل الدخول، وإعادة تعيين كلمة المرور، والدعوات، ورسائل التحقق والترحيب. تحمل هذه الرسائل أيضًا شعارك ولون علامتك التجارية على الأزرار وإعداد العلامة المائية. الاسم وحده هو ما يتغير هنا، أما عنوان الإرسال فيبقى عنوان المنصة، وهذا ما يُبقي هذه الرسائل مجتازة لفحوصات SPF و DKIM. اتركه فارغًا لاستخدام الاسم الافتراضي للمنصة.",
         "default_language": "اللغة الافتراضية",
         "default_language_desc": "اللغة التي يراها الزوار الجدد افتراضيًا واللغة المستخدمة للرسائل المُرسَلة باسم هذه المؤسسة. لا يزال بإمكان الأعضاء تغيير لغة واجهتهم.",
-        "watermark_desc": "إظهار علامة LearnHouse المائية على صفحات منظمتك",
+        "watermark_desc": "إظهار علامة ZeroKnowledge المائية على صفحات منظمتك",
         "watermark_free_plan": "يتم عرض العلامة المائية دائمًا في الخطة المجانية",
-        "watermark_label": "علامة \"صنع بواسطة LearnHouse\" المائية",
+        "watermark_label": "علامة \"صنع بواسطة ZeroKnowledge\" المائية",
         "watermark_ee": "مخفي بترخيص الإصدار المؤسسي"
       },
       "images": {
@@ -2671,7 +2671,7 @@
         },
         "previews": {
           "thumbnail_title": "الصورة المصغّرة",
-          "thumbnail_desc": "صورة الغلاف لمؤسستك عند إدراجها أو مشاركتها: في صفحة الاستكشاف على LearnHouse وفي معاينات الروابط.",
+          "thumbnail_desc": "صورة الغلاف لمؤسستك عند إدراجها أو مشاركتها: في صفحة الاستكشاف على ZeroKnowledge وفي معاينات الروابط.",
           "thumbnail_add": "إضافة صورة مصغّرة",
           "thumbnail_replace": "استبدال الصورة المصغّرة",
           "gallery_title": "معرض المعاينة",
@@ -5285,7 +5285,7 @@
   "embed": {
     "not_supported_description": "هذا النوع من النشاط يتطلب المصادقة ولا يمكن تضمينه.",
     "not_supported_title": "هذا النشاط غير مدعوم",
-    "powered_by": "مدعوم من LearnHouse",
+    "powered_by": "مدعوم من ZeroKnowledge",
     "visit_activity": "زيارة صفحة النشاط"
   },
   "analytics": {
@@ -5996,10 +5996,10 @@
       },
       "teach_the_world": {
         "title": "تعلّم وانمُ",
-        "description": "موارد لمساعدتك في الاستفادة القصوى من LearnHouse.",
+        "description": "موارد لمساعدتك في الاستفادة القصوى من ZeroKnowledge.",
         "classroom": "الفصل الدراسي",
         "classroom_desc": "تعلم كيفية تنمية وإدارة دوراتك",
-        "university": "جامعة LearnHouse",
+        "university": "جامعة ZeroKnowledge",
         "university_desc": "أدلة ونصائح وأفضل الممارسات"
       },
       "add_content": {
@@ -6029,7 +6029,7 @@
       }
     },
     "welcome": {
-      "title": "مرحبًا بك في LearnHouse",
+      "title": "مرحبًا بك في ZeroKnowledge",
       "subtitle": "أنشئ دورات، وادعُ المتعلمين، وشارك المعرفة مع العالم.",
       "get_started": "ابدأ الآن",
       "features_title": "كل ما تحتاجه",
@@ -6612,7 +6612,7 @@
         "title": "تريد التجربة؟",
         "body": "توجّه إلى",
         "link": "صفحة المطوّرين",
-        "suffix": "لتجربة LearnHouse بدلًا من ذلك."
+        "suffix": "لتجربة ZeroKnowledge بدلًا من ذلك."
       },
       "validation": {
         "required": "مطلوب",

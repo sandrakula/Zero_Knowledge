@@ -50,6 +50,10 @@ You know these task types and MUST use their exact structure:
 - SHORT_ANSWER: an open text prompt with a list of accepted answers and a match_mode (default case_insensitive).
 - NUMBER_ANSWER: a prompt expecting a numeric answer, with correct_value and a tolerance (use 0 for exact).
 - FILE_SUBMISSION: the student uploads a file; no auto-grading, so give clear instructions in the description.
+- CODE: a programming exercise. Provide language_id 71 (Python 3), starter_code,
+  a complete solution_code, and 2-4 test_cases. Each test case has name, optional
+  stdin, expected_stdout, and hidden. Tests must be deterministic and must pass
+  against solution_code.
 
 Rules:
 - Generate exactly the requested number of tasks, only of the allowed types.
@@ -166,12 +170,47 @@ def _number_answer_contents(task: AITask) -> dict:
     return contents
 
 
+def _code_contents(task: AITask) -> dict:
+    code = task.code
+    if not code:
+        return {
+            "language_id": 71,
+            "starter_code": "",
+            "solution_code": "",
+            "grading_mode": "equal_weight",
+            "test_cases": [],
+        }
+    return {
+        "language_id": code.language_id or 71,
+        "starter_code": code.starter_code or "",
+        "solution_code": code.solution_code,
+        "grading_mode": "equal_weight",
+        "test_cases": [
+            {
+                "id": f"tc_{uuid4()}",
+                "label": tc.name,
+                "stdin": tc.stdin,
+                "expectedStdout": tc.expected_stdout,
+                "hidden": tc.hidden,
+                "weight": 1,
+            }
+            for tc in code.test_cases
+        ],
+        "allow_student_run": True,
+        "show_test_details_on_fail": True,
+        "show_hidden_test_count": True,
+        "require_passing_to_submit": True,
+        "show_solution_after_submit": False,
+    }
+
+
 _CONTENTS_BUILDERS = {
     "QUIZ": _quiz_contents,
     "FORM": _form_contents,
     "SHORT_ANSWER": _short_answer_contents,
     "NUMBER_ANSWER": _number_answer_contents,
     "FILE_SUBMISSION": lambda _task: {},
+    "CODE": _code_contents,
 }
 
 
@@ -216,6 +255,12 @@ def _has_valid_answer_key(task: GeneratedTask) -> bool:
             any((b.get("correctAnswer") or "").strip() for b in (q.get("blanks") or []))
             for q in questions
             if isinstance(q, dict)
+        )
+    if t == "CODE":
+        tests = c.get("test_cases") or []
+        return bool((c.get("solution_code") or "").strip()) and any(
+            isinstance(tc, dict) and (tc.get("expectedStdout") or "").strip()
+            for tc in tests
         )
     # NUMBER_ANSWER always has a numeric key; other types aren't auto-graded.
     return True

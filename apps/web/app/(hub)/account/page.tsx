@@ -22,6 +22,8 @@ import { deleteUser } from './_lib/deleteUser'
 import { useLHAnalytics } from '@services/analytics/useLHAnalytics'
 import { AnalyticsEvent } from '@services/analytics/events'
 
+const USERNAME_ONLY_SIGNUP = process.env.NEXT_PUBLIC_USERNAME_SIGNUP === 'true'
+
 function AccountClient() {
   const { t } = useTranslation()
   const session = useLHSession() as any
@@ -108,7 +110,8 @@ function AccountClient() {
                   <AccountGeneral />
                 </section>
 
-                {/* B. Security: change password */}
+                {/* B. Security: change password (hidden in username-only mode) */}
+                {!USERNAME_ONLY_SIGNUP && (
                 <section className="space-y-2.5">
                   <div className="flex items-center gap-2 px-1">
                     <KeyRound size={15} className="text-black/40" />
@@ -118,6 +121,7 @@ function AccountClient() {
                   </div>
                   <AccountSecurity />
                 </section>
+                )}
 
                 {/* C. Danger zone: delete account */}
                 <section className="space-y-2.5">

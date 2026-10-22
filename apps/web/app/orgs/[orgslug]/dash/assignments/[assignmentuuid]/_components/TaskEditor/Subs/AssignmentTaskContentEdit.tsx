@@ -7,6 +7,7 @@ import TaskFormObject from './TaskTypes/TaskFormObject';
 import TaskCodeObject from './TaskTypes/TaskCodeObject';
 import TaskShortAnswerObject from './TaskTypes/TaskShortAnswerObject';
 import TaskNumberAnswerObject from './TaskTypes/TaskNumberAnswerObject';
+import TaskNotebookObject from './TaskTypes/TaskNotebookObject';
 
 function AssignmentTaskContentEdit() {
     const session = useLHSession() as any;
@@ -26,6 +27,7 @@ function AssignmentTaskContentEdit() {
             {assignment_task?.assignmentTask.assignment_type === 'CODE' && <TaskCodeObject view='teacher' />}
             {assignment_task?.assignmentTask.assignment_type === 'SHORT_ANSWER' && <TaskShortAnswerObject view='teacher' />}
             {assignment_task?.assignmentTask.assignment_type === 'NUMBER_ANSWER' && <TaskNumberAnswerObject view='teacher' />}
+            {assignment_task?.assignmentTask.assignment_type === 'CUSTOM' && assignment_task?.assignmentTask.contents?.kind === 'notebook' && <TaskNotebookObject view='teacher' />}
         </div>
     )
 }

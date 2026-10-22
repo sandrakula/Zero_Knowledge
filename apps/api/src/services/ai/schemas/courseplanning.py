@@ -92,6 +92,10 @@ class CoursePlanningSessionData(BaseModel):
     current_plan: Optional[CoursePlan] = None
     course_id: Optional[int] = None  # Set after finalization
     user_id: Optional[int] = None  # Who started the session; None for sessions from before this field
+    # Source files/links supplied while planning. Kept so every later activity
+    # generation can ground its lesson in the same materials (especially
+    # notebooks), instead of only the first plan request seeing them.
+    attachments: List[AttachmentData] = []
 
 
 class StartCoursePlanningSession(BaseModel):
@@ -118,6 +122,11 @@ class FinalizeCoursePlanRequest(BaseModel):
     """Request to finalize the plan and create course structure"""
     session_uuid: str
     plan: CoursePlan  # The final plan to create in the database
+
+
+class GenerateCourseAssignmentsRequest(BaseModel):
+    """Request to generate graded tasks for a finalized AI course"""
+    session_uuid: str
 
 
 class GenerateActivityContentRequest(BaseModel):

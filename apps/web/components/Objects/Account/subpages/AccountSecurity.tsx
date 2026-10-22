@@ -230,7 +230,7 @@ function TwoFactorAuthSection() {
 
   const downloadBackupCodes = () => {
     const header = t('user.settings.security.mfa.codes_file_header', {
-      defaultValue: 'LearnHouse two-factor backup codes. Each code can be used once.',
+      defaultValue: 'ZeroKnowledge two-factor backup codes. Each code can be used once.',
     })
     const blob = new Blob([`${header}\n\n${backupCodes.join('\n')}\n`], {
       type: 'text/plain;charset=utf-8',

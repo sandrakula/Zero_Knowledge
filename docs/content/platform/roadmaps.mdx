@@ -1,0 +1,119 @@
+# Roadmaps and lesson feedback
+
+A roadmap is a JSON or YAML skeleton of a course. LearnHouse creates the course,
+chapters, lecture activities and graded practice tasks from it, then generates
+only the parts you left empty.
+
+Open **Dashboard → Courses → (course) → Roadmap** to import a skeleton into the
+current course (merge) or create a new course from it.
+
+## Skeleton format
+
+```yaml
+title: Python: from zero to API
+description: A practical backend course.
+language: en
+chapters:
+  - title: Basics
+    description: Syntax, types, control flow.
+    lessons:
+      - title: Variables and types
+        summary: Learn how Python stores values.
+        material: |
+          # Variables
+          A variable is a name bound to a value.
+        tasks:
+          - type: quiz
+            title: Types check
+            description: Pick the correct type.
+            questions:
+              - text: What is the type of 42?
+                options:
+                  - text: int
+                    correct: true
+                  - text: str
+          - type: code
+            title: Add two numbers
+            description: Read two integers and print their sum.
+            language: python
+            starter_code: |
+              a, b = map(int, input().split())
+            solution_code: |
+              a, b = map(int, input().split())
+              print(a + b)
+            tests:
+              - stdin: "1 2\n"
+                expected_stdout: "3\n"
+              - stdin: "10 -4\n"
+                expected_stdout: "6\n"
+```
+
+Aliases are accepted: `name` for `title`, `lessons`/`activities` for a chapter's
+children, `assignment_type` for a task's `type`, and lowercase task types.
+
+### Lessons
+
+| Field | Meaning |
+|---|---|
+| `title` | Activity name. |
+| `summary` | Goal passed to the generator; also the activity description. |
+| `material` | Markdown lecture body. When present it is converted to an editor page and no AI lecture is generated. |
+| `tasks` | Graded tasks. When present they are written as-is; no tasks are generated. |
+| `generate` | Default `true`. Set `false` to leave the lesson empty instead of generating. |
+
+A lesson produces up to two activities: the lecture page and a
+`<title> — Practice` assignment activity that holds the tasks.
+
+### Task types
+
+- `quiz` — `questions[].options[]` with `correct: true`
+- `code` — `language`, `starter_code`, `solution_code`, `tests[]` (`stdin`,
+  `expected_stdout`, optional `hidden`/`weight`)
+- `short_answer` — `answers[]`
+- `number_answer` — `value`, optional `tolerance`/`unit`
+- `form` — `questions[].blanks[]`
+- `file_submission` — no auto-grading
+
+Code tasks are graded against Judge0; a task without at least one test case is
+rejected. Quiz questions need at least one correct option.
+
+## Merge behaviour
+
+When a roadmap is imported into an existing course, chapters and lessons are
+matched by name inside their chapter. Imports are idempotent:
+
+- a lecture with content is never overwritten;
+- an empty lecture is filled from `material` or queued for generation;
+- an existing practice assignment with tasks is left untouched;
+- missing lessons, chapters and practice assignments are created.
+
+## Generation
+
+Missing lectures and task sets run as a background job. The Roadmap tab shows
+per-item progress (`PENDING`, `GENERATING`, `READY`, `FAILED`) and offers a retry
+for failed items. Each generated item reserves one AI credit; failures refund
+it.
+
+Generation needs an AI provider and Redis (credits and job coordination). The
+course structure is created even when generation is unavailable, so nothing is
+lost.
+
+## Roadmap assistant
+
+The assistant at the bottom of the Roadmap tab sees the full course tree and can
+propose operations: add/update/delete chapters and lessons, generate a lecture,
+generate tasks, or add a single task. It never writes directly: review the
+proposed operations and press **Apply**.
+
+The lesson-level AI panel also includes the current assignment, the student-safe
+task descriptions (no answer keys or hidden tests) and the learner's own
+submission, so a learner can ask about the task they are solving.
+
+## Lesson feedback
+
+Every lesson has a **Feedback for this lesson** box: an optional 1–5 rating and
+a comment. One feedback row exists per learner per lesson and stays editable.
+
+Instructors see all comments under **Dashboard → Courses → (course) → Feedback**,
+can filter by status, resolve/reopen and delete them. Resolution is manual; it is
+not tied to editing the lesson.

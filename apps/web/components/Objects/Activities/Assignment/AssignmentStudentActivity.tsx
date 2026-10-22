@@ -9,9 +9,13 @@ import TaskFormObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]
 import TaskCodeObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskCodeObject'
 import TaskShortAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskShortAnswerObject'
 import TaskNumberAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskNumberAnswerObject'
+import TaskNotebookObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskNotebookObject'
+import ContentOriginBadge from '@components/Objects/Activities/ContentOriginBadge'
 import toast from 'react-hot-toast';
 import { AlarmClockOff, Backpack, BookOpenCheck, Calendar, CheckCircle2, ClipboardCheck, Download, EllipsisVertical, Info, Lock, MessageSquare, RotateCcw, XCircle } from 'lucide-react';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { sortTasksByOrder } from '@/lib/assignments/taskOrder'
@@ -222,7 +226,11 @@ function AssignmentStudentActivity() {
               <h3 className='text-sm font-semibold'>{t('assignments.assignment_description')}</h3>
             </div>
             <div className='ps-6'>
-              <p className='text-sm leading-relaxed text-slate-600'>{assignments.assignment_object.description}</p>
+              <div className='text-sm leading-relaxed text-slate-600 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-slate-800 [&_h2]:mt-4 [&_h2]:mb-1.5 [&_p]:my-2 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:list-decimal [&_ol]:ps-5 [&_pre]:bg-slate-900 [&_pre]:text-slate-100 [&_pre]:rounded-md [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:my-2 [&_code]:font-mono [&_pre_code]:text-xs [&_a]:text-violet-600 [&_a]:underline'>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {assignments.assignment_object.description}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         </div>
@@ -293,9 +301,17 @@ function AssignmentStudentActivity() {
         return (
           <div className='flex flex-col space-y-2' key={task.assignment_task_uuid}>
             <div className='flex flex-col md:flex-row md:justify-between py-2 space-y-2 md:space-y-0'>
-              <div className='flex flex-wrap space-x-2 font-semibold text-slate-800'>
-                <p>{t('assignments.task')} {index + 1} : </p>
-                <p className='text-slate-500 break-words'>{task.description}</p>
+              <div className='flex flex-col gap-2 font-semibold text-slate-800 min-w-0'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <p>{t('assignments.task')} {index + 1} : </p>
+                  <ContentOriginBadge
+                    aiGenerated={task.contents?._meta?.ai_generated === true}
+                    sources={task.contents?._meta?.sources ?? []}
+                  />
+                </div>
+                <div className='prose prose-sm max-w-none text-slate-600 font-normal break-words'>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.description || ''}</ReactMarkdown>
+                </div>
               </div>
               <div className='flex flex-wrap gap-2'>
                 {task.hint && <div
@@ -389,6 +405,7 @@ function AssignmentStudentActivity() {
               {task.assignment_type === 'CODE' && <TaskCodeObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {task.assignment_type === 'SHORT_ANSWER' && <TaskShortAnswerObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {task.assignment_type === 'NUMBER_ANSWER' && <TaskNumberAnswerObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
+              {task.assignment_type === 'CUSTOM' && task.contents?.kind === 'notebook' && <TaskNotebookObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
             </div>
           </div>
         )

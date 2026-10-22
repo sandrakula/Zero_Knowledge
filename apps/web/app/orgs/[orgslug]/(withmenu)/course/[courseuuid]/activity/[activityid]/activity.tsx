@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { getUriWithOrg } from '@services/config/config'
-import { BookOpenCheck, CheckCircle, ChevronLeft, ChevronRight, MessageSquare, UserRoundPen, Edit2, Loader2, Maximize2, Minimize2, Trophy, Sparkles, XCircle, Lock, RotateCcw, Infinity as InfinityIcon } from 'lucide-react'
+import { BookOpenCheck, CheckCircle, ChevronLeft, ChevronRight, MessageSquare, Edit2, Loader2, Maximize2, Minimize2, Trophy, Sparkles, XCircle, Lock, RotateCcw, Infinity as InfinityIcon } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { markActivityAsComplete, unmarkActivityAsComplete } from '@services/courses/activity'
 import { usePathname, useRouter } from 'next/navigation'
@@ -40,6 +40,7 @@ import { BookCopy } from 'lucide-react'
 import MiniInfoTooltip from '@components/Objects/MiniInfoTooltip'
 import GeneralWrapperStyled from '@components/Objects/StyledElements/Wrappers/GeneralWrapper'
 import ActivityIndicators from '@components/Pages/Courses/ActivityIndicators'
+import ContentOriginBadge from '@components/Objects/Activities/ContentOriginBadge'
 import UserAvatar from '@components/Objects/UserAvatar'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@hooks/useDirection'
@@ -59,6 +60,7 @@ const AssignmentStudentActivity = lazy(() => import('@components/Objects/Activit
 // gating render on the lazy chunk would flash the wrong control.
 import { isAssignmentPastDue } from '@components/Objects/Activities/Assignment/AssignmentStudentActivity'
 const AIActivityAsk = lazy(() => import('@components/Objects/Activities/AI/AIActivityAsk'))
+const LessonFeedback = lazy(() => import('@components/Objects/Activities/LessonFeedback'))
 const AISidePanelContentWrapper = lazy(() => import('@components/Objects/Activities/AI/AIActivityAsk').then(mod => ({ default: mod.AISidePanelContentWrapper })))
 const AISidePanelInline = lazy(() => import('@components/Objects/Activities/AI/AIActivityAsk').then(mod => ({ default: mod.AISidePanelInline })))
 const AIChatBotProvider = lazy(() => import('@components/Contexts/AI/AIChatBotContext'))
@@ -713,6 +715,11 @@ function ActivityClient(props: ActivityClientProps) {
                             >
                               {/* Activity Types */}
                               <div className={activity.activity_type === 'TYPE_SCORM' ? 'overflow-hidden' : ''}>
+                                <ContentOriginBadge
+                                  aiGenerated={Boolean(activity.extra_metadata?.ai_generated ?? activity.details?.ai_generated)}
+                                  sources={activity.extra_metadata?.ai_sources ?? activity.details?.ai_sources ?? []}
+                                  className="mb-3"
+                                />
                                 {activityContent}
                               </div>
                             </motion.div>
@@ -962,25 +969,21 @@ function ActivityClient(props: ActivityClientProps) {
                           <div className="hidden sm:flex space-x-2 items-center relative shrink-0" style={{ zIndex: 'var(--z-interactive)' }}>
                             {activity && activity.published == true && activity.content.paid_access != false && (
                               <AuthenticatedClientElement checkMethod="authentication">
-                                {activity.activity_type != 'TYPE_ASSIGNMENT' && (
-                                  <>
-                                    <AIActivityAsk activity={activity} />
-                                    <ActivityChapterDropdown
-                                      course={course}
-                                      currentActivityId={activity.activity_uuid ? activity.activity_uuid.replace('activity_', '') : activityid.replace('activity_', '')}
-                                      orgslug={orgslug}
-                                      trailData={trailData}
-                                    />
-                                    {contributorStatus === 'ACTIVE' && activity.activity_type == 'TYPE_DYNAMIC' && (
-                                      <Link
-                                        href={getUriWithOrg(orgslug, '') + `/course/${courseuuid}/activity/${activityid}/edit`}
-                                        className="bg-emerald-600 rounded-full px-5 drop-shadow-md flex items-center space-x-2 p-2.5 text-white hover:cursor-pointer transition delay-150 duration-300 ease-in-out"
-                                      >
-                                        <Edit2 size={17} />
-                                        <span className="text-xs font-bold">{t('courses.contribute')}</span>
-                                      </Link>
-                                    )}
-                                  </>
+                                <AIActivityAsk activity={activity} />
+                                <ActivityChapterDropdown
+                                  course={course}
+                                  currentActivityId={activity.activity_uuid ? activity.activity_uuid.replace('activity_', '') : activityid.replace('activity_', '')}
+                                  orgslug={orgslug}
+                                  trailData={trailData}
+                                />
+                                {contributorStatus === 'ACTIVE' && activity.activity_type == 'TYPE_DYNAMIC' && (
+                                  <Link
+                                    href={getUriWithOrg(orgslug, '') + `/course/${courseuuid}/activity/${activityid}/edit`}
+                                    className="bg-emerald-600 rounded-full px-5 drop-shadow-md flex items-center space-x-2 p-2.5 text-white hover:cursor-pointer transition delay-150 duration-300 ease-in-out"
+                                  >
+                                    <Edit2 size={17} />
+                                    <span className="text-xs font-bold">{t('courses.contribute')}</span>
+                                  </Link>
                                 )}
                               </AuthenticatedClientElement>
                             )}
@@ -1037,6 +1040,13 @@ function ActivityClient(props: ActivityClientProps) {
                                   </div>
                                 </button>
                                 )}
+                                {activity.content.paid_access != false && (
+                                  <ContentOriginBadge
+                                    aiGenerated={Boolean(activity.extra_metadata?.ai_generated ?? activity.details?.ai_generated)}
+                                    sources={activity.extra_metadata?.ai_sources ?? activity.details?.ai_sources ?? []}
+                                    className="mb-3"
+                                  />
+                                )}
                                 {activityContent}
                               </div>
                               <Suspense fallback={null}>
@@ -1044,6 +1054,11 @@ function ActivityClient(props: ActivityClientProps) {
                               </Suspense>
                             </div>
                             </div>
+                          )}
+                          {activity.content.paid_access != false && (
+                            <Suspense fallback={null}>
+                              <LessonFeedback activity={activity} />
+                            </Suspense>
                           )}
                         </>
                       ) : null}
@@ -1854,15 +1869,7 @@ function AssignmentTools(props: {
       )
     }
 
-    return (
-      <div className="bg-amber-800 rounded-md px-4 nice-shadow flex flex-col p-2.5 text-white transition delay-150 duration-300 ease-in-out">
-        <span className="text-[10px] font-bold mb-1 uppercase">{t('common.status')}</span>
-        <div className="flex items-center space-x-2">
-          <UserRoundPen size={17} />
-          <span className="text-xs font-bold">{t('assignments.grading_in_progress')}</span>
-        </div>
-      </div>
-    )
+    return null
   }
 
   if (submission[0].submission_status === 'GRADED') {

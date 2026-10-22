@@ -24,6 +24,7 @@ from src.routers.orgs import custom_domains
 from src.routers.orgs import packs
 from src.routers.orgs import org_plan
 from src.routers.courses import chapters, courses, assignments, certifications
+from src.routers import roadmap as roadmap_router_module
 from src.routers.folders import folders as folders_router_module
 from src.routers.media import media as media_router_module
 from src.routers.courses import migration as migration_router_module
@@ -207,6 +208,12 @@ v1_router.include_router(
     dependencies=[Depends(require_authenticated_user)]
 )
 v1_router.include_router(search.router, prefix="/search", tags=["search"])
+v1_router.include_router(
+    roadmap_router_module.router,
+    prefix="/roadmap",
+    tags=["roadmap"],
+    dependencies=[Depends(require_authenticated_user_or_api_token)],
+)
 v1_router.include_router(
     assignments.router,
     prefix="/assignments",

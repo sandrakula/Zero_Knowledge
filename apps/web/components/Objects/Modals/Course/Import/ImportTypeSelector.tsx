@@ -48,7 +48,7 @@ function ImportTypeSelector({ onSelectType, currentPlan }: ImportTypeSelectorPro
           </p>
         </button>
 
-        {/* LearnHouse Import Option */}
+        {/* ZeroKnowledge Import Option */}
         <button
           onClick={() => onSelectType('learnhouse')}
           className="group flex flex-col items-center p-6 rounded-xl border-2 border-gray-200 bg-white hover:border-black hover:shadow-lg transition-all duration-200"

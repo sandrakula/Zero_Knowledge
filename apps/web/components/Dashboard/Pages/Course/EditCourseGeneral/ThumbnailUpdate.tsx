@@ -7,7 +7,6 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import React, { useState, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@lib/query/keys'
-import AIImageButton from '@components/Objects/AI/AIImageButton'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { SafeImage, SafeVideo } from '@components/Objects/SafeImage'
@@ -90,6 +89,42 @@ function ThumbnailUpdate({ thumbnailType }: ThumbnailUpdateProps) {
     return true;
   }
 
+  const updateThumbnail = async (file: File, type: 'image' | 'video') => {
+    setIsLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+      formData.append('thumbnail_type', type);
+
+      const res = await updateCourseThumbnail(
+        course.courseStructure.course_uuid,
+        formData,
+        session.data?.tokens?.access_token
+      );
+
+      const cleanUuid = course.courseStructure.course_uuid.replace('course_', '')
+      await queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanUuid) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.courses.list(org.slug) })
+      const delay = Promise.withResolvers<void>()
+      setTimeout(delay.resolve, 1500)
+      await delay.promise
+
+      if (res.success === false) {
+        showError(res.HTTPmessage);
+      } else {
+        setLocalThumbnail(null);
+        toast.success('Thumbnail updated successfully', {
+          duration: 3000,
+          position: 'top-center',
+        });
+      }
+    } catch {
+      showError('Failed to update thumbnail');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
     const file = event.target.files?.[0];
     
@@ -106,73 +141,6 @@ function ThumbnailUpdate({ thumbnailType }: ThumbnailUpdateProps) {
     const blobUrl = URL.createObjectURL(file);
     setLocalThumbnail({ file, url: blobUrl, type });
     await updateThumbnail(file, type);
-  }
-
-  const handleRemoteImageSelect = async (imageUrl: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-
-      if (!VALID_IMAGE_MIME_TYPES.includes(blob.type as ValidImageMimeType)) {
-        throw new Error('Invalid generated image format');
-      }
-
-      const file = new File([blob], `ai_image_${Date.now()}.jpg`, { type: blob.type });
-
-      if (!validateFile(file, 'image')) {
-        return;
-      }
-
-      const blobUrl = URL.createObjectURL(file);
-      setLocalThumbnail({ file, url: blobUrl, type: 'image' });
-      await updateThumbnail(file, 'image');
-    } catch (_err) {
-      showError('Failed to load the generated image');
-      setIsLoading(false);
-    }
-  }
-
-  const handleAIImageFile = async (file: File) => {
-    if (!validateFile(file, 'image')) return
-    const blobUrl = URL.createObjectURL(file)
-    setLocalThumbnail({ file, url: blobUrl, type: 'image' })
-    await updateThumbnail(file, 'image')
-  }
-
-  const updateThumbnail = async (file: File, type: 'image' | 'video') => {
-    setIsLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('thumbnail', file);
-      formData.append('thumbnail_type', type);
-
-      const res = await updateCourseThumbnail(
-        course.courseStructure.course_uuid,
-        formData,
-        session.data?.tokens?.access_token
-      );
-      
-      // Invalidate course meta cache
-      const cleanUuid = course.courseStructure.course_uuid.replace('course_', '')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanUuid) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.courses.list(org.slug) })
-      await new Promise((r) => setTimeout(r, 1500));
-
-      if (res.success === false) {
-        showError(res.HTTPmessage);
-      } else {
-        setLocalThumbnail(null);
-        toast.success('Thumbnail updated successfully', {
-          duration: 3000,
-          position: 'top-center',
-        });
-      }
-    } catch (_err) {
-      showError('Failed to update thumbnail');
-    } finally {
-      setIsLoading(false);
-    }
   }
 
   const getThumbnailUrl = (type: 'image' | 'video') => {
@@ -276,11 +244,6 @@ function ThumbnailUpdate({ thumbnailType }: ThumbnailUpdateProps) {
             <UploadCloud size={16} />
             {t('dashboard.courses.general.thumbnail.upload_image')}
           </button>
-          <AIImageButton
-            onSelect={handleRemoteImageSelect}
-            onSelectFile={handleAIImageFile}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          />
         </div>
       );
     }

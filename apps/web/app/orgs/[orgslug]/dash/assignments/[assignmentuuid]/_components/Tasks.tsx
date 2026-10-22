@@ -1,6 +1,6 @@
 import { useAssignments } from '@components/Contexts/Assignments/AssignmentContext'
 import Modal from '@components/Objects/StyledElements/Modal/Modal';
-import { Clock, Code2, FileUp, GripVertical, Hash, ListTodo, Pencil, Plus, Sparkles, Type } from 'lucide-react';
+import { Clock, Code2, FileUp, GripVertical, Hash, ListTodo, NotebookPen, Pencil, Plus, Sparkles, Type } from 'lucide-react';
 import React from 'react'
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd'
 import { useQueryClient } from '@tanstack/react-query'
@@ -15,6 +15,7 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { queryKeys } from '@/lib/query/keys'
 import { moveTask, sortTasksByOrder } from '@/lib/assignments/taskOrder'
 import { reorderAssignmentTasks } from '@services/courses/assignments'
+import ContentOriginBadge from '@components/Objects/Activities/ContentOriginBadge'
 
 dayjs.extend(relativeTime)
 
@@ -30,7 +31,11 @@ const TASK_TYPE_META: Record<string, { label: string; Icon: React.ComponentType<
 function stripMarkup(text: string): string {
     if (!text) return ''
     return text
+        .replace(/```[\s\S]*?```/g, ' ')
         .replace(/<[^>]+>/g, ' ')
+        .replace(/^#{1,6}\s*/gm, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[*_`>#-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
 }
@@ -145,7 +150,10 @@ function AssignmentTasks({ assignment_uuid }: any) {
                     className='flex flex-col'
                 >
                 {tasks.map((task: any, index: number) => {
-                    const meta = TASK_TYPE_META[task.assignment_type] ?? { label: task.assignment_type, Icon: Type }
+                    const isNotebook = task.assignment_type === 'CUSTOM' && task.contents?.kind === 'notebook'
+                    const meta = isNotebook
+                        ? { label: 'Notebook', Icon: NotebookPen }
+                        : TASK_TYPE_META[task.assignment_type] ?? { label: task.assignment_type, Icon: Type }
                     const Icon = meta.Icon
                     const isSelected = task.assignment_task_uuid === assignmentTask.selectedAssignmentTaskUUID
                     const descriptionPreview = stripMarkup(task.description || '')
@@ -205,8 +213,14 @@ function AssignmentTasks({ assignment_uuid }: any) {
                                 </div>
 
                                 {/* Title */}
-                                <div className='text-sm font-semibold text-gray-800 leading-snug break-words'>
-                                    {task.title || <span className='text-gray-300 italic font-normal'>Untitled task</span>}
+                                <div className='flex items-center gap-2 flex-wrap'>
+                                  <div className='text-sm font-semibold text-gray-800 leading-snug break-words'>
+                                      {task.title || <span className='text-gray-300 italic font-normal'>Untitled task</span>}
+                                  </div>
+                                  <ContentOriginBadge
+                                    aiGenerated={task.contents?._meta?.ai_generated === true}
+                                    sources={task.contents?._meta?.sources ?? []}
+                                  />
                                 </div>
 
                                 {/* Description */}

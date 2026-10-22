@@ -46,11 +46,11 @@
     "help": "Bantuan",
     "help_menu": {
       "documentation": "Dokumentasi",
-      "website": "Situs Web LearnHouse",
+      "website": "Situs Web ZeroKnowledge",
       "discord": "Discord",
       "report_feedback": "Laporkan Masalah atau Umpan Balik",
       "feedback_title": "Kirim Umpan Balik",
-      "feedback_description": "Bantu kami meningkatkan LearnHouse dengan berbagi pemikiran Anda, melaporkan bug, atau menyarankan fitur baru.",
+      "feedback_description": "Bantu kami meningkatkan ZeroKnowledge dengan berbagi pemikiran Anda, melaporkan bug, atau menyarankan fitur baru.",
       "feedback_placeholder": "Beritahu kami apa yang Anda pikirkan...",
       "feedback_success": "Terima kasih atas umpan balik Anda!",
       "send_feedback": "Kirim Umpan Balik",
@@ -215,7 +215,7 @@
     "organizations": "Organisasi",
     "billing": "Tagihan",
     "create_organization": "Buat organisasi",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "Tidak dapat menghapus organisasi ini. Silakan coba lagi.",
     "org_actions": "Tindakan organisasi",
     "manage_upgrade": "Kelola / Tingkatkan",
@@ -381,11 +381,11 @@
     "privacy_policy": "Kebijakan Privasi",
     "image_title_forgot": "Atur ulang kata sandi Anda.",
     "image_subtitle_forgot": "Kami akan membantu Anda kembali ke akun Anda dalam sekejap.",
-    "image_title_login": "Selamat datang kembali di LearnHouse.",
+    "image_title_login": "Selamat datang kembali di ZeroKnowledge.",
     "image_subtitle_login": "Lanjutkan dari tempat Anda berhenti: kursus, siswa, dan alat Anda sudah menanti.",
     "image_title_reset": "Hampir selesai.",
     "image_subtitle_reset": "Buat kata sandi yang kuat untuk menjaga keamanan akun Anda.",
-    "image_title_signup": "Mulai mengajar dengan LearnHouse.",
+    "image_title_signup": "Mulai mengajar dengan ZeroKnowledge.",
     "image_subtitle_signup": "Buat akun Anda dan luncurkan kursus pertama Anda dalam hitungan menit.",
     "image_title_verify": "Verifikasi email Anda.",
     "image_subtitle_verify": "Satu langkah cepat untuk mengamankan akun Anda dan memulai.",
@@ -576,14 +576,14 @@
     "import": {
       "scorm_package": "Paket SCORM",
       "scorm_description": "Impor paket SCORM 1.2 atau SCORM 2004",
-      "learnhouse_courses": "Kursus LearnHouse",
-      "learnhouse_description": "Impor kursus yang diekspor dari LearnHouse",
+      "learnhouse_courses": "Kursus ZeroKnowledge",
+      "learnhouse_description": "Impor kursus yang diekspor dari ZeroKnowledge",
       "upload_package": "Unggah Paket",
       "configure": "Konfigurasi",
       "complete": "Selesai",
       "click_to_upload": "Klik untuk mengunggah atau seret dan lepas",
-      "learnhouse_format": "Ekspor kursus LearnHouse (.zip)",
-      "learnhouse_info": "Unggah paket ekspor kursus LearnHouse (.zip). Anda dapat memilih kursus mana yang akan diimpor dan mengkonfigurasi opsi impor.",
+      "learnhouse_format": "Ekspor kursus ZeroKnowledge (.zip)",
+      "learnhouse_info": "Unggah paket ekspor kursus ZeroKnowledge (.zip). Anda dapat memilih kursus mana yang akan diimpor dan mengkonfigurasi opsi impor.",
       "analyze_package": "Analisis Paket",
       "ready_to_analyze": "Siap untuk dianalisis",
       "invalid_file_format": "Silakan unggah file .zip",
@@ -1456,7 +1456,7 @@
           "description": "Konfigurasikan pengaturan pribadi, kata sandi, email Anda"
         }
       },
-      "learnhouse_university": "Universitas LearnHouse",
+      "learnhouse_university": "Universitas ZeroKnowledge",
       "welcome_back": "Selamat datang kembali",
       "plan": "paket",
       "create_course": "Buat Kursus",
@@ -1513,8 +1513,8 @@
       "import_course": "Impor kursus",
       "import_scorm": "Impor Paket SCORM",
       "import_scorm_description": "Impor paket SCORM untuk membuat kursus baru",
-      "import_learnhouse": "Impor Kursus LearnHouse",
-      "import_learnhouse_description": "Impor kursus dari paket ekspor LearnHouse",
+      "import_learnhouse": "Impor Kursus ZeroKnowledge",
+      "import_learnhouse_description": "Impor kursus dari paket ekspor ZeroKnowledge",
       "import_select_type": "Pilih jenis paket yang ingin diimpor",
       "no_courses": "Belum ada kursus",
       "create_course_placeholder": "Buat kursus untuk menambahkan konten",
@@ -2362,9 +2362,9 @@
         "footer_text_desc": "Teks kustom yang ditampilkan di bagian bawah halaman organisasi Anda",
         "default_language": "Bahasa default",
         "default_language_desc": "Bahasa yang dilihat pengunjung baru secara default dan bahasa yang digunakan untuk email yang dikirim atas nama organisasi ini. Anggota tetap dapat mengganti bahasa antarmuka mereka.",
-        "watermark_desc": "Tampilkan watermark branding LearnHouse di halaman organisasi Anda",
+        "watermark_desc": "Tampilkan watermark branding ZeroKnowledge di halaman organisasi Anda",
         "watermark_free_plan": "Watermark selalu ditampilkan pada paket gratis",
-        "watermark_label": "Watermark \"Made with LearnHouse\"",
+        "watermark_label": "Watermark \"Made with ZeroKnowledge\"",
         "watermark_ee": "Disembunyikan oleh lisensi Enterprise Edition Anda"
       },
       "images": {
@@ -5077,10 +5077,10 @@
       },
       "teach_the_world": {
         "title": "Belajar & berkembang",
-        "description": "Sumber daya untuk membantu Anda memaksimalkan LearnHouse.",
+        "description": "Sumber daya untuk membantu Anda memaksimalkan ZeroKnowledge.",
         "classroom": "Kelas",
         "classroom_desc": "Pelajari cara mengembangkan dan mengelola kursus Anda",
-        "university": "Universitas LearnHouse",
+        "university": "Universitas ZeroKnowledge",
         "university_desc": "Panduan, tips, dan praktik terbaik"
       },
       "add_content": {
@@ -5110,7 +5110,7 @@
       }
     },
     "welcome": {
-      "title": "Selamat datang di LearnHouse",
+      "title": "Selamat datang di ZeroKnowledge",
       "subtitle": "Buat kursus, undang pembelajar, dan bagikan pengetahuan dengan dunia.",
       "get_started": "Mulai",
       "features_title": "Semua yang Anda butuhkan",
@@ -5154,7 +5154,7 @@
   "embed": {
     "not_supported_description": "Tipe aktivitas ini memerlukan autentikasi dan tidak dapat disematkan.",
     "not_supported_title": "Aktivitas ini tidak didukung",
-    "powered_by": "Didukung oleh LearnHouse",
+    "powered_by": "Didukung oleh ZeroKnowledge",
     "visit_activity": "Kunjungi Halaman Aktivitas"
   },
   "migration": {
@@ -5659,7 +5659,7 @@
         "title": "Ingin mencoba?",
         "body": "Kunjungi",
         "link": "halaman Pengembang",
-        "suffix": "untuk mencoba LearnHouse."
+        "suffix": "untuk mencoba ZeroKnowledge."
       },
       "validation": {
         "required": "Wajib diisi",

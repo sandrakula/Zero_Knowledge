@@ -13,6 +13,7 @@ import toast from 'react-hot-toast'
 import type { CoursePlan, ChapterPlan, ActivityPlan, CreatedChapter } from '@services/ai/courseplanning'
 import {
   generateActivityContent,
+  generateCourseAssignments,
   parseActivityContentFromStream,
   ENABLE_ACTIVITY_CONTENT_GENERATION,
 } from '@services/ai/courseplanning'
@@ -91,7 +92,11 @@ function AICoursePreview({
       const parsedContent = parseActivityContentFromStream(fullContent)
       if (parsedContent) {
         try {
-          const result = await updateActivity({ content: parsedContent }, activityUuid, accessToken)
+          const result = await updateActivity(
+            { content: parsedContent, published: true },
+            activityUuid,
+            accessToken
+          )
           if (result.success) {
             setActivityStates((prev) => ({
               ...prev,
@@ -146,7 +151,32 @@ function AICoursePreview({
         }
       }
     }
+
+    if (sessionUuid) {
+      const assignmentResult = await generateCourseAssignments(sessionUuid, accessToken)
+      if (assignmentResult.success && (assignmentResult.tasks_created ?? 0) > 0) {
+        toast.success(
+          t('courses.create.ai.tasks_generated', {
+            defaultValue: 'Practical assignments generated',
+          })
+        )
+      } else if (!assignmentResult.success) {
+        toast.error(assignmentResult.error || 'Failed to generate assignments')
+      }
+    }
   }
+
+  const autoGenerationStarted = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!isCourseCreated || createdChapters.length === 0 || autoGenerationStarted.current) return
+    autoGenerationStarted.current = true
+    setActiveTab('content')
+    // The learner asked the AI for a finished course, not an empty outline:
+    // generate every lesson now instead of waiting for a second manual click.
+    void handleGenerateAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCourseCreated, createdChapters.length])
 
   // The tabs + content are ALWAYS rendered with the same structure
   return (

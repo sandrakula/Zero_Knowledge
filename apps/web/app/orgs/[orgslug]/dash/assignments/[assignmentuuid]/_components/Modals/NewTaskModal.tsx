@@ -8,6 +8,7 @@ import {
   ListChecks,
   PencilSimple,
   TextAa,
+  Notebook,
 } from '@phosphor-icons/react'
 import React from 'react'
 import toast from 'react-hot-toast';
@@ -91,6 +92,16 @@ const TASK_TYPES: TaskTypeConfig[] = [
     bgClass: 'bg-amber-50',
     stripeRgb: '253, 230, 138',
   },
+  {
+    value: 'NOTEBOOK',
+    Icon: Notebook,
+    labelKey: 'dashboard.assignments.editor.task_types.notebook.title',
+    descKey: 'dashboard.assignments.editor.task_types.notebook.description',
+    iconColor: 'text-indigo-500',
+    titleColor: 'text-indigo-900',
+    bgClass: 'bg-indigo-50',
+    stripeRgb: '199, 210, 254',
+  },
 ]
 
 function NewTaskModal({ closeModal, assignment_uuid }: any) {
@@ -114,13 +125,18 @@ function NewTaskModal({ closeModal, assignment_uuid }: any) {
   }
 
   async function createTask(type: string) {
+    const isNotebook = type === 'NOTEBOOK'
     const task_object = {
-      title: "Untitled Task",
+      title: isNotebook ? 'Notebook' : "Untitled Task",
       description: "",
       hint: "",
       reference_file: "",
-      assignment_type: type,
-      contents: {},
+      // Notebooks are stored as a CUSTOM task so no DB enum migration is
+      // needed; `contents.kind` is what the task viewer keys off.
+      assignment_type: isNotebook ? 'CUSTOM' : type,
+      contents: isNotebook
+        ? { kind: 'notebook', language_id: 71, cells: [] }
+        : {},
       max_grade_value: 100,
     }
     const existingTasks = queryClient.getQueryData<any[]>(queryKeys.assignments.tasks(assignment_uuid))

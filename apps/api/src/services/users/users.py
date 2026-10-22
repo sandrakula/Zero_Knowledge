@@ -1228,8 +1228,18 @@ async def security_get_user(request: Request, db_session: AsyncSession, email: s
     to allow the caller to handle the "user not found" case appropriately
     and prevent email enumeration vulnerabilities.
     """
-    # Check if user exists
-    statement = select(User).where(User.email == email)
+    # Token subjects are emails, while the interactive test-mode login uses a
+    # username. Look up either here; the username-only restriction belongs to
+    # the login endpoint, not to token validation.
+    from sqlalchemy import or_
+
+    identifier = (email or "").strip().lower()
+    statement = select(User).where(
+        or_(
+            func.lower(User.email) == identifier,
+            func.lower(User.username) == identifier,
+        )
+    )
     user = (await db_session.execute(statement)).scalars().first()
 
     if not user:

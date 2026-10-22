@@ -13,15 +13,15 @@ Task-type source of truth: ``src/db/courses/assignments.py`` +
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from src.services.ai.schemas.limits import AI_MESSAGE_MAX_CHARS
 
-# The subset of AssignmentTaskTypeEnum the AI can generate. CODE (Judge0 test
-# cases) and CUSTOM/OTHER (headless) are intentionally excluded; they need
-# human-authored specifics. Teachers add those manually.
+# The subset of AssignmentTaskTypeEnum the AI can generate. CUSTOM/OTHER
+# (headless) are intentionally excluded; they need caller-owned schemas.
+# CODE includes starter/solution and Judge0 test cases, validated server-side.
 AIGeneratableTaskType = Literal[
-    "QUIZ", "FORM", "SHORT_ANSWER", "NUMBER_ANSWER", "FILE_SUBMISSION"
+    "QUIZ", "FORM", "SHORT_ANSWER", "NUMBER_ANSWER", "FILE_SUBMISSION", "CODE"
 ]
 
 
@@ -75,6 +75,33 @@ class AINumberAnswerContents(BaseModel):
     explanation: Optional[str] = None
 
 
+class AICodeTestCase(BaseModel):
+    name: str
+    stdin: str = ""
+    expected_stdout: str = Field(
+        validation_alias=AliasChoices("expected_stdout", "expectedStdout")
+    )
+    hidden: bool = False
+
+
+class AICodeContents(BaseModel):
+    language_id: int = Field(
+        default=71,
+        validation_alias=AliasChoices("language_id", "languageId"),
+    )
+    starter_code: str = Field(
+        default="",
+        validation_alias=AliasChoices("starter_code", "starterCode"),
+    )
+    solution_code: str = Field(
+        validation_alias=AliasChoices("solution_code", "solutionCode")
+    )
+    test_cases: List[AICodeTestCase] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("test_cases", "testCases"),
+    )
+
+
 class AITask(BaseModel):
     title: str
     description: str
@@ -86,6 +113,7 @@ class AITask(BaseModel):
     form: Optional[AIFormContents] = None
     short_answer: Optional[AIShortAnswerContents] = None
     number_answer: Optional[AINumberAnswerContents] = None
+    code: Optional[AICodeContents] = None
 
 
 class AIAssignmentPlan(BaseModel):

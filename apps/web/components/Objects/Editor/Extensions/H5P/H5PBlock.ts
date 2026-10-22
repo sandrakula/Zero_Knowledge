@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic'
  H5P interactive content: EMBED ONLY, by design.
 
  The H5P core (the player, the editor, the content types) is AGPL-licensed, so
- vendoring it into LearnHouse would put the whole application under the AGPL.
+ vendoring it into ZeroKnowledge would put the whole application under the AGPL.
  We also do not accept, unpack or serve `.h5p` packages: hosting the runtime is
  the part that carries the licence obligation, and unpacking author-supplied
  archives is a file-handling risk we have no reason to take.

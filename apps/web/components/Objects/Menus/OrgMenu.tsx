@@ -1,7 +1,6 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import CopilotBubble from '@components/Copilot/CopilotBubble'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query/keys'
@@ -224,21 +223,6 @@ export const OrgMenu = (props: any) => {
                 </div>
               </AuthenticatedClientElement>
             )}
-            {/* AI Copilot */}
-            {rf?.ai?.enabled && config?.admin_toggles?.ai?.copilot_enabled !== false && (
-              <AuthenticatedClientElement checkMethod="authentication">
-                <div className="hidden md:flex">
-                  <CopilotMenuButton
-                    orgslug={orgslug}
-                    iconBtnClass={colors.iconBtn}
-                    isBubbleMode={isBubbleMode}
-                    onToggleBubbleMode={toggleBubbleMode}
-                    bubbleOpen={bubbleOpen}
-                    onOpenBubble={openBubbleWithSession}
-                  />
-                </div>
-              </AuthenticatedClientElement>
-            )}
             {/* Dashboard Dropdown - Only visible to admins */}
             {session?.status === 'authenticated' && rights?.dashboard?.action_access && (
               <div className="hidden md:flex">
@@ -411,15 +395,6 @@ export const OrgMenu = (props: any) => {
         userEmail={session?.data?.user?.email}
       />
 
-      {/* Copilot floating bubble */}
-      {isBubbleMode && (
-        <CopilotBubble
-          orgslug={orgslug}
-          open={bubbleOpen}
-          onOpenChange={setBubbleOpen}
-          sessionToLoad={bubbleSessionToLoad}
-        />
-      )}
     </>
   )
 }
@@ -460,7 +435,7 @@ const CopilotMenuButton = ({
             <DropdownMenuTrigger asChild>
               <button
                 className="relative p-2 rounded-lg transition-colors hover:bg-violet-500/10"
-                aria-label="Copilot"
+                aria-label="Tutor"
               >
                 <ChatCircle size={20} weight="fill" className="text-violet-500" />
                 {/* Active indicator dot */}
@@ -479,7 +454,7 @@ const CopilotMenuButton = ({
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex items-center gap-2">
           <ChatCircle size={16} weight="fill" className="text-violet-500" />
-          <span>Copilot</span>
+          <span>Tutor</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
@@ -559,12 +534,11 @@ const CopilotMenuButton = ({
 
 const LearnHouseLogo = ({ logoFilter }: { logoFilter: string }) => {
   return (
-    <Image
-      src="/lrn-text.svg"
-      alt="LearnHouse logo"
-      width={133}
-      height={40}
-      style={{ height: 'auto', filter: logoFilter }}
-    />
+    <span
+      className="text-[19px] font-black tracking-tight text-black whitespace-nowrap"
+      style={{ filter: logoFilter }}
+    >
+      ZeroKnowledge
+    </span>
   )
 }

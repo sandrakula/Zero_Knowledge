@@ -44,11 +44,11 @@
     "help": "Ajuda",
     "help_menu": {
       "documentation": "Documentação",
-      "website": "Site do LearnHouse",
+      "website": "Site do ZeroKnowledge",
       "discord": "Discord",
       "report_feedback": "Reportar problema ou feedback",
       "feedback_title": "Enviar Feedback",
-      "feedback_description": "Ajude-nos a melhorar o LearnHouse compartilhando suas opiniões, reportando bugs ou sugerindo novos recursos.",
+      "feedback_description": "Ajude-nos a melhorar o ZeroKnowledge compartilhando suas opiniões, reportando bugs ou sugerindo novos recursos.",
       "feedback_placeholder": "Diga-nos o que você está pensando...",
       "feedback_success": "Obrigado pelo seu feedback!",
       "send_feedback": "Enviar Feedback",
@@ -215,7 +215,7 @@
     "organizations": "Organizações",
     "billing": "Faturação",
     "create_organization": "Criar organização",
-    "copyright": "© {{year}} LearnHouse, Inc.",
+    "copyright": "© {{year}} ZeroKnowledge, Inc.",
     "delete_organization_error": "Não foi possível eliminar esta organização. Tente novamente.",
     "org_actions": "Ações da organização",
     "manage_upgrade": "Gerir / Fazer upgrade",
@@ -358,11 +358,11 @@
     "privacy_policy": "Política de Privacidade",
     "image_title_forgot": "Redefina a sua palavra-passe.",
     "image_subtitle_forgot": "Vamos ajudá-lo a voltar à sua conta num instante.",
-    "image_title_login": "Bem-vindo de volta ao LearnHouse.",
+    "image_title_login": "Bem-vindo de volta ao ZeroKnowledge.",
     "image_subtitle_login": "Continue de onde parou: os seus cursos, alunos e ferramentas estão à sua espera.",
     "image_title_reset": "Está quase.",
     "image_subtitle_reset": "Crie uma palavra-passe forte para manter a sua conta segura.",
-    "image_title_signup": "Comece a ensinar com o LearnHouse.",
+    "image_title_signup": "Comece a ensinar com o ZeroKnowledge.",
     "image_subtitle_signup": "Crie a sua conta e lance o seu primeiro curso em minutos.",
     "image_title_verify": "Verifique o seu e-mail.",
     "image_subtitle_verify": "Um passo rápido para proteger a sua conta e começar.",
@@ -554,14 +554,14 @@
     "import": {
       "scorm_package": "Pacote SCORM",
       "scorm_description": "Importar pacotes SCORM 1.2 ou SCORM 2004",
-      "learnhouse_courses": "Cursos LearnHouse",
-      "learnhouse_description": "Importar cursos exportados do LearnHouse",
+      "learnhouse_courses": "Cursos ZeroKnowledge",
+      "learnhouse_description": "Importar cursos exportados do ZeroKnowledge",
       "upload_package": "Enviar Pacote",
       "configure": "Configurar",
       "complete": "Concluído",
       "click_to_upload": "Clique para enviar ou arraste e solte",
-      "learnhouse_format": "Exportação de curso LearnHouse (.zip)",
-      "learnhouse_info": "Envie um pacote de exportação de cursos LearnHouse (.zip). Você poderá selecionar quais cursos importar e configurar as opções de importação.",
+      "learnhouse_format": "Exportação de curso ZeroKnowledge (.zip)",
+      "learnhouse_info": "Envie um pacote de exportação de cursos ZeroKnowledge (.zip). Você poderá selecionar quais cursos importar e configurar as opções de importação.",
       "analyze_package": "Analisar Pacote",
       "ready_to_analyze": "Pronto para analisar",
       "invalid_file_format": "Por favor, envie um arquivo .zip",
@@ -1434,7 +1434,7 @@
           "description": "Configurar suas definições pessoais, senhas e e-mail"
         }
       },
-      "learnhouse_university": "Universidade LearnHouse",
+      "learnhouse_university": "Universidade ZeroKnowledge",
       "welcome_back": "Bem-vindo de volta",
       "plan": "plano",
       "create_course": "Criar curso",
@@ -1491,8 +1491,8 @@
       "import_course": "Importar curso",
       "import_scorm": "Importar Pacote SCORM",
       "import_scorm_description": "Importar um pacote SCORM para criar um novo curso",
-      "import_learnhouse": "Importar Cursos LearnHouse",
-      "import_learnhouse_description": "Importar cursos de um pacote de exportação LearnHouse",
+      "import_learnhouse": "Importar Cursos ZeroKnowledge",
+      "import_learnhouse_description": "Importar cursos de um pacote de exportação ZeroKnowledge",
       "import_select_type": "Selecione o tipo de pacote que deseja importar",
       "no_courses": "Nenhum curso ainda",
       "create_course_placeholder": "Crie um curso para adicionar conteúdo",
@@ -2330,8 +2330,8 @@
         "label_placeholder": "Selecione o rótulo da organização",
         "about": "Sobre a Organização",
         "about_placeholder": "Descrição detalhada da sua organização",
-        "showcase_explore": "Exibir no LearnHouse Explore",
-        "showcase_description": "Compartilhe os cursos e conteúdos da sua organização com a comunidade LearnHouse. Ative isso para ajudar os alunos a descobrir seus valiosos recursos educacionais.",
+        "showcase_explore": "Exibir no ZeroKnowledge Explore",
+        "showcase_description": "Compartilhe os cursos e conteúdos da sua organização com a comunidade ZeroKnowledge. Ative isso para ajudar os alunos a descobrir seus valiosos recursos educacionais.",
         "save_changes": "Salvar Alterações",
         "saving": "Salvando...",
         "update_success": "Organização Atualizada",
@@ -2342,9 +2342,9 @@
         "footer_text_desc": "Texto personalizado exibido na parte inferior das páginas da sua organização",
         "default_language": "Idioma padrão",
         "default_language_desc": "O idioma que novos visitantes veem por padrão e o idioma usado nos e-mails enviados em nome desta organização. Os membros ainda podem alterar o seu próprio idioma de interface.",
-        "watermark_desc": "Mostrar marca d'água LearnHouse nas páginas da organização",
+        "watermark_desc": "Mostrar marca d'água ZeroKnowledge nas páginas da organização",
         "watermark_free_plan": "A marca d'água é sempre exibida no plano gratuito",
-        "watermark_label": "Marca d'água \"Made with LearnHouse\"",
+        "watermark_label": "Marca d'água \"Made with ZeroKnowledge\"",
         "watermark_ee": "Oculto pela sua licença Enterprise Edition"
       },
       "images": {
@@ -4801,10 +4801,10 @@
       },
       "teach_the_world": {
         "title": "Aprenda e cresça",
-        "description": "Recursos para ajudá-lo a aproveitar ao máximo o LearnHouse.",
+        "description": "Recursos para ajudá-lo a aproveitar ao máximo o ZeroKnowledge.",
         "classroom": "A sala de aula",
         "classroom_desc": "Aprenda a expandir e gerenciar seus cursos",
-        "university": "Universidade LearnHouse",
+        "university": "Universidade ZeroKnowledge",
         "university_desc": "Guias, dicas e melhores práticas"
       },
       "add_content": {
@@ -4834,7 +4834,7 @@
       }
     },
     "welcome": {
-      "title": "Bem-vindo ao LearnHouse",
+      "title": "Bem-vindo ao ZeroKnowledge",
       "subtitle": "Crie cursos, convide alunos e compartilhe conhecimento com o mundo.",
       "get_started": "Começar",
       "features_title": "Tudo o que você precisa",
@@ -5134,7 +5134,7 @@
   "embed": {
     "not_supported_description": "Este tipo de atividade requer autenticação e não pode ser incorporado.",
     "not_supported_title": "Esta atividade não é suportada",
-    "powered_by": "Desenvolvido com LearnHouse",
+    "powered_by": "Desenvolvido com ZeroKnowledge",
     "visit_activity": "Visitar página da atividade"
   },
   "migration": {
@@ -5639,7 +5639,7 @@
         "title": "Quer experimentar?",
         "body": "Vá à",
         "link": "página de Programadores",
-        "suffix": "para experimentar o LearnHouse."
+        "suffix": "para experimentar o ZeroKnowledge."
       },
       "validation": {
         "required": "Obrigatório",

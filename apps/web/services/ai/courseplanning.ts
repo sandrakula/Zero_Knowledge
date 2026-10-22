@@ -314,6 +314,41 @@ export async function generateActivityContent(
 }
 
 /**
+ * Generate one graded assignment with several tasks from the finalized course.
+ */
+export async function generateCourseAssignments(
+  sessionUuid: string,
+  accessToken: string
+): Promise<{ success: boolean; tasks_created?: number; error?: string }> {
+  try {
+    const response = await fetch(`${getAPIUrl()}ai/courseplanning/generate-assignments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ session_uuid: sessionUuid }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      return {
+        success: false,
+        error: errorData.detail || `HTTP error ${response.status}`,
+      }
+    }
+
+    const data = await response.json()
+    return { success: true, tasks_created: data.tasks_created ?? 0 }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    }
+  }
+}
+
+/**
  * Save AI-generated content to an activity
  */
 export async function saveActivityContent(
@@ -498,11 +533,214 @@ export function parseCoursePlanFromStream(streamContent: string): CoursePlan | n
     }
 
     // Parse the JSON
-    const data = JSON.parse(cleaned)
+    const data = parseModelJson(cleaned)
     return data as CoursePlan
   } catch (error) {
     console.error('Failed to parse course plan:', error)
     return null
+  }
+}
+
+/**
+ * Remove commas immediately before `}` or `]`, skipping string contents so
+ * punctuation inside prose is left alone.
+ */
+function removeTrailingCommas(input: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+
+  for (const char of input) {
+    if (inString) {
+      out += char
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      out += char
+      continue
+    }
+
+    if (char === '}' || char === ']') {
+      out = out.replace(/,\s*$/, '')
+    }
+    out += char
+  }
+
+  return out
+}
+
+function insertMissingCommas(input: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]
+
+    if (inString) {
+      out += char
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      out += char
+      continue
+    }
+
+    out += char
+
+    // A completed object/array or string followed directly by another value
+    // means the model omitted a comma between elements/properties.
+    if (char === '}' || char === ']' || char === '"') {
+      let next = index + 1
+      while (next < input.length && /\s/.test(input[next])) next++
+      const following = input[next]
+      if (
+        following === '{' ||
+        following === '[' ||
+        following === '"' ||
+        following === '-' ||
+        /[0-9tfn]/.test(following ?? '')
+      ) {
+        out += ','
+      }
+    }
+  }
+
+  return out
+}
+
+/**
+ * Fix string-level damage common in model JSON: literal newlines, unescaped
+ * inner quotes (e.g. «Он сказал "да"»), and a dangling backslash.
+ */
+function repairJsonStrings(input: string): string {
+  let out = ''
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]
+
+    if (!inString) {
+      if (char === '"') {
+        inString = true
+      }
+      out += char
+      continue
+    }
+
+    if (escaped) {
+      out += char
+      escaped = false
+      continue
+    }
+
+    if (char === '\\') {
+      out += char
+      escaped = true
+      continue
+    }
+
+    if (char === '\n') {
+      out += '\\n'
+      continue
+    }
+    if (char === '\r') {
+      out += '\\r'
+      continue
+    }
+    if (char === '\t') {
+      out += '\\t'
+      continue
+    }
+
+    if (char === '"') {
+      let next = index + 1
+      while (next < input.length && /\s/.test(input[next])) next++
+      const following = input[next]
+      let closes =
+        following === undefined ||
+        following === ':' ||
+        following === ',' ||
+        following === '}' ||
+        following === ']'
+
+      if (following === '"') {
+        // `""` at the end of a sentence is a content quote followed by the
+        // JSON terminator; `" "` between array values is a missing comma.
+        let afterNext = next + 1
+        while (afterNext < input.length && /\s/.test(input[afterNext])) afterNext++
+        const after = input[afterNext]
+        closes = !(
+          after === undefined ||
+          after === ':' ||
+          after === ',' ||
+          after === '}' ||
+          after === ']'
+        )
+      }
+
+      if (closes) {
+        inString = false
+        out += '"'
+      } else {
+        // A quote followed by a letter/punctuation is prose, not the end of
+        // the JSON string.
+        out += '\\"'
+      }
+      continue
+    }
+
+    out += char
+  }
+
+  if (inString && escaped) {
+    out = out.slice(0, -1)
+  }
+  if (inString) {
+    out += '"'
+  }
+
+  return out
+}
+
+/**
+ * Parse JSON emitted by a model. Models occasionally add a trailing comma
+ * before `}`/`]`, omit a comma between two elements, or leave quotes inside a
+ * Russian/English sentence unescaped. Try the exact text first, then apply
+ * the repairs.
+ */
+function parseModelJson(cleaned: string): any {
+  try {
+    return JSON.parse(cleaned)
+  } catch (firstError) {
+    const withoutBom = cleaned.replace(/^\uFEFF/, '')
+    const repaired = insertMissingCommas(
+      removeTrailingCommas(repairJsonStrings(withoutBom))
+    )
+    try {
+      return JSON.parse(repaired)
+    } catch {
+      throw firstError
+    }
   }
 }
 
@@ -611,8 +849,8 @@ export function parseActivityContentFromStream(streamContent: string): any | nul
       }
     }
 
-    // Parse the JSON
-    const parsed = JSON.parse(cleaned)
+    // Parse the JSON (tolerating trailing commas emitted by the model)
+    const parsed = parseModelJson(cleaned)
 
     // Validate ProseMirror structure
     const validation = validateProseMirrorDoc(parsed)
