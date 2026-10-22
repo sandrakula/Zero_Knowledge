@@ -32,6 +32,16 @@ SEED_NAME = "informatics"
 SEED_FILE = Path(__file__).with_name("informatics_seed.json")
 
 
+def _json_value(value):
+    """asyncpg returns JSON columns as strings; the fixture may store either."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return {}
+    return value or {}
+
+
 async def ensure_default_informatics_course() -> None:
     """Create the bundled course once; never raise into application startup."""
     if os.getenv("TESTING", "false").lower() == "true":
@@ -120,9 +130,9 @@ async def ensure_default_informatics_course() -> None:
                         name=activity_data["name"],
                         activity_type=ActivityTypeEnum(activity_data["activity_type"]),
                         activity_sub_type=ActivitySubTypeEnum(activity_data["activity_sub_type"]),
-                        content=activity_data.get("content") or {},
-                        details=activity_data.get("details") or {},
-                        extra_metadata=activity_data.get("extra_metadata") or {},
+                        content=_json_value(activity_data.get("content")),
+                        details=_json_value(activity_data.get("details")),
+                        extra_metadata=_json_value(activity_data.get("extra_metadata")),
                         published=True,
                         lock_type=ActivityLockType.PUBLIC,
                         course_id=course.id,
@@ -181,7 +191,7 @@ async def ensure_default_informatics_course() -> None:
                                 assignment_type=AssignmentTaskTypeEnum(
                                     task_data["assignment_type"]
                                 ),
-                                contents=task_data.get("contents") or {},
+                                contents=_json_value(task_data.get("contents")),
                                 max_grade_value=int(task_data.get("max_grade_value") or 100),
                                 order=task_index,
                                 assignment_id=assignment.id,
