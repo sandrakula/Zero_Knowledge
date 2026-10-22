@@ -348,7 +348,7 @@ function TaskFormObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskFor
             assignment_task_submission_uuid: userSubmissions.assignment_task_submission_uuid,
             task_submission: userSubmissions,
             grade: finalGrade,
-            task_submission_grade_feedback: 'Auto graded by system',
+            task_submission_grade_feedback: '',
             manually_graded: false,
         };
 

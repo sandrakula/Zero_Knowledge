@@ -44,7 +44,7 @@ function NewAssignment({ submitActivity: _submitActivity, chapterId, course, clo
   const [activityDescription, setActivityDescription] = React.useState('')
   const [dueDate, setDueDate] = React.useState('')
   const [gradingType, setGradingType] = React.useState('ALPHABET')
-  const [autoGrading, setAutoGrading] = React.useState(false)
+  const [autoGrading] = React.useState(false)
   const [antiCopyPaste, setAntiCopyPaste] = React.useState(false)
   const [showCorrectAnswers, setShowCorrectAnswers] = React.useState(false)
   const [allowRetries, setAllowRetries] = React.useState(false)
@@ -256,15 +256,6 @@ function NewAssignment({ submitActivity: _submitActivity, chapterId, course, clo
             checked={ungraded}
             onChange={setUngraded}
           />
-          {!ungraded && (
-          <SmallToggleRow
-            icon={<Zap size={16} className="text-amber-500" />}
-            label={t('dashboard.assignments.modals.create.form.auto_grading_label')}
-            description={t('dashboard.assignments.modals.create.form.auto_grading_description')}
-            checked={autoGrading}
-            onChange={setAutoGrading}
-          />
-          )}
           <SmallToggleRow
             icon={<Shield size={16} className="text-cyan-500" />}
             label={t('dashboard.assignments.modals.create.form.anti_copy_paste_label')}

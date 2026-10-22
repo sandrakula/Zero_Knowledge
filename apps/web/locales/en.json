@@ -5111,14 +5111,14 @@
             "grading_types": {
               "alphabet": "Alphabet",
               "numeric": "Numeric",
-              "percentage": "Percentage",
+              "percentage": "Standard",
               "pass_fail": "Pass / Fail",
               "gpa_scale": "GPA Scale"
             },
             "grading_type_descriptions": {
               "alphabet": "A, B, C, D, F letter grades",
               "numeric": "Score from 0 to 100",
-              "percentage": "Grade as a percentage",
+              "percentage": "Standard grade",
               "pass_fail": "Simple pass or fail",
               "gpa_scale": "4.0 grade point scale"
             },
@@ -5183,14 +5183,14 @@
             "grading_types": {
               "alphabet": "Alphabet",
               "numeric": "Numeric",
-              "percentage": "Percentage",
+              "percentage": "Standard",
               "pass_fail": "Pass / Fail",
               "gpa_scale": "GPA Scale"
             },
             "grading_type_descriptions": {
               "alphabet": "A, B, C, D, F letter grades",
               "numeric": "Score from 0 to 100",
-              "percentage": "Grade as a percentage",
+              "percentage": "Standard grade",
               "pass_fail": "Simple pass or fail",
               "gpa_scale": "4.0 grade point scale"
             },

@@ -408,21 +408,6 @@ const EditAssignmentForm: React.FC<EditAssignmentFormProps> = ({
                     </p>
                 </div>
                 <div className="space-y-2">
-                    {!formik.values.ungraded && (
-                    <ToggleRow
-                        icon={<Zap size={16} className="text-amber-500" />}
-                        label={t('dashboard.assignments.modals.edit.form.auto_grading_label')}
-                        description={
-                            hasFileSubmissionTask
-                                ? t('dashboard.assignments.modals.edit.form.auto_grading_disabled_file')
-                                : t('dashboard.assignments.modals.edit.form.auto_grading_description')
-                        }
-                        checked={!hasFileSubmissionTask && formik.values.auto_grading}
-                        disabled={hasFileSubmissionTask}
-                        onChange={(v) => formik.setFieldValue('auto_grading', v, true)}
-                        warning={hasFileSubmissionTask}
-                    />
-                    )}
                     <ToggleRow
                         icon={<Shield size={16} className="text-cyan-500" />}
                         label={t('dashboard.assignments.modals.edit.form.anti_copy_paste_label')}

@@ -564,7 +564,7 @@ function TaskQuizObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskQui
                 assignment_task_submission_uuid: userSubmissions.assignment_task_submission_uuid,
                 task_submission: userSubmissions,
                 grade: finalGrade,
-                task_submission_grade_feedback: 'Auto graded by system',
+                task_submission_grade_feedback: '',
                 manually_graded: false,
             };
 

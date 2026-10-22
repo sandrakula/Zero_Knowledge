@@ -729,7 +729,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         finalGrade = totalCount > 0 ? Math.round((passedCount / totalCount) * maxPoints) : 0
       }
 
-      const feedback = `Auto graded: ${passedCount}/${totalCount} tests passed, ${finalGrade}/${maxPoints} points`
+      const feedback = ''
 
       const values = {
         assignment_task_submission_uuid: userSubmissions.assignment_task_submission_uuid,

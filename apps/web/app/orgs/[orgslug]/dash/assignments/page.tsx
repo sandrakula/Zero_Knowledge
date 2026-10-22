@@ -26,7 +26,6 @@ import {
   ThumbsUp,
   UserRoundPen,
   X,
-  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import React, { useMemo, useState } from 'react'
@@ -119,7 +118,6 @@ function AssignmentsHome() {
   // === Filter / search state ===
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [autoGradedOnly, setAutoGradedOnly] = useState(false)
 
   // === Stats (computed from the unfiltered data) ===
   const stats = useMemo(() => {
@@ -128,7 +126,6 @@ function AssignmentsHome() {
       total: allAssignments.length,
       published: allAssignments.filter((a: any) => a.published).length,
       drafts: allAssignments.filter((a: any) => !a.published).length,
-      auto_graded: allAssignments.filter((a: any) => a.auto_grading).length,
     }
   }, [courseAssignments])
 
@@ -145,8 +142,6 @@ function AssignmentsHome() {
     // Status pill
     if (statusFilter === 'published' && !assignment.published) return false
     if (statusFilter === 'drafts' && assignment.published) return false
-    // Auto-graded toggle
-    if (autoGradedOnly && !assignment.auto_grading) return false
     return true
   }
 
@@ -162,7 +157,7 @@ function AssignmentsHome() {
         return { course: courses[index], assignments: filtered, originalCount: (assignments || []).length }
       })
       .filter((r: any) => r.assignments.length > 0)
-  }, [courseAssignments, courses, searchQuery, statusFilter, autoGradedOnly])
+  }, [courseAssignments, courses, searchQuery, statusFilter])
 
   const filteredAssignmentTotal = filteredCourseRows.reduce(
     (sum: number, row: any) => sum + row.assignments.length,
@@ -213,11 +208,6 @@ function AssignmentsHome() {
             label={t('dashboard.assignments.home.stats.drafts')}
             value={stats.drafts}
           />
-          <StatPill
-            icon={<Zap size={14} className="text-amber-500" />}
-            label={t('dashboard.assignments.home.stats.auto_graded')}
-            value={stats.auto_graded}
-          />
         </div>
 
         {/* Toolbar */}
@@ -265,16 +255,6 @@ function AssignmentsHome() {
             />
           </div>
 
-          {/* Toggles */}
-          <div className='flex gap-1.5'>
-            <FilterPill
-              icon={<Zap size={12} />}
-              label={t('dashboard.assignments.home.filters.auto_graded')}
-              active={autoGradedOnly}
-              activeClass='bg-amber-500 text-white'
-              onClick={() => setAutoGradedOnly((v) => !v)}
-            />
-          </div>
         </div>
 
         {/* Content */}
@@ -328,16 +308,15 @@ function AssignmentsHome() {
               <Inbox size={28} />
             </div>
             <p className='text-sm font-semibold'>
-              {searchQuery || statusFilter !== 'all' || autoGradedOnly
+              {searchQuery || statusFilter !== 'all'
                 ? t('dashboard.assignments.home.empty_filtered')
                 : t('dashboard.assignments.home.empty')}
             </p>
-            {(searchQuery || statusFilter !== 'all' || autoGradedOnly) ? (
+            {(searchQuery || statusFilter !== 'all') ? (
               <button
                 onClick={() => {
                   setSearchQuery('')
                   setStatusFilter('all')
-                  setAutoGradedOnly(false)
                 }}
                 className='text-xs text-gray-500 hover:text-gray-700 underline'
               >
@@ -565,16 +544,10 @@ function AssignmentCard({
 
       {/* Badges row */}
       <div className='flex items-center gap-1.5 flex-wrap mb-3'>
-        {gradingBadge && (
+        {gradingBadge && assignment.grading_type !== 'PERCENTAGE' && (
           <span className={`${BADGE_BASE} ${gradingBadge.color}`}>
             {gradingBadge.icon}
             <span>{t(gradingBadge.labelKey)}</span>
-          </span>
-        )}
-        {assignment.auto_grading && (
-          <span className={`${BADGE_BASE} ${BADGE_AMBER}`}>
-            <Zap size={13} />
-            <span>{t('dashboard.assignments.detail.header_badges.auto_grading')}</span>
           </span>
         )}
         {assignment.anti_copy_paste && (

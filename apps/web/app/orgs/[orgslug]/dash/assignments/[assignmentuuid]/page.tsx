@@ -16,8 +16,7 @@ import {
     ThumbsUp,
     UserRoundPen,
     Backpack,
-    Zap,
-    BarChart3,
+      BarChart3,
     ClipboardCheck,
 } from 'lucide-react'
 import React, { useEffect } from 'react'
@@ -338,16 +337,10 @@ function AssignmentInfoBadges() {
                     <ClipboardCheck size={13} />
                     <span>{t('assignments.ungraded_badge', { defaultValue: 'Not graded' })}</span>
                 </div>
-            ) : gradingDisplay && (
+            ) : gradingDisplay && gradingType !== 'PERCENTAGE' && (
                 <div className={`${BADGE_BASE} ${gradingDisplay.color}`}>
                     {gradingDisplay.icon}
                     <span>{t(gradingDisplay.labelKey)}</span>
-                </div>
-            )}
-            {obj.auto_grading && (
-                <div className={`${BADGE_BASE} ${BADGE_AMBER}`}>
-                    <Zap size={13} />
-                    <span>{t('dashboard.assignments.detail.header_badges.auto_grading')}</span>
                 </div>
             )}
             {obj.anti_copy_paste && (
