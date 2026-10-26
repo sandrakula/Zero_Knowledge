@@ -17,6 +17,7 @@ from src.db.courses.activities import Activity
 from src.db.courses.assignments import (
     Assignment,
     AssignmentTask,
+    AssignmentTaskSubmission,
     AssignmentUserSubmission,
     AssignmentUserSubmissionStatus,
 )
@@ -61,6 +62,15 @@ class CourseProgressSummary(BaseModel):
     limit: int
     assignments: List[CourseProgressAssignment] = []
     students: List[CourseProgressStudent] = []
+
+
+class MyTaskProgressEntry(BaseModel):
+    total: int = 0
+    solved: int = 0
+
+
+class MyTaskProgress(BaseModel):
+    activities: dict[str, MyTaskProgressEntry] = {}
 
 
 async def get_course_progress_summary(
@@ -239,4 +249,113 @@ async def get_course_progress_summary(
         limit=limit,
         assignments=assignment_cards,
         students=students,
+    )
+
+
+async def get_my_task_progress(
+    course_uuid: str,
+    user_id: int,
+    db_session: AsyncSession,
+) -> MyTaskProgress:
+    """Per-activity solved/total CODE task counts for one learner.
+
+    ``solved`` means a stored task submission whose grade reached the task's
+    maximum. The course page renders these next to each chapter/assignment.
+    """
+    course = (
+        await db_session.execute(
+            select(Course).where(Course.course_uuid == course_uuid)
+        )
+    ).scalars().first()
+    if not course:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    assignment_rows = (
+        await db_session.execute(
+            select(Assignment.id, Activity.activity_uuid)
+            .join(Activity, Activity.id == Assignment.activity_id)  # type: ignore
+            .where(Assignment.course_id == course.id)
+        )
+    ).all()
+    assignment_to_activity = {
+        int(assignment_id): activity_uuid
+        for assignment_id, activity_uuid in assignment_rows
+        if assignment_id is not None and activity_uuid
+    }
+    if not assignment_to_activity:
+        return MyTaskProgress(activities={})
+
+    task_rows = (
+        await db_session.execute(
+            select(
+                AssignmentTask.id,
+                AssignmentTask.assignment_id,
+                AssignmentTask.max_grade_value,
+            ).where(
+                AssignmentTask.assignment_id.in_(  # type: ignore[attr-defined]
+                    list(assignment_to_activity)
+                )
+            )
+        )
+    ).all()
+    task_max = {
+        int(task_id): int(max_grade or 0)
+        for task_id, _assignment_id, max_grade in task_rows
+        if task_id is not None
+    }
+    per_activity_total: dict[str, int] = {}
+    for _task_id, assignment_id, _max_grade in task_rows:
+        activity_uuid = assignment_to_activity.get(int(assignment_id))
+        if activity_uuid:
+            per_activity_total[activity_uuid] = per_activity_total.get(activity_uuid, 0) + 1
+
+    solved_ids: set[int] = set()
+    if task_max:
+        submission_rows = (
+            await db_session.execute(
+                select(
+                    AssignmentTaskSubmission.assignment_task_id,
+                    AssignmentTaskSubmission.grade,
+                ).where(
+                    AssignmentTaskSubmission.user_id == user_id,
+                    AssignmentTaskSubmission.assignment_task_id.in_(  # type: ignore[attr-defined]
+                        list(task_max)
+                    ),
+                )
+            )
+        ).all()
+        solved_ids = {
+            int(task_id)
+            for task_id, grade in submission_rows
+            if task_id is not None
+            and task_max.get(int(task_id), 0) > 0
+            and int(grade or 0) >= task_max[int(task_id)]
+        }
+
+    per_activity_solved: dict[str, int] = {}
+    for task_id in solved_ids:
+        assignment_id = next(
+            (
+                int(assignment_id)
+                for tid, assignment_id, _max_grade in task_rows
+                if int(tid) == task_id
+            ),
+            None,
+        )
+        if assignment_id is None:
+            continue
+        activity_uuid = assignment_to_activity.get(assignment_id)
+        if activity_uuid:
+            per_activity_solved[activity_uuid] = per_activity_solved.get(activity_uuid, 0) + 1
+
+    return MyTaskProgress(
+        activities={
+            activity_uuid: MyTaskProgressEntry(
+                total=total,
+                solved=per_activity_solved.get(activity_uuid, 0),
+            )
+            for activity_uuid, total in per_activity_total.items()
+        }
     )

@@ -2569,3 +2569,17 @@
   display: block;
 }
 
+/* Code analysis gutter: line-level decorations from CodeMirror. */
+.cm-analysis-error {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+  box-shadow: inset 3px 0 0 #f43f5e;
+}
+.cm-analysis-warning {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.cm-analysis-info {
+  background-color: rgba(14, 165, 233, 0.11) !important;
+  box-shadow: inset 3px 0 0 #0ea5e9;
+}
+

@@ -285,6 +285,19 @@ export async function submitAssignmentForGrading(
   return res
 }
 
+export async function submitAssignmentTaskForGrading(
+  assignmentUUID: string,
+  assignmentTaskUUID: string,
+  body: Record<string, unknown>,
+  access_token: string
+) {
+  const result = await fetch(
+    `${getAPIUrl()}assignments/${assignmentUUID}/tasks/${assignmentTaskUUID}/submit`,
+    RequestBodyWithAuthHeader('POST', body, null, access_token)
+  )
+  return await getResponseMetadata(result)
+}
+
 export async function deleteUserSubmission(
   user_id: string,
   assignmentUUID: string,

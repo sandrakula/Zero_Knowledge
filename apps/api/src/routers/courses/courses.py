@@ -13,7 +13,7 @@ from src.db.courses.course_updates import (
     CourseUpdateRead,
     CourseUpdateUpdate,
 )
-from src.db.users import PublicUser
+from src.db.users import AnonymousUser, PublicUser
 from src.db.courses.courses import (
     Course,
     CourseCreate,
@@ -47,7 +47,9 @@ from src.services.courses.updates import (
 )
 from src.services.courses.progress import (
     CourseProgressSummary,
+    MyTaskProgress,
     get_course_progress_summary,
+    get_my_task_progress,
 )
 from src.services.courses.struggle import StruggleMap, get_course_struggle_map
 from src.services.courses.contributors import (
@@ -1112,6 +1114,30 @@ async def api_get_course_progress_summary(
     return await get_course_progress_summary(
         course_uuid, db_session, page=page, limit=limit
     )
+
+
+@router.get(
+    "/{course_uuid}/my-task-progress",
+    response_model=MyTaskProgress,
+    summary="My solved/total task counts per activity",
+    description="Learner-facing progress for the course page: for every assignment activity, how many CODE tasks the current user has solved out of the total.",
+    responses={
+        200: {"description": "Per-activity task progress."},
+        404: {"description": "Course not found"},
+    },
+)
+async def api_get_my_task_progress(
+    request: Request,
+    course_uuid: str,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser | AnonymousUser = Depends(get_current_user),
+) -> MyTaskProgress:
+    await check_resource_access(
+        request, db_session, current_user, course_uuid, AccessAction.READ
+    )
+    if isinstance(current_user, AnonymousUser):
+        return MyTaskProgress(activities={})
+    return await get_my_task_progress(course_uuid, current_user.id, db_session)
 
 
 @router.get(

@@ -32,7 +32,12 @@ const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
 
 export default function StudentDashboard() {
   const { t } = useTranslation()
-  const session = useLHSession() as { data?: { tokens?: { access_token?: string }; user?: any } }
+  const session = useLHSession() as {
+    data?: {
+      tokens?: { access_token?: string }
+      user?: { first_name?: string; username?: string }
+    }
+  }
   const token = session?.data?.tokens?.access_token
   const name = session?.data?.user?.first_name || session?.data?.user?.username || ''
 

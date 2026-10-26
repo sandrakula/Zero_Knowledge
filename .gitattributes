@@ -1,0 +1,6 @@
+# Keep shell entrypoints LF on Windows checkouts: CRLF makes the kernel look
+# for an interpreter literally named "/bin/sh\r" and the container cannot start.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.runner text eol=lf

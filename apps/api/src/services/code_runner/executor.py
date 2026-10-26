@@ -32,6 +32,13 @@ MAX_WALL_SECONDS = 60.0
 MAX_OUTPUT_CHARS = 128 * 1024  # cap captured stdout/stderr before truncation
 COMPILE_MEMORY_MB = 1024  # compilers need far more memory than the running program
 
+# The browser-facing runner talks to the host Docker daemon, which resolves
+# bind-mount paths on the *host*, not inside this container. Deployments that
+# mount a shared named volume here set both variables so submission files are
+# passed to the sandbox through that volume instead of a container-local path.
+WORK_ROOT = os.environ.get("RUNNER_WORK_ROOT")
+WORK_VOLUME = os.environ.get("RUNNER_WORK_VOLUME")
+
 
 class ExecutionError(Exception):
     """The sandbox itself failed (docker missing, image pull, daemon down)."""
@@ -77,13 +84,23 @@ def _truncate(text: str | None, limit: int = MAX_OUTPUT_CHARS) -> str | None:
     return text[:limit] + f"\n...[truncated {len(text) - limit} chars]"
 
 
+def _work_mount(workdir: str) -> list[str]:
+    if WORK_VOLUME and WORK_ROOT:
+        relative = os.path.relpath(workdir, WORK_ROOT).replace(os.sep, "/")
+        return [
+            "--mount",
+            f"type=volume,source={WORK_VOLUME},target=/work,volume-subpath={relative}",
+        ]
+    return ["-v", f"{workdir}:/work:rw"]
+
+
 def _docker_base(workdir: str, cpu: float, mem_kb: int, wall: float) -> list[str]:
     mem_mb = max(8, mem_kb // 1024)
     return [
         "docker", "run", "--rm",
         "-i",  # keep stdin open for the program
         "-w", "/work",
-        "-v", f"{workdir}:/work:rw",
+        *_work_mount(workdir),
         "--network", "none",
         "--memory", f"{mem_mb}m",
         "--memory-swap", f"{mem_mb}m",
@@ -157,7 +174,11 @@ def execute(
     mem_kb = _clamp_memory(memory_limit)
     wall = _clamp_wall(cpu, wall_time_limit)
 
-    workdir = tempfile.mkdtemp(prefix="coderun_")
+    if WORK_ROOT:
+        os.makedirs(WORK_ROOT, exist_ok=True)
+        workdir = tempfile.mkdtemp(prefix="coderun_", dir=WORK_ROOT)
+    else:
+        workdir = tempfile.mkdtemp(prefix="coderun_")
     try:
         source_path = os.path.join(workdir, lang.filename)
         with open(source_path, "w", encoding="utf-8") as fh:
@@ -170,7 +191,7 @@ def execute(
         compile_output = None
         if lang.compile_cmd:
             cmd = ["docker", "run", "--rm", "-w", "/work",
-                   "-v", f"{workdir}:/work:rw", "--network", "none",
+                   *_work_mount(workdir), "--network", "none",
                    "--memory", f"{COMPILE_MEMORY_MB}m",
                    "--pids-limit", "256", "--cap-drop", "ALL",
                    "--security-opt", "no-new-privileges",

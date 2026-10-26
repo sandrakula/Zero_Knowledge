@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Send, Loader2, Paperclip, X, Image as ImageIcon, Link as LinkIcon, FileText, Video } from 'lucide-react'
+import { Send, Loader2, Paperclip, FolderOpen, X, Image as ImageIcon, Link as LinkIcon, FileText, Video } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -27,6 +27,9 @@ const SUGGESTION_CHIPS = [
   { label: 'Design', prompt: 'Create a UI/UX design course covering design principles, Figma, user research, and prototyping' },
 ]
 
+const MAX_ATTACHMENTS = 100
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
+
 function AICourseChat({
   messages,
   iterationCount,
@@ -39,13 +42,13 @@ function AICourseChat({
   const { t } = useTranslation()
   const [inputValue, setInputValue] = React.useState('')
   const [attachments, setAttachments] = React.useState<Attachment[]>([])
-  const [showAttachMenu, setShowAttachMenu] = React.useState(false)
+  const [attachError, setAttachError] = React.useState('')
+  const [isDragging, setIsDragging] = React.useState(false)
   const [youtubeUrl, setYoutubeUrl] = React.useState('')
   const [showYoutubeInput, setShowYoutubeInput] = React.useState(false)
   const [loadingDuration, setLoadingDuration] = React.useState(0)
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
-  const attachMenuRef = React.useRef<HTMLDivElement>(null)
   const loadingTimerRef = React.useRef<NodeJS.Timeout | null>(null)
 
   const canSendMessage = !isLoading && !isCourseCreated && iterationCount < maxIterations && (inputValue.trim() || attachments.length > 0)
@@ -71,22 +74,14 @@ function AICourseChat({
     inputRef.current?.focus()
   }, [])
 
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
-        setShowAttachMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (canSendMessage) {
       onSendMessage(inputValue.trim(), attachments.length > 0 ? attachments : undefined)
       setInputValue('')
       setAttachments([])
+      setAttachError('')
+      setShowYoutubeInput(false)
     }
   }
 
@@ -103,33 +98,124 @@ function AICourseChat({
     }
   }
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'file') => {
-    const files = e.target.files
-    if (!files) return
+  const addFiles = (files: File[]) => {
+    if (files.length === 0) return
 
-    Array.from(files).forEach((file) => {
+    let skippedCount = 0
+    let skippedSize = false
+    const usedBytes = attachments.reduce((total, attachment) => total + (attachment.file?.size || 0), 0)
+    let totalBytes = usedBytes
+    const nextAttachments = [...attachments]
+
+    for (const file of files) {
+      if (nextAttachments.length >= MAX_ATTACHMENTS) {
+        skippedCount += 1
+        continue
+      }
+      if (totalBytes + file.size > MAX_ATTACHMENT_BYTES) {
+        skippedSize = true
+        skippedCount += 1
+        continue
+      }
+
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const attachment: Attachment = { id, type, name: file.name, file }
+      const type: Attachment['type'] = file.type.startsWith('image/')
+        ? 'image'
+        : file.type.startsWith('video/')
+          ? 'video'
+          : 'file'
+      const name = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+      nextAttachments.push({ id, type, name, file })
+      totalBytes += file.size
 
       if (type === 'image' || type === 'video') {
         const reader = new FileReader()
         reader.onload = (event) => {
-          setAttachments((prev) => prev.map((a) =>
-            a.id === id ? { ...a, preview: event.target?.result as string } : a
+          setAttachments((prev) => prev.map((attachment) =>
+            attachment.id === id ? { ...attachment, preview: event.target?.result as string } : attachment
           ))
         }
         reader.readAsDataURL(file)
       }
+    }
 
-      setAttachments((prev) => [...prev, attachment])
-    })
+    if (skippedCount > 0) {
+      setAttachError(
+        skippedSize
+          ? t('courses.create.ai.attach_limit_size') || 'Attachments must be 15 MB or smaller in total; extra files were skipped.'
+          : t('courses.create.ai.attach_limit_count', { max: MAX_ATTACHMENTS }) || `You can attach up to ${MAX_ATTACHMENTS} files; extra files were skipped.`
+      )
+    } else {
+      setAttachError('')
+    }
 
-    setShowAttachMenu(false)
+    setAttachments(nextAttachments)
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addFiles(Array.from(e.target.files || []))
     e.target.value = ''
+  }
+
+  const openFilePicker = (directory: boolean) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    if (directory) {
+      input.setAttribute('webkitdirectory', '')
+      input.setAttribute('directory', '')
+    }
+    input.onchange = (event) => handleFileSelect(event as unknown as React.ChangeEvent<HTMLInputElement>)
+    input.click()
+  }
+
+  const collectDroppedFiles = async (dataTransfer: DataTransfer): Promise<File[]> => {
+    const items = Array.from(dataTransfer.items || [])
+    const entries = items
+      .map((item) => (item as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry?.())
+      .filter(Boolean)
+
+    if (entries.length === 0) return Array.from(dataTransfer.files || [])
+
+    const files: File[] = []
+    const readBatch = (reader: any) => new Promise<any[]>((resolve, reject) => reader.readEntries(resolve, reject))
+
+    const walk = async (entry: any): Promise<void> => {
+      if (files.length >= MAX_ATTACHMENTS) return
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject))
+        files.push(file)
+        return
+      }
+      if (entry.isDirectory) {
+        const reader = entry.createReader()
+        let batch = await readBatch(reader)
+        while (batch.length > 0 && files.length < MAX_ATTACHMENTS) {
+          for (const child of batch) await walk(child)
+          batch = await readBatch(reader)
+        }
+      }
+    }
+
+    for (const entry of entries) await walk(entry)
+    return files
+  }
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = await collectDroppedFiles(e.dataTransfer)
+    addFiles(files)
   }
 
   const handleYoutubeAdd = () => {
     if (!youtubeUrl.trim()) return
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachError(
+        t('courses.create.ai.attach_limit_count', { max: MAX_ATTACHMENTS }) || `You can attach up to ${MAX_ATTACHMENTS} files.`
+      )
+      return
+    }
     const youtubeRegex = /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i
     const match = youtubeUrl.match(youtubeRegex)
 
@@ -144,12 +230,13 @@ function AICourseChat({
       }])
       setYoutubeUrl('')
       setShowYoutubeInput(false)
-      setShowAttachMenu(false)
+      setAttachError('')
     }
   }
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id))
+    setAttachError('')
   }
 
   const getAttachmentIcon = (type: Attachment['type']) => {
@@ -161,9 +248,9 @@ function AICourseChat({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 scrollbar-hide">
         {/* Empty state with suggestions */}
         {messages.length === 0 && !isLoading && (
           <div className="space-y-4 pt-8">
@@ -269,7 +356,7 @@ function AICourseChat({
       </div>
 
       {/* Input area */}
-      <div className="border-t border-white/5 p-4">
+      <div className="shrink-0 border-t border-white/5 p-4">
         {isExhausted ? (
           <div className="text-center text-sm text-white/50 py-2">
             {t('courses.create.ai.max_iterations_reached')}
@@ -282,7 +369,7 @@ function AICourseChat({
           <div className="space-y-3">
             {/* Attachments preview */}
             {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 p-2 bg-white/5 rounded-xl ring-1 ring-inset ring-white/10">
+              <div className="flex flex-wrap gap-2 p-2 max-h-28 overflow-y-auto bg-white/5 rounded-xl ring-1 ring-inset ring-white/10">
                 {attachments.map((attachment) => (
                   <div
                     key={attachment.id}
@@ -318,7 +405,20 @@ function AICourseChat({
             )}
 
             {/* Input container */}
-            <div className="relative bg-white/[0.03] rounded-2xl ring-1 ring-inset ring-white/10 focus-within:ring-purple-500/30 transition-all">
+            <div
+              className={cn(
+                "relative bg-white/[0.03] rounded-2xl ring-1 ring-inset transition-all",
+                isDragging
+                  ? "ring-purple-500/60 bg-purple-500/[0.06]"
+                  : "ring-white/10 focus-within:ring-purple-500/30"
+              )}
+              onDragEnter={(e) => { e.preventDefault(); setIsDragging(true) }}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragging(false)
+              }}
+              onDrop={handleDrop}
+            >
               <textarea
                 ref={inputRef}
                 value={inputValue}
@@ -345,14 +445,22 @@ function AICourseChat({
                 }}
               />
 
+              {isDragging && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-gray-950/40">
+                  <span className="text-xs font-medium text-purple-200">
+                    {t('courses.create.ai.drop_files') || 'Drop files or a folder here'}
+                  </span>
+                </div>
+              )}
+
               {/* Bottom toolbar */}
-              <div className="absolute bottom-0 start-0 end-0 flex items-center justify-between p-3 border-t border-white/5">
-                {/* Attachment button with menu */}
-                <div className="relative" ref={attachMenuRef}>
+              <div className="absolute bottom-0 start-0 end-0 flex items-center justify-between gap-2 p-3 border-t border-white/5">
+                <div className="flex min-w-0 items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setShowAttachMenu(!showAttachMenu)}
+                    onClick={() => openFilePicker(false)}
                     disabled={isLoading}
+                    title={t('courses.create.ai.attach_files') || 'Attach files'}
                     className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-xs font-medium",
                       !isLoading
@@ -361,97 +469,73 @@ function AICourseChat({
                     )}
                   >
                     <Paperclip className="w-4 h-4" />
-                    <span>{t('courses.create.ai.attach') || 'Attach'}</span>
+                    <span className="hidden sm:inline">{t('courses.create.ai.attach_files') || 'Files'}</span>
                   </button>
 
-                  {/* Attachment menu */}
-                  {showAttachMenu && (
-                    <div className="absolute bottom-full start-0 mb-2 w-52 bg-gray-900 rounded-xl ring-1 ring-white/10 shadow-2xl overflow-hidden z-50">
-                      {showYoutubeInput ? (
-                        <div className="p-3 space-y-2">
-                          <input
-                            type="text"
-                            value={youtubeUrl}
-                            onChange={(e) => setYoutubeUrl(e.target.value)}
-                            placeholder="Paste YouTube URL..."
-                            className="w-full px-3 py-2.5 text-sm bg-white/5 rounded-lg text-white placeholder:text-white/30 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-purple-500/30"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { e.preventDefault(); handleYoutubeAdd() }
-                            }}
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setShowYoutubeInput(false)}
-                              className="flex-1 px-3 py-2 text-xs font-medium text-white/50 hover:text-white/70 bg-white/5 rounded-lg transition-colors"
-                            >
-                              {t('common.cancel') || 'Cancel'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleYoutubeAdd}
-                              className="flex-1 px-3 py-2 text-xs font-medium text-white bg-purple-500/50 hover:bg-purple-500/70 rounded-lg transition-colors"
-                            >
-                              {t('common.add') || 'Add'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="py-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const input = document.createElement('input')
-                              input.type = 'file'; input.accept = 'image/*'; input.multiple = true
-                              input.onchange = (e) => handleFileSelect(e as any, 'image')
-                              input.click()
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white/70 hover:bg-white/5 transition-colors"
-                          >
-                            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                              <ImageIcon className="w-4 h-4 text-blue-400" />
-                            </div>
-                            <div className="text-start">
-                              <span className="block font-medium">{t('courses.create.ai.attach_image') || 'Photo'}</span>
-                              <span className="block text-xs text-white/40">PNG, JPG, GIF</span>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowYoutubeInput(true)}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white/70 hover:bg-white/5 transition-colors"
-                          >
-                            <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
-                              <Video className="w-4 h-4 text-red-400" />
-                            </div>
-                            <div className="text-start">
-                              <span className="block font-medium">{t('courses.create.ai.attach_youtube') || 'YouTube Video'}</span>
-                              <span className="block text-xs text-white/40">AI will analyze the video</span>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const input = document.createElement('input')
-                              input.type = 'file'; input.accept = '.pdf,.doc,.docx,.txt,.md'; input.multiple = true
-                              input.onchange = (e) => handleFileSelect(e as any, 'file')
-                              input.click()
-                            }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-white/70 hover:bg-white/5 transition-colors"
-                          >
-                            <div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                              <FileText className="w-4 h-4 text-yellow-400" />
-                            </div>
-                            <div className="text-start">
-                              <span className="block font-medium">{t('courses.create.ai.attach_file') || 'Document'}</span>
-                              <span className="block text-xs text-white/40">PDF, DOC, TXT</span>
-                            </div>
-                          </button>
-                        </div>
+                  <button
+                    type="button"
+                    onClick={() => openFilePicker(true)}
+                    disabled={isLoading}
+                    title={t('courses.create.ai.attach_folder') || 'Attach a folder'}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-xs font-medium",
+                      !isLoading
+                        ? "bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10 ring-1 ring-inset ring-white/10"
+                        : "bg-white/5 text-white/20 cursor-not-allowed"
+                    )}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t('courses.create.ai.attach_folder') || 'Folder'}</span>
+                  </button>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowYoutubeInput((prev) => !prev)}
+                      disabled={isLoading}
+                      title={t('courses.create.ai.attach_youtube') || 'YouTube Video'}
+                      className={cn(
+                        "flex items-center justify-center w-8 h-8 rounded-lg transition-all",
+                        !isLoading
+                          ? "bg-white/5 text-white/50 hover:text-red-300 hover:bg-white/10 ring-1 ring-inset ring-white/10"
+                          : "bg-white/5 text-white/20 cursor-not-allowed"
                       )}
-                    </div>
-                  )}
+                    >
+                      <LinkIcon className="w-4 h-4" />
+                    </button>
+
+                    {showYoutubeInput && (
+                      <div className="absolute bottom-full start-0 mb-2 w-72 max-w-[calc(100vw-2rem)] bg-gray-900 rounded-xl ring-1 ring-white/10 shadow-2xl p-3 space-y-2 z-50">
+                        <input
+                          type="text"
+                          value={youtubeUrl}
+                          onChange={(e) => setYoutubeUrl(e.target.value)}
+                          placeholder="Paste YouTube URL..."
+                          className="w-full px-3 py-2.5 text-sm bg-white/5 rounded-lg text-white placeholder:text-white/30 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-purple-500/30"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleYoutubeAdd() }
+                          }}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowYoutubeInput(false)}
+                            className="flex-1 px-3 py-2 text-xs font-medium text-white/50 hover:text-white/70 bg-white/5 rounded-lg transition-colors"
+                          >
+                            {t('common.cancel') || 'Cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleYoutubeAdd}
+                            className="flex-1 px-3 py-2 text-xs font-medium text-white bg-purple-500/50 hover:bg-purple-500/70 rounded-lg transition-colors"
+                          >
+                            {t('common.add') || 'Add'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Send button */}
@@ -460,7 +544,7 @@ function AICourseChat({
                   onClick={handleSubmit}
                   disabled={!canSendMessage}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-1.5 rounded-lg transition-all text-xs font-medium",
+                    "flex shrink-0 items-center gap-2 px-4 py-1.5 rounded-lg transition-all text-xs font-medium",
                     canSendMessage
                       ? "bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 ring-1 ring-inset ring-purple-500/30"
                       : "bg-white/5 text-white/30 cursor-not-allowed ring-1 ring-inset ring-white/10"
@@ -480,6 +564,10 @@ function AICourseChat({
                 </button>
               </div>
             </div>
+
+            {attachError && (
+              <p className="text-xs text-amber-400/70 text-center">{attachError}</p>
+            )}
 
             {attachments.some(a => a.type === 'youtube') && (
               <p className="text-xs text-amber-400/60 text-center">

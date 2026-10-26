@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import lrnaiIcon from 'public/lrnai_icon.png'
 import toast from 'react-hot-toast'
-import type { CoursePlan, ChapterPlan, ActivityPlan, CreatedChapter } from '@services/ai/courseplanning'
+import type { CoursePlan, ChapterPlan, ActivityPlan, CreatedChapter, AISource } from '@services/ai/courseplanning'
 import {
   generateActivityContent,
   parseActivityContentFromStream,
@@ -42,6 +42,36 @@ interface ActivityGenState {
 
 type LeftTab = 'plan' | 'content'
 
+const SOURCE_STYLES: Record<AISource, string> = {
+  materials: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/25',
+  mixed: 'bg-sky-500/15 text-sky-300 ring-sky-500/25',
+  ai: 'bg-purple-500/15 text-purple-300 ring-purple-500/25',
+}
+
+function SourceBadge({ source, refs }: { source?: AISource; refs?: string[] }) {
+  const { t } = useTranslation()
+  const kind: AISource = source === 'materials' || source === 'mixed' ? source : 'ai'
+  const label =
+    kind === 'materials'
+      ? t('courses.create.ai.source_materials')
+      : kind === 'mixed'
+        ? t('courses.create.ai.source_mixed')
+        : t('courses.create.ai.source_ai')
+  const files = (refs || []).filter(Boolean)
+  return (
+    <span
+      title={files.length ? t('courses.create.ai.source_refs_tooltip', { refs: files.join(', ') }) : undefined}
+      className={cn(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 ring-inset flex-shrink-0',
+        SOURCE_STYLES[kind]
+      )}
+    >
+      {kind === 'materials' ? '📚' : kind === 'mixed' ? '📚✨' : '✨'}
+      {label}
+    </span>
+  )
+}
+
 function AICoursePreview({
   plan,
   createdChapters,
@@ -68,7 +98,9 @@ function AICoursePreview({
     activityUuid: string,
     activityName: string,
     activityDescription: string,
-    chapterName: string
+    chapterName: string,
+    source: AISource = 'ai',
+    sourceRefs: string[] = []
   ) => {
     if (!sessionUuid || !plan) return
 
@@ -91,6 +123,22 @@ function AICoursePreview({
       const parsedContent = parseActivityContentFromStream(fullContent)
       if (parsedContent) {
         try {
+          // Persist the provenance visibly in the activity itself, not only in
+          // the planning screen: every generated lecture/test starts with a
+          // callout saying whether it came from the user's files or from AI.
+          if (parsedContent.type === 'doc' && Array.isArray(parsedContent.content)) {
+            const files = sourceRefs.filter(Boolean).join(', ') || t('courses.create.ai.source_callout_no_refs')
+            const provenanceText =
+              source === 'materials'
+                ? t('courses.create.ai.source_callout_materials', { refs: files })
+                : source === 'mixed'
+                  ? t('courses.create.ai.source_callout_mixed', { refs: files })
+                  : t('courses.create.ai.source_callout_ai')
+            parsedContent.content = [
+              { type: 'calloutInfo', content: [{ type: 'text', text: provenanceText }] },
+              ...parsedContent.content,
+            ]
+          }
           const result = await updateActivity({ content: parsedContent }, activityUuid, accessToken)
           if (result.success) {
             setActivityStates((prev) => ({
@@ -129,7 +177,7 @@ function AICoursePreview({
       await generateActivityContent(
         sessionUuid, activityUuid, activityName, activityDescription,
         chapterName, plan.name, plan.description, accessToken,
-        onChunk, onComplete, onError
+        onChunk, onComplete, onError, undefined, source, sourceRefs
       )
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Unknown error')
@@ -137,12 +185,21 @@ function AICoursePreview({
   }
 
   const handleGenerateAll = async () => {
-    for (const chapter of createdChapters) {
-      for (const activity of chapter.activities) {
+    for (let ci = 0; ci < createdChapters.length; ci++) {
+      const chapter = createdChapters[ci]
+      const planActivities = plan?.chapters[ci]?.activities || []
+      for (let ai = 0; ai < chapter.activities.length; ai++) {
+        const activity = chapter.activities[ai]
+        const planActivity = planActivities[ai]
         const state = activityStates[activity.activity_uuid]
         if (!state?.isGenerated && !state?.isGenerating) {
-          await handleGenerateContent(activity.activity_uuid, activity.name, activity.description, chapter.name)
-          await new Promise((resolve) => setTimeout(resolve, 1000))
+          await handleGenerateContent(
+            activity.activity_uuid, activity.name, activity.description, chapter.name,
+            planActivity?.source, planActivity?.source_refs
+          )
+          const { promise, resolve } = Promise.withResolvers<void>()
+          setTimeout(resolve, 1000)
+          await promise
         }
       }
     }
@@ -369,7 +426,7 @@ function ContentTabContent({
   createdChapters: CreatedChapter[]
   isCourseCreated: boolean
   activityStates: Record<string, ActivityGenState>
-  onGenerateContent: (uuid: string, name: string, desc: string, chapterName: string) => void
+  onGenerateContent: (uuid: string, name: string, desc: string, chapterName: string, source?: AISource, refs?: string[]) => void
   onGenerateAll: () => void
   totalActivities: number
   generatedCount: number
@@ -469,6 +526,7 @@ function ContentTabContent({
                   <div className="px-4 pb-3 space-y-2">
                     {chapter.activities.map((activity, ai) => {
                       const createdActivity = createdChapter?.activities[ai]
+                      const planActivity = chapter.activities[ai]
                       const state = createdActivity ? activityStates[createdActivity.activity_uuid] : null
                       const isGenerating = state?.isGenerating
                       const isGenerated = state?.isGenerated
@@ -491,7 +549,10 @@ function ContentTabContent({
                         >
                           <FileText className={cn("w-4 h-4 flex-shrink-0", isGenerated ? "text-green-400" : "text-white/40")} />
                           <div className="flex-1 min-w-0">
-                            <span className="text-sm text-white/80 block truncate">{activity.name}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm text-white/80 truncate">{activity.name}</span>
+                              <SourceBadge source={planActivity?.source} refs={planActivity?.source_refs} />
+                            </div>
                             {activity.description && <p className="text-xs text-white/30 mt-0.5 line-clamp-1">{activity.description}</p>}
                             {isGenerating && state?.streamContent && (
                               <div className="mt-2 max-h-16 overflow-hidden">
@@ -512,7 +573,7 @@ function ContentTabContent({
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400 flex-shrink-0" />
                           ) : hasError ? (
                             <button
-                              onClick={() => createdActivity && onGenerateContent(createdActivity.activity_uuid, activity.name, activity.description, chapter.name)}
+                              onClick={() => createdActivity && onGenerateContent(createdActivity.activity_uuid, activity.name, activity.description, chapter.name, planActivity?.source, planActivity?.source_refs)}
                               className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-red-300 hover:bg-red-500/20 transition-colors flex-shrink-0"
                             >
                               <RotateCcw className="w-3 h-3" />
@@ -520,7 +581,7 @@ function ContentTabContent({
                             </button>
                           ) : (
                             <button
-                              onClick={() => canGenerate && onGenerateContent(createdActivity!.activity_uuid, activity.name, activity.description, chapter.name)}
+                              onClick={() => canGenerate && onGenerateContent(createdActivity!.activity_uuid, activity.name, activity.description, chapter.name, planActivity?.source, planActivity?.source_refs)}
                               disabled={!canGenerate}
                               className={cn(
                                 "flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-colors flex-shrink-0",
@@ -691,7 +752,7 @@ function PlanChapterCard({ chapter, chapterIndex, plan, onUpdatePlan }: {
 
           <button
             onClick={() => {
-              const newAct: ActivityPlan = { name: `Activity ${chapter.activities.length + 1}`, type: 'TYPE_DYNAMIC', description: 'New activity', suggested_blocks: ['heading', 'paragraph'] }
+              const newAct: ActivityPlan = { name: `Activity ${chapter.activities.length + 1}`, type: 'TYPE_DYNAMIC', description: 'New activity', suggested_blocks: ['heading', 'paragraph'], source: 'ai', source_refs: [] }
               const c = [...plan.chapters]; c[chapterIndex] = { ...c[chapterIndex], activities: [...c[chapterIndex].activities, newAct] }
               onUpdatePlan({ ...plan, chapters: c })
             }}
@@ -741,7 +802,10 @@ function PlanActivityItem({ activity, activityIndex, chapterIndex, plan, onUpdat
             onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(activity.name); setEditing(false) } }}
             className="w-full bg-white/10 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" autoFocus />
         ) : (
-          <span onClick={() => setEditing(true)} className="text-sm text-white/80 hover:text-purple-300 cursor-pointer">{activity.name}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span onClick={() => setEditing(true)} className="text-sm text-white/80 hover:text-purple-300 cursor-pointer truncate">{activity.name}</span>
+            <SourceBadge source={activity.source} refs={activity.source_refs} />
+          </div>
         )}
         {activity.description && <p className="text-xs text-white/40 mt-0.5 line-clamp-1">{activity.description}</p>}
       </div>

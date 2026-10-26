@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import React, { useEffect, useState, Suspense } from 'react'
 import { getUriWithOrg } from '@services/config/config'
-import { getCourseMetadata } from '@services/courses/courses'
+import { getCourseMetadata, getMyCourseTaskProgress } from '@services/courses/courses'
 import { useTrail } from '@/hooks/queries/useTrail'
 import ActivityIndicators from '@components/Pages/Courses/ActivityIndicators'
 import { useRouter } from 'next/navigation'
@@ -10,7 +10,7 @@ import GeneralWrapperStyled from '@components/Objects/StyledElements/Wrappers/Ge
 import {
   getCourseThumbnailMediaDirectory,
 } from '@services/media/media'
-import { ArrowRight, Backpack, Check, File, StickyNote, Video, Square, Image as ImageIcon, Layers, BookCopy, Lock, Globe, Package, Puzzle } from 'lucide-react'
+import { ArrowRight, Backpack, Check, File, StickyNote, Video, Square, Image as ImageIcon, Layers, BookCopy, Lock, Globe, Package, Puzzle, House } from 'lucide-react'
 import { MarkdownLogo } from '@phosphor-icons/react'
 import { useOrg } from '@components/Contexts/OrgContext'
 import { CourseProvider } from '@components/Contexts/CourseContext'
@@ -33,7 +33,6 @@ import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
 
 const CourseClient = (props: any) => {
   const { t } = useTranslation()
-  const [learnings, setLearnings] = useState<any>([])
   const [expandedChapters, setExpandedChapters] = useState<{[key: string]: boolean}>({})
   const [activeThumbnailType, setActiveThumbnailType] = useState<'image' | 'video'>('image')
   const courseuuid = props.courseuuid
@@ -57,6 +56,18 @@ const CourseClient = (props: any) => {
 
   const course = initialCourse || clientCourseData;
 
+  const { data: taskProgressData } = useQuery({
+    queryKey: ['courses', 'my-task-progress', courseuuid],
+    queryFn: () =>
+      getMyCourseTaskProgress(
+        courseuuid.startsWith('course_') ? courseuuid : `course_${courseuuid}`,
+        access_token
+      ),
+    enabled: !!courseuuid && !!access_token,
+    staleTime: 15_000,
+  });
+  const taskProgress = taskProgressData?.activities || {};
+
   const { track } = useLHAnalytics('learner')
 
   // Track course view
@@ -76,8 +87,6 @@ const CourseClient = (props: any) => {
   // Must be before any early returns (React rules of hooks)
   useEffect(() => {
     if (!course) return
-
-    getLearningTags(course)
 
     if (course?.chapters) {
       const totalActivities = course.chapters.reduce((sum: number, chapter: any) => sum + (chapter.activities?.length || 0), 0)
@@ -170,34 +179,6 @@ const CourseClient = (props: any) => {
   // Show error if course fetch failed
   if (!course && activeError) {
     return <CourseAccessError error={activeError} orgslug={orgslug} />
-  }
-
-  function getLearningTags(courseData: any) {
-    if (!courseData?.learnings) {
-      setLearnings([])
-      return
-    }
-
-    try {
-      // Try to parse as JSON (new format)
-      const parsedLearnings = JSON.parse(courseData.learnings)
-      if (Array.isArray(parsedLearnings)) {
-        // New format: array of learning items with text and emoji
-        setLearnings(parsedLearnings)
-        return
-      }
-    } catch (_e) {
-      // Not valid JSON, continue to legacy format handling
-    }
-
-    // Legacy format: comma-separated string (changed from pipe-separated)
-    const learningItems = courseData.learnings.split(',').map((text: string) => ({
-      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-      text: text.trim(), // Trim whitespace that might be present after commas
-      emoji: '📝' // Default emoji for legacy items
-    }))
-
-    setLearnings(learningItems)
   }
 
   const getActivityTypeLabel = (activityType: string, activitySubType?: string) => {
@@ -326,11 +307,18 @@ const CourseClient = (props: any) => {
       {!course || !org ? null : (
         <>
           <GeneralWrapperStyled>
-            <div className="pb-4">
+            <div className="pb-4 flex items-center justify-between gap-3">
               <Breadcrumbs items={[
                 { label: t('courses.courses'), href: getUriWithOrg(orgslug, '/courses'), icon: <BookCopy size={14} /> },
                 { label: course.name }
               ]} />
+              <Link
+                href={getUriWithOrg(orgslug, '/dash')}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 nice-shadow transition-colors flex-shrink-0"
+              >
+                <House size={15} />
+                {t('common.home', { defaultValue: 'Home' })}
+              </Link>
             </div>
             <div className="pb-2 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
               <h1 className="text-3xl md:text-3xl font-bold" dir="auto">{course.name}</h1>
@@ -495,57 +483,22 @@ const CourseClient = (props: any) => {
               </div>
             </div>
 
-            {(() => {
-              const displayLearnings = learnings.filter((l: any) => {
-                const text = typeof l === 'string' ? l : l?.text
-                return text && text.trim() !== '' && text !== 'null'
-              })
-              if (displayLearnings.length === 0) return null
-              return (
-                <div className="w-full">
-                  <h2 className="py-5 text-xl md:text-2xl font-bold">{t('courses.what_you_will_learn')}</h2>
-                  <div className="bg-white shadow-md shadow-gray-300/25 outline outline-1 outline-neutral-200/40 rounded-lg overflow-hidden px-5 py-5 space-y-2">
-                    {displayLearnings.map((learning: any) => {
-                      const learningText = typeof learning === 'string' ? learning : learning.text
-                      const learningEmoji = typeof learning === 'string' ? null : learning.emoji
-                      const learningId = typeof learning === 'string' ? learning : learning.id || learning.text
-                      return (
-                        <div
-                          key={learningId}
-                          className="flex space-x-2 items-center font-semibold text-gray-500"
-                        >
-                          <div className="px-2 py-2 rounded-full">
-                            {learningEmoji ? (
-                              <span>{learningEmoji}</span>
-                            ) : (
-                              <Check className="text-gray-400" size={15} />
-                            )}
-                          </div>
-                          <p>{learningText}</p>
-                          {learning.link && (
-                            <a
-                              href={learning.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-500 hover:underline text-sm"
-                            >
-                              <span className="sr-only">Link to {learningText}</span>
-                              <ArrowRight size={14} />
-                            </a>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
-
             <div className="w-full my-5 mb-10">
               <h2 className="py-5 text-xl md:text-2xl font-bold">{t('courses.course_lessons')}</h2>
               <div className="bg-white shadow-md shadow-gray-300/25 outline outline-1 outline-neutral-200/40 rounded-lg overflow-hidden">
                 {(course.chapters ?? []).map((chapter: any, idx: number) => {
                   const isExpanded = expandedChapters[chapter.chapter_uuid] ?? (idx === 0); // Default to expanded for first chapter
+                  const chapterProgress = (chapter.activities || []).reduce(
+                    (acc: { solved: number; total: number }, activity: any) => {
+                      const progress = taskProgress[activity.activity_uuid]
+                      if (progress) {
+                        acc.solved += progress.solved
+                        acc.total += progress.total
+                      }
+                      return acc
+                    },
+                    { solved: 0, total: 0 }
+                  )
                   return (
                     <div key={chapter.chapter_uuid || `chapter-${chapter.name}`} className="">
                       <div 
@@ -584,6 +537,21 @@ const CourseClient = (props: any) => {
                           <div className="flex items-center space-x-1 text-sm text-neutral-400 font-normal">
                             <Layers size={16} className="me-1" />
                             <span>{chapter.activities.length} {t('activities.activities')}</span>
+                            {chapterProgress.total > 0 && (
+                              <span
+                                className={`ms-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                  chapterProgress.solved === chapterProgress.total
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-violet-50 text-violet-700 border border-violet-200'
+                                }`}
+                              >
+                                {t('courses.tasks_progress', {
+                                  solved: chapterProgress.solved,
+                                  total: chapterProgress.total,
+                                  defaultValue: '{{solved}}/{{total}} tasks',
+                                })}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -591,6 +559,7 @@ const CourseClient = (props: any) => {
                         <div className="">
                           {chapter.activities.map((activity: any) => {
                             const locked = !!activity.is_locked
+                            const activityProgress = taskProgress[activity.activity_uuid]
                             const RowInner = (
                               <div className="flex space-x-3 items-center">
                                 <div className="flex items-center">
@@ -612,6 +581,21 @@ const CourseClient = (props: any) => {
                                 <div className="flex flex-col grow">
                                   <div className="flex items-center space-x-2 w-full">
                                     <p className={`font-semibold transition-colors ${locked ? 'text-neutral-400' : 'text-neutral-600 group-hover:text-neutral-800'}`}>{activity.name}</p>
+                                    {activityProgress && activityProgress.total > 0 && (
+                                      <span
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold flex-shrink-0 ${
+                                          activityProgress.solved === activityProgress.total
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                            : 'bg-violet-50 text-violet-700 border border-violet-200'
+                                        }`}
+                                      >
+                                        {t('courses.tasks_progress', {
+                                          solved: activityProgress.solved,
+                                          total: activityProgress.total,
+                                          defaultValue: '{{solved}}/{{total}} tasks',
+                                        })}
+                                      </span>
+                                    )}
                                     {locked && (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-600 text-[10px] font-semibold">
                                         <Lock size={10} />

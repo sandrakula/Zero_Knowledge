@@ -9,7 +9,7 @@ from src.services.ai.schemas.limits import (
 
 # Attachments are decoded into memory and sent inline to the model. 15MB
 # decoded stays under the provider's ~20MB inline request ceiling.
-MAX_ATTACHMENTS = 10
+MAX_ATTACHMENTS = 100
 MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 
 
@@ -42,6 +42,41 @@ class ActivityPlan(BaseModel):
     type: str = "TYPE_DYNAMIC"  # Default activity type
     description: str
     suggested_blocks: List[str] = []  # e.g., ['heading1', 'paragraph', 'quiz']
+    # Where the activity's substance comes from. "materials" means it is
+    # grounded in the files the user uploaded, "ai" means general model
+    # knowledge, "mixed" means both. source_refs lists the exact uploaded
+    # material names used, so the UI can show what was used.
+    source: Literal["materials", "ai", "mixed"] = "ai"
+    source_refs: List[str] = []
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _coerce_source(cls, v):
+        if v is None:
+            return "ai"
+        value = str(v).strip().lower()
+        aliases = {
+            "materials": "materials",
+            "material": "materials",
+            "user_materials": "materials",
+            "source_materials": "materials",
+            "provided_materials": "materials",
+            "ai": "ai",
+            "generated": "ai",
+            "ai_generated": "ai",
+            "mixed": "mixed",
+            "both": "mixed",
+        }
+        return aliases.get(value, "ai")
+
+    @field_validator("source_refs", mode="before")
+    @classmethod
+    def _coerce_source_refs(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [v]
+        return [str(item).strip() for item in v if str(item).strip()]
 
 
 class ChapterPlan(BaseModel):
@@ -92,6 +127,10 @@ class CoursePlanningSessionData(BaseModel):
     current_plan: Optional[CoursePlan] = None
     course_id: Optional[int] = None  # Set after finalization
     user_id: Optional[int] = None  # Who started the session; None for sessions from before this field
+    # Extracted text from the user's uploaded materials. Kept in the session so
+    # activity content generation can ground lectures/tests on the same files.
+    material_context: str = ""
+    material_names: List[str] = []
 
 
 class StartCoursePlanningSession(BaseModel):
@@ -130,6 +169,10 @@ class GenerateActivityContentRequest(BaseModel):
     course_name: str = Field(max_length=AI_LABEL_MAX_CHARS)
     course_description: str = Field(max_length=AI_CONTEXT_MAX_CHARS)
     prompt: Optional[str] = Field(default=None, max_length=AI_MESSAGE_MAX_CHARS)  # Additional instructions for content generation
+    # Provenance from the plan, so the generated content is grounded on the
+    # user's materials when the activity was planned that way.
+    source: Literal["materials", "ai", "mixed"] = "ai"
+    source_refs: List[str] = []
 
 
 class SaveActivityContentRequest(BaseModel):

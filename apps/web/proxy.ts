@@ -325,11 +325,24 @@ export default async function proxy(req: NextRequest) {
   //    layout additionally enforces SaaS gating. We set instance cookies so the
   //    hub's client components can read tenancy/mode/top-domain.
   // -------------------------------------------------------------------------
+  // The setup checklist was removed from the product. The page component also
+  // redirects, but that runs behind the admin gate; redirect here so learners
+  // and stale bookmarks never see the permission wall.
+  const onboardingMatch = pathname.match(/^(?:\/orgs\/[^/]+)?\/dash\/onboarding\/?$/)
+  if (onboardingMatch) {
+    const target = pathname.startsWith('/orgs/')
+      ? pathname.replace(/\/onboarding\/?$/, '')
+      : '/dash'
+    return NextResponse.redirect(new URL(target, req.url))
+  }
+
   // A single-tenancy instance serves exactly one org at `/`, and every card on
   // the picker links back there, so the picker is a dead step. Every sign-in,
-  // signup and verify path defaults to /home; send them all to the org instead.
+  // signup and verify path defaults to /home; send them straight to the org
+  // dashboard instead of the public landing page, otherwise a successful login
+  // looks like it merely dumped the user on `/`.
   if (instance.tenancy === 'single' && pathname === '/home') {
-    return NextResponse.redirect(new URL(`/${search}`, req.url))
+    return NextResponse.redirect(new URL(`/dash${search}`, req.url))
   }
 
   const HUB_ROOT_PATHS = ['/home', '/organizations', '/account', '/billing', '/subscriptions', '/new']

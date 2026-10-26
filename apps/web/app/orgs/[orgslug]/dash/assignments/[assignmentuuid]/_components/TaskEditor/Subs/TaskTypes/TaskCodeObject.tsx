@@ -15,10 +15,21 @@ import {
   getAssignmentTaskSubmissionsUser,
   getMyAssignmentAttempts,
   handleAssignmentTaskSubmission,
+  submitAssignmentTaskForGrading,
   updateAssignmentTask,
   type AssignmentAttempt,
 } from '@services/courses/assignments'
 import { getAPIUrl } from '@services/config/config'
+import { EditorView, Decoration } from '@codemirror/view'
+import { RangeSetBuilder } from '@codemirror/state'
+import { analyzeCode } from '@/lib/code-analysis'
+import {
+  autocompletion,
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+} from '@codemirror/autocomplete'
+import CodeAnalysisPanel from './CodeAnalysisPanel'
 import {
   PLAYGROUND_LANGUAGES,
   getLanguageById,
@@ -46,6 +57,72 @@ import dynamic from 'next/dynamic'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query/keys'
 import { applyManualGrade } from './applyManualGrade'
+
+const CPP_COMPLETIONS: Completion[] = [
+  { label: '#include <iostream>', type: 'keyword', detail: 'подключить ввод-вывод', apply: '#include <iostream>\n' },
+  { label: '#include <cmath>', type: 'keyword', detail: 'математические функции', apply: '#include <cmath>\n' },
+  { label: '#include <iomanip>', type: 'keyword', detail: 'форматирование вывода', apply: '#include <iomanip>\n' },
+  { label: 'using namespace std;', type: 'keyword', apply: 'using namespace std;\n' },
+  { label: 'int main()', type: 'snippet', detail: 'точка входа', apply: 'int main() {\n    \n    return 0;\n}' },
+  { label: 'for', type: 'snippet', detail: 'цикл for', apply: 'for (int i = 0; i < n; i++) {\n    \n}' },
+  { label: 'while', type: 'snippet', detail: 'цикл while', apply: 'while (condition) {\n    \n}' },
+  { label: 'if', type: 'snippet', apply: 'if (condition) {\n    \n}' },
+  { label: 'else', type: 'keyword' },
+  { label: 'cin', type: 'variable', detail: 'ввод' },
+  { label: 'cout', type: 'variable', detail: 'вывод' },
+  { label: 'endl', type: 'variable', detail: 'перевод строки (лучше \\n)' },
+  { label: 'return', type: 'keyword' },
+  { label: 'int', type: 'type' },
+  { label: 'long long', type: 'type' },
+  { label: 'double', type: 'type' },
+  { label: 'bool', type: 'type' },
+  { label: 'char', type: 'type' },
+  { label: 'const', type: 'keyword' },
+  { label: 'auto', type: 'keyword' },
+  { label: 'vector', type: 'type', apply: 'vector<int> ' },
+  { label: 'string', type: 'type' },
+  { label: 'sqrt', type: 'function', detail: 'квадратный корень' },
+  { label: 'abs', type: 'function', detail: 'модуль' },
+  { label: 'sort', type: 'function', detail: 'сортировка', apply: 'sort(v.begin(), v.end());' },
+  { label: 'max', type: 'function' },
+  { label: 'min', type: 'function' },
+]
+
+const PYTHON_COMPLETIONS: Completion[] = [
+  { label: 'def', type: 'snippet', detail: 'функция', apply: 'def function_name():\n    ' },
+  { label: 'for', type: 'snippet', detail: 'цикл for', apply: 'for item in items:\n    ' },
+  { label: 'while', type: 'snippet', detail: 'цикл while', apply: 'while condition:\n    ' },
+  { label: 'if', type: 'snippet', apply: 'if condition:\n    ' },
+  { label: 'elif', type: 'keyword' },
+  { label: 'else', type: 'keyword' },
+  { label: 'return', type: 'keyword' },
+  { label: 'import', type: 'keyword' },
+  { label: 'from', type: 'keyword' },
+  { label: 'print', type: 'function' },
+  { label: 'input', type: 'function' },
+  { label: 'len', type: 'function' },
+  { label: 'range', type: 'function' },
+  { label: 'int', type: 'type' },
+  { label: 'float', type: 'type' },
+  { label: 'str', type: 'type' },
+  { label: 'list', type: 'type' },
+  { label: 'dict', type: 'type' },
+  { label: 'set', type: 'type' },
+  { label: 'math.sqrt', type: 'function', detail: 'квадратный корень' },
+  { label: 'math.hypot', type: 'function', detail: 'гипотенуза' },
+]
+
+function makeCompletionSource(languageId: number) {
+  return (context: CompletionContext): CompletionResult | null => {
+    const word = context.matchBefore(/[#A-Za-z_][\w:]*/)
+    if (!word || (word.from === word.to && !context.explicit)) return null
+    return {
+      from: word.from,
+      options: languageId === 71 ? PYTHON_COMPLETIONS : CPP_COMPLETIONS,
+      validFor: /^\w*$/,
+    }
+  }
+}
 
 const CodeMirror = dynamic(() => import('@uiw/react-codemirror'), {
   ssr: false,
@@ -138,6 +215,18 @@ type CustomRunResult = {
   memory?: number | null
 }
 
+type TaskSubmitResult = {
+  passed: boolean
+  grade: number
+  max_grade: number
+  verdict?: string | null
+  feedback?: string | null
+  passed_tests?: number | null
+  total_tests?: number | null
+  execution_time_ms?: number | null
+  memory_kb?: number | null
+}
+
 type TaskCodeObjectProps = {
   view: 'teacher' | 'student' | 'grading'
   assignmentTaskUUID?: string
@@ -184,12 +273,24 @@ const DEFAULT_CONTENTS: CodeTaskContents = {
 // Helper: merge a contents blob from the API with the student-behavior
 // defaults so missing fields fall back to the pre-upgrade behavior.
 function normalizeCodeContents(raw: any): CodeTaskContents {
+  const languageId = raw?.language_id ?? 71
+  const rawStarter = raw?.starter_code ?? ''
+  const languages = Array.isArray(raw?.languages) && raw.languages.length > 0
+    ? raw.languages.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value))
+    : undefined
+  // Imported Informatics tasks carry an empty starter_code and default to
+  // Python even though the C++ course exposes C++ in `languages`. Seed the
+  // editor with the C++ skeleton and select C++ for those tasks, so every
+  // task opens with include <iostream> / using namespace std / int main.
+  const useCppTemplate = !rawStarter.trim() && !!languages?.includes(54)
+  const effectiveLanguageId = useCppTemplate ? 54 : languageId
+  const starterCode = rawStarter.trim()
+    ? rawStarter
+    : (getLanguageById(effectiveLanguageId)?.defaultCode ?? '# Write your code here\n')
   return {
-    language_id: raw?.language_id ?? 71,
-    languages: Array.isArray(raw?.languages) && raw.languages.length > 0
-      ? raw.languages.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value))
-      : undefined,
-    starter_code: raw?.starter_code ?? '',
+    language_id: effectiveLanguageId,
+    languages,
+    starter_code: starterCode,
     solution_code: raw?.solution_code ?? '',
     grading_mode: raw?.grading_mode ?? 'equal_weight',
     test_cases: raw?.test_cases ?? [],
@@ -201,6 +302,18 @@ function normalizeCodeContents(raw: any): CodeTaskContents {
     require_passing_to_submit: raw?.require_passing_to_submit ?? false,
     show_solution_after_submit: raw?.show_solution_after_submit ?? false,
   }
+}
+
+function inferLanguageIdFromSource(source: string | undefined, fallback: number): number {
+  const text = source || ''
+  // Old submissions stored C++ source under language_id 71 (Python) when the
+  // template was pasted before the language selector was switched. Detect the
+  // obvious C++ markers so Run/Submit uses the C++ toolchain (main.cpp), not
+  // Python (main.py, which fails on `using namespace std;`).
+  if (/#include\s*[<"]|\busing\s+namespace\s+std\b|\bstd::|\bint\s+main\s*\(/.test(text)) {
+    return 54
+  }
+  return fallback
 }
 
 function isAttemptList(value: unknown): value is AssignmentAttempt[] {
@@ -281,6 +394,8 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   // Editor state
   const [contents, setContents] = useState<CodeTaskContents>(DEFAULT_CONTENTS)
   const [code, setCode] = useState('')
+  const [isTaskSubmitting, setIsTaskSubmitting] = useState(false)
+  const [taskSubmitResult, setTaskSubmitResult] = useState<TaskSubmitResult | null>(null)
   const [languageId, setLanguageId] = useState<number>(71)
   // Per-language drafts: switching language must not overwrite the previous
   // language's unsaved code. Sent with the task submission, so a reload keeps
@@ -290,6 +405,28 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   // CodeMirror extensions
   const [cmExtensions, setCmExtensions] = useState<any[]>([])
   const [cmTheme, setCmTheme] = useState<any>(null)
+  const analysis = useMemo(() => analyzeCode(code, languageId), [code, languageId])
+  const completionExtensions = useMemo(
+    () => [autocompletion({ override: [makeCompletionSource(languageId)] })],
+    [languageId]
+  )
+  const analysisExtensions = useMemo(() => {
+    const entries = Object.entries(analysis.lineClasses)
+      .map(([line, className]) => [Number(line), className] as const)
+      .sort(([a], [b]) => a - b)
+    if (entries.length === 0) return []
+    return [
+      EditorView.decorations.compute(['doc'], (state) => {
+        const builder = new RangeSetBuilder<Decoration>()
+        for (const [lineNumber, className] of entries) {
+          if (lineNumber < 1 || lineNumber > state.doc.lines) continue
+          const line = state.doc.line(lineNumber)
+          builder.add(line.from, line.from, Decoration.line({ class: className }))
+        }
+        return builder.finish()
+      }),
+    ]
+  }, [analysis])
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false)
@@ -369,9 +506,10 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
     if (view === 'teacher' && assignmentTaskState?.assignmentTask?.contents) {
       const c = assignmentTaskState.assignmentTask.contents
       if (c.language_id !== undefined) {
-        setContents(normalizeCodeContents(c))
-        setLanguageId(c.language_id)
-        setCode(c.starter_code ?? '')
+        const normalized = normalizeCodeContents(c)
+        setContents(normalized)
+        setLanguageId(normalized.language_id)
+        setCode(normalized.starter_code)
       }
     }
   }, [view, assignmentTaskState])
@@ -390,10 +528,11 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         setAssignmentTaskOutsideProvider(res.data)
         const c = res.data.contents
         if (c) {
-          setContents(normalizeCodeContents(c))
-          setLanguageId(c.language_id)
-          setCode(c.starter_code ?? '')
-          setInitialCode(c.starter_code ?? '')
+          const normalized = normalizeCodeContents(c)
+          setContents(normalized)
+          setLanguageId(normalized.language_id)
+          setCode(normalized.starter_code)
+          setInitialCode(normalized.starter_code)
         }
       }
     }
@@ -415,7 +554,12 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
           setInitialCode(res.data.task_submission.source_code)
         }
         if (res.data.task_submission?.language_id) {
-          setLanguageId(Number(res.data.task_submission.language_id))
+          setLanguageId(
+            inferLanguageIdFromSource(
+              res.data.task_submission.source_code,
+              Number(res.data.task_submission.language_id)
+            )
+          )
         }
         if (res.data.task_submission?.drafts && typeof res.data.task_submission.drafts === 'object') {
           setDrafts(res.data.task_submission.drafts as Record<string, string>)
@@ -441,14 +585,15 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         setAssignmentTaskOutsideProvider(task)
         const c = task.contents
         if (c) {
-          setContents(normalizeCodeContents(c))
-          setLanguageId(c.language_id)
+          const normalized = normalizeCodeContents(c)
+          setContents(normalized)
+          setLanguageId(normalized.language_id)
           // Only seed the editor with starter code when no saved submission has
           // been applied yet. If the submission already hydrated (in a prior
           // run), resetting to starter would wipe the learner's saved code.
           if (subHydratedForRef.current !== assignmentTaskUUID) {
-            setCode(c.starter_code ?? '')
-            setInitialCode(c.starter_code ?? '')
+            setCode(normalized.starter_code)
+            setInitialCode(normalized.starter_code)
           }
         }
         defHydratedForRef.current = assignmentTaskUUID
@@ -464,7 +609,12 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         setUserSubmissions(sub)
         const subLanguage = sub.task_submission?.language_id
         if (subLanguage) {
-          setLanguageId(Number(subLanguage))
+          setLanguageId(
+            inferLanguageIdFromSource(
+              sub.task_submission?.source_code,
+              Number(subLanguage)
+            )
+          )
         }
         if (sub.task_submission?.drafts && typeof sub.task_submission.drafts === 'object') {
           setDrafts(sub.task_submission.drafts as Record<string, string>)
@@ -527,7 +677,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   function changeLanguage(nextLanguageId: number) {
     if (!canStudentSave || nextLanguageId === languageId) return
     setDrafts((previous) => ({ ...previous, [String(languageId)]: code }))
-    const nextCode = drafts[String(nextLanguageId)] ?? contents.starter_code ?? ''
+    const nextCode = drafts[String(nextLanguageId)] ?? getLanguageById(nextLanguageId)?.defaultCode ?? contents.starter_code ?? ''
     setLanguageId(nextLanguageId)
     setCode(nextCode)
     setInitialCode(nextCode)
@@ -566,12 +716,17 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
       if (!opts?.silent) toast.error(t('dashboard.assignments.editor.task_editor.code.must_pass_toast'))
       return 'blocked' as const
     }
+    const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
+    if (effectiveLanguageId !== languageId) {
+      setLanguageId(effectiveLanguageId)
+      setContents((previous) => ({ ...previous, language_id: effectiveLanguageId }))
+    }
     const values = {
       assignment_task_submission_uuid: userSubmissions?.assignment_task_submission_uuid || null,
       task_submission: {
         source_code: code,
-        language_id: languageId,
-        drafts: { ...drafts, [String(languageId)]: code },
+        language_id: effectiveLanguageId,
+        drafts: { ...drafts, [String(effectiveLanguageId)]: code },
         results: results,
       },
       grade: 0,
@@ -607,6 +762,11 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   // --- RUN CODE ---
   async function runCode() {
     if (isRunning) return
+    const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
+    if (effectiveLanguageId !== languageId) {
+      setLanguageId(effectiveLanguageId)
+      setContents((previous) => ({ ...previous, language_id: effectiveLanguageId }))
+    }
     // The API strips `stdin` / `expectedStdout` from every HIDDEN test case
     // before sending the task contents to a student (deliberate: hidden tests
     // must stay secret). Sending them back would post
@@ -638,7 +798,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         },
         body: JSON.stringify({
           activity_uuid: assignment?.activity_object?.activity_uuid,
-          language_id: languageId,
+          language_id: effectiveLanguageId,
           source_code: code,
           cpu_time_limit: contents.time_limit_ms ? contents.time_limit_ms / 1000 : undefined,
           memory_limit: contents.memory_limit_kb ?? undefined,
@@ -685,9 +845,69 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
     }
   }
 
+  // --- SUBMIT THIS TASK FOR GRADING ---
+  // Runs the task server-side (including hidden tests), stores the task grade,
+  // and reports Accepted when every test passed.
+  async function submitTaskForGrading() {
+    if (!assignmentTaskUUID || isTaskSubmitting || !canStudentSave) return
+    const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
+    if (effectiveLanguageId !== languageId) {
+      setLanguageId(effectiveLanguageId)
+      setContents((previous) => ({ ...previous, language_id: effectiveLanguageId }))
+    }
+    setIsTaskSubmitting(true)
+    setTaskSubmitResult(null)
+    try {
+      const res = await submitAssignmentTaskForGrading(
+        assignment.assignment_object.assignment_uuid,
+        assignmentTaskUUID,
+        {
+          assignment_task_submission_uuid:
+            userSubmissions?.assignment_task_submission_uuid || null,
+          task_submission: {
+            source_code: code,
+            language_id: effectiveLanguageId,
+            drafts: { ...drafts, [String(effectiveLanguageId)]: code },
+          },
+        },
+        access_token
+      )
+      if (res.success && res.data) {
+        const result = res.data as TaskSubmitResult
+        setTaskSubmitResult(result)
+        if (result.passed) {
+          toast.success(t('assignments.task_accepted', { defaultValue: 'Accepted — task credited' }))
+        } else {
+          toast.error(
+            t('assignments.task_failed', {
+              defaultValue: 'Tests failed — check the analysis and try again',
+            })
+          )
+        }
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.assignments.taskSubmission(
+            assignment.assignment_object.assignment_uuid
+          ),
+        })
+      } else {
+        toast.error(t('assignments.failed_submit_assignment'))
+      }
+    } catch (error) {
+      console.error('Task submit error:', error)
+      toast.error(t('assignments.failed_submit_assignment'))
+    } finally {
+      setIsTaskSubmitting(false)
+    }
+  }
+
   // --- RUN WITH CUSTOM INPUT ---
   async function runWithInput() {
     if (isCustomRunning) return
+    const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
+    if (effectiveLanguageId !== languageId) {
+      setLanguageId(effectiveLanguageId)
+      setContents((previous) => ({ ...previous, language_id: effectiveLanguageId }))
+    }
     setIsCustomRunning(true)
     setCustomResult(null)
     try {
@@ -699,7 +919,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         },
         body: JSON.stringify({
           activity_uuid: assignment?.activity_object?.activity_uuid,
-          language_id: languageId,
+          language_id: effectiveLanguageId,
           source_code: code,
           stdin: customStdin,
           cpu_time_limit: contents.time_limit_ms ? contents.time_limit_ms / 1000 : undefined,
@@ -741,6 +961,11 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   // --- GRADE (grading view) ---
   async function gradeFC() {
     if (!assignmentTaskUUID || !userSubmissions) return
+    const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
+    if (effectiveLanguageId !== languageId) {
+      setLanguageId(effectiveLanguageId)
+      setContents((previous) => ({ ...previous, language_id: effectiveLanguageId }))
+    }
     setIsRunning(true)
     try {
       const resp = await fetch(`${getAPIUrl()}code/execute-batch`, {
@@ -754,7 +979,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
           // this view is instructor-only and its contents are NOT stripped, so
           // stdin/expectedStdout are present. Do not filter here.
           activity_uuid: assignment?.activity_object?.activity_uuid,
-          language_id: languageId,
+          language_id: effectiveLanguageId,
           source_code: code,
           cpu_time_limit: contents.time_limit_ms ? contents.time_limit_ms / 1000 : undefined,
           memory_limit: contents.memory_limit_kb ?? undefined,
@@ -819,7 +1044,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         assignment_task_submission_uuid: userSubmissions.assignment_task_submission_uuid,
         task_submission: {
           source_code: code,
-          language_id: contents.language_id,
+          language_id: effectiveLanguageId,
           results: storedResults,
         },
         grade: finalGrade,
@@ -944,7 +1169,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                   <CodeMirror
                     value={code}
                     onChange={(val) => setCode(val)}
-                    extensions={cmExtensions}
+                    extensions={[...cmExtensions, ...completionExtensions]}
                     theme={cmTheme}
                     style={cmStyles}
                     height="200px"
@@ -1161,24 +1386,27 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                 `canStudentSave`), so any further typing would be silently lost
                 on reload and would not reach the grader. Mirrors the read-only
                 treatment of the other task types. */}
-            <div dir="ltr" className={`rounded-md overflow-hidden ${cmClassName}`}>
-              {cmTheme && (
-                <CodeMirror
-                  value={code}
-                  onChange={(val) => {
-                    if (!canStudentSave) return
-                    interactedRef.current = true
-                    setCode(val)
-                  }}
-                  extensions={studentCmExtensions}
-                  theme={cmTheme}
-                  style={cmStyles}
-                  height="300px"
-                  readOnly={!canStudentSave}
-                  editable={canStudentSave}
-                  basicSetup={{ lineNumbers: true, foldGutter: false }}
-                />
-              )}
+            <div className="flex flex-col xl:flex-row gap-3 items-start">
+              <div dir="ltr" className={`flex-1 min-w-0 w-full rounded-md overflow-hidden ${cmClassName}`}>
+                {cmTheme && (
+                  <CodeMirror
+                    value={code}
+                    onChange={(val) => {
+                      if (!canStudentSave) return
+                      interactedRef.current = true
+                      setCode(val)
+                    }}
+                    extensions={[...studentCmExtensions, ...completionExtensions, ...analysisExtensions]}
+                    theme={cmTheme}
+                    style={cmStyles}
+                    height="300px"
+                    readOnly={!canStudentSave}
+                    editable={canStudentSave}
+                    basicSetup={{ lineNumbers: true, foldGutter: false }}
+                  />
+                )}
+              </div>
+              <CodeAnalysisPanel analysis={analysis} results={results} isRunning={isRunning} />
             </div>
             {!canStudentSave && (
               <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 bg-slate-100 rounded-md px-2 py-1 w-fit">
@@ -1251,16 +1479,50 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
             {/* Run Button: only if the task allows students to run */}
             {contents.allow_student_run !== false && (
               <div className="flex flex-col space-y-2">
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={runCode}
                     disabled={isRunning}
                     className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50"
                   >
                     {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                    <span>{isRunning ? 'Running...' : 'Run Tests'}</span>
+                    <span>{isRunning ? 'Running...' : t('assignments.run', { defaultValue: 'Run' })}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitTaskForGrading}
+                    disabled={isTaskSubmitting || !canStudentSave}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {isTaskSubmitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    <span>
+                      {isTaskSubmitting
+                        ? t('assignments.submitting', { defaultValue: 'Submitting…' })
+                        : t('assignments.submit_task', { defaultValue: 'Submit' })}
+                    </span>
                   </button>
                 </div>
+
+                {taskSubmitResult && (
+                  <div
+                    className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-xs font-semibold ${
+                      taskSubmitResult.passed
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-rose-200 bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    <span>
+                      {taskSubmitResult.passed
+                        ? t('assignments.task_accepted', { defaultValue: 'Accepted — task credited' })
+                        : t('assignments.task_failed', { defaultValue: 'Tests failed' })}
+                    </span>
+                    <span className="font-normal opacity-80">
+                      {taskSubmitResult.grade}/{taskSubmitResult.max_grade}
+                      {taskSubmitResult.total_tests != null &&
+                        ` · ${taskSubmitResult.passed_tests ?? 0}/${taskSubmitResult.total_tests} tests`}
+                    </span>
+                  </div>
+                )}
 
                 {/* Free-form input: Run Tests only covers the public examples;
                     this runs the current code against an arbitrary stdin. It

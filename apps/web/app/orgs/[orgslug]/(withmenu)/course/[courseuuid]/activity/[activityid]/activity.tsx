@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { getUriWithOrg } from '@services/config/config'
-import { BookOpenCheck, CheckCircle, ChevronLeft, ChevronRight, MessageSquare, UserRoundPen, Edit2, Loader2, Maximize2, Minimize2, Trophy, Sparkles, XCircle, Lock, RotateCcw, Infinity as InfinityIcon } from 'lucide-react'
+import { BookOpenCheck, CheckCircle, ChevronLeft, ChevronRight, MessageSquare, UserRoundPen, Edit2, Loader2, Maximize2, Minimize2, Trophy, Sparkles, XCircle, Lock, RotateCcw, Infinity as InfinityIcon, House } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { markActivityAsComplete, unmarkActivityAsComplete } from '@services/courses/activity'
 import { usePathname, useRouter } from 'next/navigation'
@@ -813,12 +813,19 @@ function ActivityClient(props: ActivityClientProps) {
                   />
                 ) : (
                   <div className="space-y-4 pt-0 relative">
-                    <div className="pt-2 pb-3 sm:pb-6">
+                    <div className="pt-2 pb-3 sm:pb-6 flex flex-wrap items-center justify-between gap-3">
                       <Breadcrumbs items={[
                         { label: t('courses.courses'), href: getUriWithOrg(orgslug, '/courses'), icon: <BookCopy size={14} /> },
                         { label: course.name, href: getUriWithOrg(orgslug, `/course/${courseuuid}`) },
                         { label: displayName }
                       ]} />
+                      <Link
+                        href={getUriWithOrg(orgslug, '/dash')}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 nice-shadow transition-colors"
+                      >
+                        <House size={15} />
+                        {t('common.home', { defaultValue: 'Home' })}
+                      </Link>
                     </div>
                     <div className="space-y-3 sm:space-y-4 activity-info-section relative" style={{ zIndex: 'var(--z-content)' }}>
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -1764,44 +1771,9 @@ function AssignmentTools(props: {
       )
     }
 
-    return (
-      <ConfirmationModal
-        confirmationButtonText={t('assignments.submit_assignment')}
-        pendingButtonText={t('assignments.submitting', { defaultValue: 'Submitting…' })}
-        confirmationMessage={
-          isUngradedAssignment
-            ? t('assignments.hand_in_confirm', {
-                defaultValue:
-                  'Your work will be handed in to your teacher. It is not graded.',
-              })
-            : t('assignments.submit_assignment_confirm')
-        }
-        dialogTitle={
-          isUngradedAssignment
-            ? t('assignments.hand_in_title', { defaultValue: 'Hand in your work' })
-            : t('assignments.submit_assignment_title')
-        }
-        dialogTrigger={
-          <div className="bg-cyan-800 rounded-md px-4 nice-shadow flex flex-col p-2.5 text-white hover:cursor-pointer transition delay-150 duration-300 ease-in-out">
-            <span className="text-[10px] font-bold mb-1 uppercase">
-              {isRetryAttempt
-                ? t('assignments.attempt_count', { current: attemptNumber })
-                : t('common.status')}
-            </span>
-            <div className="flex items-center space-x-2">
-              <BookOpenCheck size={17} />
-              <span className="text-xs font-bold">
-                {isUngradedAssignment
-                  ? t('assignments.hand_in', { defaultValue: 'Hand in my work' })
-                  : t('assignments.submit_for_grading')}
-              </span>
-            </div>
-          </div>
-        }
-        functionToExecute={submitForGradingUI}
-        status="info"
-      />
-    )
+    // The assignment-level "Submit for grading" control was removed. Each code
+    // task now has its own Submit button that verifies and credits that task.
+    return null
   }
 
   if (submission[0].submission_status === 'SUBMITTED') {

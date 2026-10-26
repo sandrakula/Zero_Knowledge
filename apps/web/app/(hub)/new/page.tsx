@@ -672,7 +672,7 @@ function CreateOrgSuccess({ slug, t }: { slug: string; t: any }) {
     } catch {
       /* non-fatal: the existing session cookie still carries over */
     }
-    window.location.href = getUriWithOrg(slug, '/dash/onboarding')
+    window.location.href = getUriWithOrg(slug, '/dash')
   }
 
   return (

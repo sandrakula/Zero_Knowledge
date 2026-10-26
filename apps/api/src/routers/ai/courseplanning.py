@@ -563,7 +563,9 @@ async def generate_activity_content(
         course_description=content_request.course_description,
         model_name=ai_model,
         prompt=content_request.prompt,
-        current_content=current_content
+        current_content=current_content,
+        source=content_request.source,
+        source_refs=content_request.source_refs,
     )
 
     # Use event_generator_with_save to automatically save content to database when streaming completes

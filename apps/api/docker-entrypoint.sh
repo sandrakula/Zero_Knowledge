@@ -66,9 +66,11 @@ fi
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
 
-# Get port from config or use default
+# Get port from config or use default. Bind to all interfaces: $HOSTNAME is the
+# container id here, so using it made the server unreachable on localhost and
+# failed the image's own healthcheck.
 PORT=${LEARNHOUSE_PORT:-9000}
-HOST=${HOSTNAME:-0.0.0.0}
+HOST=${LEARNHOUSE_HOST:-0.0.0.0}
 
 echo "Starting LearnHouse backend on ${HOST}:${PORT}..."
 

@@ -315,7 +315,12 @@ export function SessionProvider({
     })
 
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
+      // 400 from /users/session means the token decoded but its identity is not
+      // in this database (stale token from an earlier install, deleted user).
+      // That is terminal, like 401/403: retrying the same token forever leaves
+      // /dash on an endless loading screen. Returning null clears the session
+      // marker and sends the user back to /login.
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
         return null
       }
       throw new Error(`Session fetch failed with status: ${response.status}`)

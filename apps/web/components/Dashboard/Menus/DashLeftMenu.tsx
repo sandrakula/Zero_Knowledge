@@ -48,7 +48,6 @@ import {
 } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
 import { DiscordIcon } from '@components/Objects/Icons/DiscordIcon'
-import CommandPaletteTrigger from '@components/Dashboard/CommandPalette/CommandPaletteTrigger'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import React, { useEffect, useState } from 'react'
@@ -85,8 +84,6 @@ import { usePlan } from '@components/Hooks/usePlan'
 import { planMeetsRequirement } from '@services/plans/plans'
 import useAdminStatus from '@components/Hooks/useAdminStatus'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
-import OnboardingSidebarBox from '@components/Dashboard/Onboarding/OnboardingSidebarBox'
-import { useOnboarding } from '@components/Hooks/useOnboarding'
 
 // Scattered night-sky starfield for the free-plan upgrade box. Fixed positions
 // (top/left %) so the constellation is stable across renders; `north` is the
@@ -116,10 +113,6 @@ function DashLeftMenu() {
   const pathname = usePathname() || ''
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [upgradeHovered, setUpgradeHovered] = useState(false)
-  // Onboarding takes over the search slot until setup is complete / dismissed.
-  const onboarding = useOnboarding()
-  const showOnboarding =
-    !isCollapsed && onboarding.welcomeSeen && !onboarding.dismissed && !onboarding.allCompleted
 
   const isActivePath = (path: string) => {
     if (path === '/dash') {
@@ -300,34 +293,56 @@ function DashLeftMenu() {
           </button>
         )}
 
-        {/* Onboarding progress reuses this header's bottom border as its track,
-            a neon purple gradient that glows out from the border. */}
-        {showOnboarding && (
-          <>
-            {/* faint full-width track so the border reads as purple even at 0% */}
-            <div className="absolute -bottom-px start-0 end-0 h-[2px] bg-indigo-500/15" />
-            <motion.div
-              className="absolute -bottom-px start-0 h-[2px] rounded-e-full"
-              style={{
-                background: 'linear-gradient(90deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%)',
-                boxShadow:
-                  '0 0 6px rgba(139,92,246,0.85), 0 0 14px rgba(168,85,247,0.55), 0 0 2px rgba(99,102,241,0.9)',
-              }}
-              initial={false}
-              animate={{ width: `${Math.max(onboarding.progress * 100, 6)}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-            />
-          </>
-        )}
       </div>
 
-      {/* Search trigger, replaced by the onboarding progress in this slot until
-          setup is complete (then the search box returns). */}
-      <div className={cn('px-3 shrink-0', showOnboarding ? 'pt-2' : 'pt-3')}>
-        {showOnboarding ? (
-          <OnboardingSidebarBox />
+      {/* Quick course list: the global search trigger was removed from the
+          sidebar, and learners need a direct way to switch courses here. */}
+      <div className="px-3 shrink-0 pt-3">
+        {isCollapsed ? (
+          <Link
+            href={getUriWithOrg(org?.slug || '', '/courses')}
+            aria-label={t('courses.my_courses')}
+            className="flex items-center justify-center h-10 rounded-lg text-white/50 hover:text-white hover:bg-white/[0.08] transition-colors"
+          >
+            <BookOpen size={20} weight="fill" />
+          </Link>
         ) : (
-          <CommandPaletteTrigger isCollapsed={isCollapsed} />
+          <div className="rounded-lg bg-white/[0.03] ring-1 ring-inset ring-white/5 p-2">
+            <div className="flex items-center justify-between px-1 pb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white/35">
+                {t('courses.my_courses')}
+              </span>
+              <Link
+                href={getUriWithOrg(org?.slug || '', '/courses')}
+                className="text-[10px] font-semibold text-white/40 hover:text-white transition-colors"
+              >
+                {t('common.all_courses')}
+              </Link>
+            </div>
+            <div className="space-y-0.5 max-h-[180px] overflow-y-auto">
+              {recentCourses.slice(0, 5).map((course: { course_uuid?: string; name?: string }) => {
+                const uuid = (course.course_uuid || '').replace('course_', '')
+                if (!uuid) return null
+                const href = canManage
+                  ? `/dash/courses/course/${uuid}/settings`
+                  : getUriWithOrg(org?.slug || '', `/course/${uuid}`)
+                return (
+                  <Link
+                    key={uuid}
+                    href={href}
+                    title={course.name}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors"
+                  >
+                    <BookOpen size={13} weight="fill" className="text-white/35 flex-shrink-0" />
+                    <span className="truncate">{course.name}</span>
+                  </Link>
+                )
+              })}
+              {recentCourses.length === 0 && (
+                <p className="px-2 py-1 text-[11px] text-white/30">{t('courses.no_courses')}</p>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

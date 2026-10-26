@@ -249,6 +249,22 @@ export async function getCourseProgressSummary(
   return res
 }
 
+export interface MyTaskProgressEntry {
+  total: number
+  solved: number
+}
+
+export async function getMyCourseTaskProgress(
+  course_uuid: string,
+  access_token: string | null | undefined
+): Promise<{ activities: Record<string, MyTaskProgressEntry> }> {
+  const result = await fetch(
+    `${getAPIUrl()}courses/${course_uuid}/my-task-progress`,
+    RequestBodyWithAuthHeader('GET', null, null, access_token || undefined)
+  )
+  return await errorHandling(result)
+}
+
 export type StruggleFailedTest = {
   id: string
   label: string

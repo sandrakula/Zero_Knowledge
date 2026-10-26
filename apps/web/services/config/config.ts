@@ -152,8 +152,23 @@ const deriveAPIUrl = (): string => {
   return `${backendUrl}/api/v1/`
 }
 
+// API URL as seen from inside the web server process. In Docker/Kubernetes the
+// browser-facing URL (http://localhost:9000) is not reachable from the web
+// container, so deployments set LEARNHOUSE_INTERNAL_API_URL to the service URL
+// (http://api:9000/api/v1/). Falls back to the public URL when unset.
+const getInternalServerAPIUrl = (): string | null => {
+  const internal = process.env.LEARNHOUSE_INTERNAL_API_URL
+  if (!internal) return null
+  return internal.endsWith('/') ? internal : `${internal}/`
+}
+
 // For direct usage, these call the getters
 export const getAPIUrl = () => {
+  // Server-side rendering, route handlers and middleware run inside the web
+  // container, where the public API URL is unreachable.
+  if (typeof window === 'undefined') {
+    return getServerAPIUrl()
+  }
   // On custom domains (client-side), use relative path to go through Next.js proxy
   // This ensures cookies work correctly (same-origin)
   if (isOnCustomDomain()) {
@@ -165,7 +180,7 @@ export const getAPIUrl = () => {
 // Server-side only - always returns full URL (never relative path)
 // Use this in Server Components, API routes, and server-side data fetching
 export const getServerAPIUrl = () => {
-  return deriveAPIUrl()
+  return getInternalServerAPIUrl() || deriveAPIUrl()
 }
 
 export const getBackendUrl = () => getLEARNHOUSE_BACKEND_URL()

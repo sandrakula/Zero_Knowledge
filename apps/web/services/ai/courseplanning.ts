@@ -20,11 +20,15 @@ export interface AttachmentData {
   mime_type?: string
 }
 
+export type AISource = 'materials' | 'ai' | 'mixed'
+
 export interface ActivityPlan {
   name: string
   type: string
   description: string
   suggested_blocks: string[]
+  source?: AISource
+  source_refs?: string[]
 }
 
 export interface ChapterPlan {
@@ -279,7 +283,9 @@ export async function generateActivityContent(
   onChunk: (_chunk: string) => void,
   onComplete: (_sessionUuid: string) => void,
   onError: (_error: string) => void,
-  prompt?: string
+  prompt?: string,
+  source: AISource = 'ai',
+  sourceRefs: string[] = []
 ): Promise<void> {
   const data = {
     session_uuid: sessionUuid,
@@ -290,6 +296,8 @@ export async function generateActivityContent(
     course_name: courseName,
     course_description: courseDescription,
     prompt: prompt || undefined,
+    source,
+    source_refs: sourceRefs,
   }
 
   try {

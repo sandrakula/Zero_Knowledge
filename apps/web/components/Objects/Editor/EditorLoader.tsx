@@ -10,7 +10,6 @@ import EditorWrapper from './EditorWrapper'
 import MarkdownActivity from '@components/Objects/Activities/Markdown/MarkdownActivity'
 import EmbedActivity from '@components/Objects/Activities/Embed/EmbedActivity'
 import ResourceActivity from '@components/Objects/Activities/Resource/ResourceActivity'
-import OnboardingTracker from '@components/Dashboard/Onboarding/OnboardingTracker'
 
 interface EditorLoaderProps {
   courseid: string
@@ -106,7 +105,6 @@ export default function EditorLoader({ courseid: _courseid, activityuuid }: Edit
           />
         </div>
       )}
-      <OnboardingTracker />
     </div>
   )
 }

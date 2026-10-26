@@ -66,13 +66,19 @@ def to_message_history(stored: Any) -> list[ModelMessage]:
     return messages
 
 
-def attachments_to_parts(attachments: Any) -> list:
+def attachments_to_parts(attachments: Any, include_binary: bool = True) -> list:
     """Convert ``AttachmentData``-like objects into Pydantic AI multimodal parts.
 
     Replaces the Gemini-specific ``inline_data``/``file_data`` dicts. Note: video/YouTube and
     URL-based documents are only honored by providers that support them (e.g. Gemini); other
     providers will ignore or reject them, an inherent provider capability difference.
+
+    ``include_binary=False`` omits those parts entirely. Text-only providers (DeepSeek via an
+    OpenAI-compatible gateway) reject binary images/PDFs; callers that already extracted the
+    document text into the prompt should use that mode.
     """
+    if not include_binary:
+        return []
     parts: list = []
     for att in attachments or []:
         a_type = getattr(att, "type", None)

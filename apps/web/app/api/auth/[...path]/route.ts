@@ -11,7 +11,7 @@ import {
 } from '@services/auth/cookies'
 import { isLocalhost } from '@services/utils/ts/hostUtils'
 
-const BACKEND_URL = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') || 'http://localhost:1338').replace(/\/+$/, '')
+const BACKEND_URL = (process.env.LEARNHOUSE_INTERNAL_BACKEND_URL || getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') || 'http://localhost:1338').replace(/\/+$/, '')
 
 // Paths that return tokens in response body (relative to /api/v1/auth/)
 // `verify-email` auto-signs-in the user on successful email verification, so

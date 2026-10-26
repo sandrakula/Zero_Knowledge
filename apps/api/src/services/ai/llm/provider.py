@@ -30,6 +30,18 @@ class AINotConfiguredError(Exception):
     """Raised when the configured AI provider is missing its API key."""
 
 
+def _deepseek_settings(model_name: str):
+    """DeepSeek thinking mode rejects ``tool_choice``, which Pydantic AI sends
+    for structured output. Disable thinking unless the model explicitly opts
+    out of it. Returns None for non-DeepSeek models and no-thinking variants."""
+    name = model_name.lower()
+    if "deepseek" not in name or "no-thinking" in name:
+        return None
+    from pydantic_ai.settings import ModelSettings
+
+    return ModelSettings(extra_body={"thinking": {"type": "disabled"}})
+
+
 def build_model(model_name: str) -> Model:
     """Build a Pydantic AI ``Model`` for ``model_name`` using the global AI config.
 
@@ -100,7 +112,9 @@ def build_model(model_name: str) -> Model:
         from pydantic_ai.providers.openai import OpenAIProvider
 
         return OpenAIChatModel(
-            model_name, provider=OpenAIProvider(api_key=api_key, base_url=base_url)
+            model_name,
+            provider=OpenAIProvider(api_key=api_key, base_url=base_url),
+            settings=_deepseek_settings(model_name),
         )
 
     if provider_id == "anthropic":
@@ -114,7 +128,11 @@ def build_model(model_name: str) -> Model:
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.deepseek import DeepSeekProvider
 
-        return OpenAIChatModel(model_name, provider=DeepSeekProvider(api_key=api_key))
+        return OpenAIChatModel(
+            model_name,
+            provider=DeepSeekProvider(api_key=api_key),
+            settings=_deepseek_settings(model_name),
+        )
 
     # Moonshot AI / Kimi (Chinese): OpenAI-compatible; auto-configures api.moonshot.ai.
     if provider_id in ("moonshot", "moonshotai", "kimi"):

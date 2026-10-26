@@ -5048,3 +5048,104 @@ async def get_assignments_from_course(
             )
         )
     return results
+
+
+async def submit_and_grade_assignment_task(
+    request: Request,
+    assignment_uuid: str,
+    assignment_task_uuid: str,
+    assignment_task_submission_object: AssignmentTaskSubmissionUpdate,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+):
+    """Save one task answer and grade it immediately.
+
+    The regular task-submission endpoint deliberately never writes a grade for
+    learners. This one first persists the answer through that endpoint (so all
+    enrollment/deadline/frozen-attempt checks still apply), then verifies the
+    task server-side — including hidden tests for CODE — and stores the result.
+    """
+    task = (await db_session.execute(
+        select(AssignmentTask).where(
+            AssignmentTask.assignment_task_uuid == assignment_task_uuid
+        )
+    )).scalars().first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Assignment Task not found")
+
+    assignment = (await db_session.execute(
+        select(Assignment).where(Assignment.id == task.assignment_id)
+    )).scalars().first()
+    if not assignment or assignment.assignment_uuid != assignment_uuid:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    read = await handle_assignment_task_submission(
+        request,
+        assignment_task_uuid,
+        assignment_task_submission_object,
+        current_user,
+        db_session,
+    )
+
+    task_submission = (await db_session.execute(
+        select(AssignmentTaskSubmission).where(
+            AssignmentTaskSubmission.assignment_task_submission_uuid
+            == read.assignment_task_submission_uuid
+        )
+    )).scalars().first()
+    if not task_submission:
+        raise HTTPException(status_code=404, detail="Assignment Task Submission not found")
+
+    details = None
+    if task.assignment_type == AssignmentTaskTypeEnum.CODE:
+        details = await _evaluate_code_task(task, task_submission)
+        if details is None:
+            raise HTTPException(
+                status_code=502,
+                detail="Code judge is unavailable or returned an incomplete result",
+            )
+        grade = int(details.get("grade") or 0)
+        passed = details.get("verdict") == AssignmentAttemptVerdict.ACCEPTED.value
+        verdict = details.get("verdict")
+        feedback = (
+            f"{verdict or 'Evaluated'}: "
+            f"{details.get('passed_tests', 0)}/{details.get('total_tests', 0)} tests passed"
+        )
+    else:
+        grade = await _server_verified_task_grade(task, task_submission)
+        if grade is None:
+            grade = int(task_submission.grade or 0)
+        grade = int(grade)
+        max_grade = int(task.max_grade_value or 0)
+        passed = max_grade > 0 and grade >= max_grade
+        verdict = AssignmentAttemptVerdict.ACCEPTED.value if passed else "GRADED"
+        feedback = f"{verdict}: {grade}/{max_grade} points"
+        details = {
+            "grade": grade,
+            "verdict": verdict,
+            "passed_tests": None,
+            "total_tests": None,
+            "execution_time_ms": None,
+            "memory_kb": None,
+        }
+
+    task_submission.grade = grade
+    task_submission.task_submission_grade_feedback = feedback
+    task_submission.manually_graded = False
+    task_submission.update_date = str(datetime.now())
+    db_session.add(task_submission)
+    await db_session.commit()
+    await db_session.refresh(task_submission)
+
+    return {
+        "assignment_task_submission_uuid": task_submission.assignment_task_submission_uuid,
+        "grade": grade,
+        "max_grade": int(task.max_grade_value or 0),
+        "passed": bool(passed),
+        "verdict": verdict,
+        "feedback": feedback,
+        "passed_tests": details.get("passed_tests"),
+        "total_tests": details.get("total_tests"),
+        "execution_time_ms": details.get("execution_time_ms"),
+        "memory_kb": details.get("memory_kb"),
+    }

@@ -45,6 +45,27 @@ services:
       LEARNHOUSE_INITIAL_ORG_NAME: ZeroKnowledge Academy
       LEARNHOUSE_INITIAL_ORG_SLUG: default
       LEARNHOUSE_JUDGE0_API_URL: http://runner:2358
+      # Optional AI provider. Put the key in .env (gitignored) and restart api;
+      # see docs/content/self-hosting/configuration/ai-setup.mdx.
+      LEARNHOUSE_IS_AI_ENABLED: ${LEARNHOUSE_IS_AI_ENABLED:-false}
+      LEARNHOUSE_AI_PROVIDER: ${LEARNHOUSE_AI_PROVIDER:-google}
+      LEARNHOUSE_AI_API_KEY: ${LEARNHOUSE_AI_API_KEY:-}
+      LEARNHOUSE_GEMINI_API_KEY: ${LEARNHOUSE_GEMINI_API_KEY:-}
+      LEARNHOUSE_AI_BASE_URL: ${LEARNHOUSE_AI_BASE_URL:-}
+      LEARNHOUSE_AI_MODEL_FAST: ${LEARNHOUSE_AI_MODEL_FAST:-}
+      LEARNHOUSE_AI_MODEL_STANDARD: ${LEARNHOUSE_AI_MODEL_STANDARD:-}
+      LEARNHOUSE_AI_MODEL_PRO: ${LEARNHOUSE_AI_MODEL_PRO:-}
+      # Vision-capable model on the same gateway, used to describe uploaded
+      # diagrams/images before the text-only planner sees them.
+      LEARNHOUSE_AI_VISION_MODEL: ${LEARNHOUSE_AI_VISION_MODEL:-qwen3.8}
+      LEARNHOUSE_AI_EMBEDDING_PROVIDER: ${LEARNHOUSE_AI_EMBEDDING_PROVIDER:-}
+      LEARNHOUSE_AI_EMBEDDING_MODEL: ${LEARNHOUSE_AI_EMBEDDING_MODEL:-}
+      # 0 disables periodic RAG indexing (useful when the chat provider has no
+      # embeddings API, as embeddings would fail on every sweep).
+      LEARNHOUSE_RAG_BACKFILL_HOURS: ${LEARNHOUSE_RAG_BACKFILL_HOURS:-48}
+      # Set 0 when the chat provider has no embeddings API: skips event-driven
+      # RAG indexing as well as the periodic backfill.
+      LEARNHOUSE_RAG_ENABLED: ${LEARNHOUSE_RAG_ENABLED:-true}
     volumes:
       # Course media (book PDFs, thumbnails, logos) served by the API.
       - ./apps/api/content:/app/content
@@ -66,8 +87,14 @@ services:
     environment:
       <<: *api-env
       LEARNHOUSE_JUDGE0_API_URL: http://runner:2358
+      # The sandbox containers are siblings created via the host daemon, so
+      # submission files must live on a volume both this container and the
+      # daemon can see (a container-local path is invisible to the daemon).
+      RUNNER_WORK_ROOT: /workspace
+      RUNNER_WORK_VOLUME: zk-runner-work
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - runnerwork:/workspace
     ports:
       - "2358:2358"
 
@@ -78,6 +105,11 @@ services:
     environment:
       NEXT_PUBLIC_LEARNHOUSE_API_URL: http://localhost:9000/api/v1/
       NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: http://localhost:9000
+      # Server-side fetches (SSR, route handlers, middleware) run inside this
+      # container, where "localhost" is not the API. These are not exposed to
+      # the browser.
+      LEARNHOUSE_INTERNAL_API_URL: http://api:9000/api/v1/
+      LEARNHOUSE_INTERNAL_BACKEND_URL: http://api:9000
       NEXT_PUBLIC_LEARNHOUSE_DOMAIN: localhost:3000
       NEXT_PUBLIC_LEARNHOUSE_HTTPS: "false"
       NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG: default
@@ -88,3 +120,7 @@ services:
 
 volumes:
   pgdata:
+  # Explicit name so the runner passes the same volume to sandbox containers
+  # regardless of the Compose project name.
+  runnerwork:
+    name: zk-runner-work

@@ -53,9 +53,18 @@ def concurrency() -> int:
         return 2
 
 
+def rag_enabled() -> bool:
+    """False when the deployment cannot produce embeddings (e.g. a chat-only
+    gateway). Set LEARNHOUSE_RAG_ENABLED=0 to skip all indexing quietly."""
+    value = (os.environ.get("LEARNHOUSE_RAG_ENABLED") or "true").strip().lower()
+    return value not in ("0", "false", "no", "off", "disabled")
+
+
 def enqueue(ref: ContentRef, delay: float = DEBOUNCE_SECONDS, *, transcribe: bool = False) -> None:
     """Schedule a ref for indexing ``delay`` seconds from now (debounced).
     ``transcribe`` lets the run spend AI credits on media never transcribed."""
+    if not rag_enabled():
+        return
     try:
         _dispatch(ref, delay, transcribe)
     except Exception:

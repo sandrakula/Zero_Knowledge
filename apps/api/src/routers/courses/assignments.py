@@ -50,6 +50,7 @@ from src.services.courses.activities.assignments import (
     read_user_assignment_task_submissions_me,
     read_user_assignment_task_submissions_me_batch,
     retry_assignment_submission,
+    submit_and_grade_assignment_task,
     update_assignment,
     update_assignment_submission,
     update_assignment_task,
@@ -570,6 +571,40 @@ async def api_handle_assignment_task_submissions(
         current_user,
         db_session,
         on_behalf_of_user_id=on_behalf_of_user_id,
+    )
+
+
+@router.post(
+    "/{assignment_uuid}/tasks/{assignment_task_uuid}/submit",
+    summary="Submit and grade one assignment task",
+    description=(
+        "Persist the current user's answer for one task, verify it server-side "
+        "(including hidden CODE tests), store the task grade, and return the "
+        "verdict. Does not hand in the whole assignment."
+    ),
+    responses={
+        200: {"description": "Task graded."},
+        401: {"description": "Authentication required"},
+        403: {"description": "User lacks permission or the attempt is frozen"},
+        404: {"description": "Assignment or task not found"},
+        502: {"description": "The code judge did not return a usable verdict"},
+    },
+)
+async def api_submit_and_grade_assignment_task(
+    request: Request,
+    assignment_uuid: str,
+    assignment_task_uuid: str,
+    assignment_task_submission_object: AssignmentTaskSubmissionUpdate,
+    current_user: PublicUser = Depends(get_current_user),
+    db_session=Depends(get_db_session),
+):
+    return await submit_and_grade_assignment_task(
+        request,
+        assignment_uuid,
+        assignment_task_uuid,
+        assignment_task_submission_object,
+        current_user,
+        db_session,
     )
 
 
