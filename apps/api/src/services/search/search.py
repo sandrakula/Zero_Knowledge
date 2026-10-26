@@ -1,0 +1,392 @@
+from typing import Any, List, Sequence
+from fastapi import Request
+from sqlalchemy import ColumnElement, func, true as sa_true
+from sqlmodel import select, or_, and_
+from sqlmodel.ext.asyncio.session import AsyncSession
+from pydantic import BaseModel, ConfigDict
+from src.db.users import PublicUser, AnonymousUser, UserReadPublic, User, APITokenUser
+from src.db.courses.courses import CourseRead
+from src.db.folders.folders import Folder, FolderRead
+from src.db.organizations import Organization
+from src.db.user_organizations import UserOrganization
+from src.db.communities.communities import Community, CommunityRead
+from src.db.communities.discussions import Discussion, DiscussionRead
+from src.db.playgrounds import Playground, PlaygroundRead, PlaygroundAccessType
+from src.db.podcasts.podcasts import Podcast, PodcastRead
+from src.services.courses.courses import search_courses
+from src.services.search.normalization import (
+    LIKE_ESCAPE_CHAR,
+    build_like_pattern,
+    escape_like_wildcards,
+)
+from src.security.api_token_utils import require_token_content_read, token_has_right
+from src.security.auth import resolve_acting_user_id
+from src.services.orgs.auth_policy import viewer_for_org
+from src.security.org_auth import is_org_admin, is_org_member
+from src.services.communities.communities import (
+    accessible_community_ids_select,
+    can_read_all_communities,
+    community_read,
+)
+from src.services.folders.folders import accessible_folder_ids_select
+from src.services.podcasts.podcasts import accessible_podcast_ids_query
+
+
+class SearchDiscussionRead(DiscussionRead):
+    """DiscussionRead plus the parent community UUID so the UI can deep-link
+    to `/community/{uuid}/discussion/{uuid}` without another round trip."""
+
+    community_uuid: str = ""
+
+
+class SearchResult(BaseModel):
+    """Paginated search result grouped by resource type.
+
+    Each resource list is capped at `limit` per page; `total_*` holds the full
+    count for the whole query so the UI can show per-tab totals.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    courses: List[CourseRead]
+    folders: List[FolderRead]
+    # SECURITY: the stripped projection, never ``UserRead``. Search is open to
+    # every org member, and ``UserRead`` carries email / signup_method /
+    # is_superadmin / extra_metadata (the answers to the org's custom signup
+    # fields): PII the member directory deliberately restricts to admins.
+    users: List[UserReadPublic]
+    communities: List[CommunityRead]
+    discussions: List[SearchDiscussionRead]
+    playgrounds: List[PlaygroundRead]
+    podcasts: List[PodcastRead]
+
+    total_courses: int = 0
+    total_folders: int = 0
+    total_users: int = 0
+    total_communities: int = 0
+    total_discussions: int = 0
+    total_playgrounds: int = 0
+    total_podcasts: int = 0
+
+
+def _empty_result() -> SearchResult:
+    return SearchResult(
+        courses=[],
+        folders=[],
+        users=[],
+        communities=[],
+        discussions=[],
+        playgrounds=[],
+        podcasts=[],
+    )
+
+
+_escape_like_wildcards = escape_like_wildcards  # back-compat alias for existing tests
+
+
+def _token_reads_content(current_user: APITokenUser, resource: str) -> bool:
+    """``require_token_content_read`` as a yes/no, for filtering results."""
+    from fastapi import HTTPException
+
+    try:
+        require_token_content_read(current_user, resource)
+    except HTTPException:
+        return False
+    return True
+
+
+def _ilike_any(columns: Sequence[ColumnElement[Any]], pattern: str) -> ColumnElement[bool]:
+    """Return a SQL boolean matching `pattern` against any of the given columns.
+
+    Uses SQLAlchemy's `ilike`, which is parameterized and keeps the driver
+    responsible for escaping; no string interpolation on user input.
+    """
+    return or_(*(column.ilike(pattern, escape=LIKE_ESCAPE_CHAR) for column in columns))
+
+
+async def _paginate_and_count(
+    db_session: AsyncSession,
+    query,
+    page: int,
+    limit: int,
+) -> tuple[list, int]:
+    """Run `query` with LIMIT/OFFSET for the current page and return both the
+    page rows (as scalar model instances) and the full unpaginated count in one
+    helper.
+
+    Note: only use this helper for single-model selects (e.g. ``select(Foo)``).
+    Multi-column selects (e.g. ``select(Foo, Bar.col)``) return tuples and must
+    be fetched with ``.all()`` directly.
+    """
+    offset = (page - 1) * limit
+    rows = (await db_session.execute(query.offset(offset).limit(limit))).scalars().all()
+    total = (await db_session.execute(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    )).scalar_one()
+    return list(rows), int(total)
+
+
+async def _paginate_and_count_rows(
+    db_session: AsyncSession,
+    query,
+    page: int,
+    limit: int,
+) -> tuple[list, int]:
+    """Like ``_paginate_and_count`` but preserves multi-column ``Row`` tuples.
+
+    Use this for selects that return more than one column, e.g.
+    ``select(Discussion, Community.community_uuid)``.
+    """
+    offset = (page - 1) * limit
+    rows = (await db_session.execute(query.offset(offset).limit(limit))).all()
+    total = (await db_session.execute(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    )).scalar_one()
+    return list(rows), int(total)
+
+
+async def search_across_org(
+    request: Request,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    org_slug: str,
+    search_query: str,
+    db_session: AsyncSession,
+    page: int = 1,
+    limit: int = 10,
+) -> SearchResult:
+    """Search across the org's resources with per-type access control.
+
+    SECURITY:
+    - Anonymous users see public content only; they cannot search users.
+    - Authenticated non-members see public content only; they cannot search users.
+    - Org members additionally see org-scoped non-public content where the
+      resource itself doesn't restrict it further (e.g. unpublished items and
+      usergroup-restricted playgrounds are always excluded from search).
+      Usergroup-restricted communities (and their discussions) and podcasts
+      only show up for members of a linked group, as in their listings.
+    - User hits are serialized as ``UserReadPublic``, never ``UserRead``: search
+      is open to every member, so it must not expose the PII the dedicated
+      member directory restricts to admins.
+    - Pattern matching goes through SQLAlchemy `ilike`, which is fully parameterized.
+    - Limit is capped at 50 per page.
+    """
+    from fastapi import HTTPException, status
+
+    limit = min(limit, 50)
+
+    pattern = build_like_pattern(search_query)
+
+    org = (await db_session.execute(
+        select(Organization).where(Organization.slug == org_slug)
+    )).scalars().first()
+    if not org:
+        return _empty_result()
+
+    if isinstance(current_user, APITokenUser):
+        if org.id != current_user.org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API token cannot search in organizations outside its scope",
+            )
+        # A token with no rights at all holds no search right either.
+        if not token_has_right(current_user, "search", "action_read"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API token does not have search permission",
+            )
+
+    current_user = await viewer_for_org(db_session, current_user, org.id)
+    is_anon = isinstance(current_user, AnonymousUser)
+    # API tokens are judged on their own rights buckets below, never on their
+    # creator's role: without a bucket's read right a token sees only what
+    # anyone could see.
+    is_token = isinstance(current_user, APITokenUser)
+    user_is_member = (
+        not is_anon and await is_org_member(resolve_acting_user_id(current_user), org.id, db_session)
+    )
+    only_public = is_anon or not user_is_member
+    acting_user_id = 0 if is_anon else resolve_acting_user_id(current_user)
+
+    # ── Courses ──────────────────────────────────────────────────────────────
+    # `search_courses` already applies its own per-user access filter.
+    if isinstance(current_user, APITokenUser) and not token_has_right(
+        current_user, "courses", "action_read"
+    ):
+        # search_courses refuses such a token; leave courses out instead.
+        courses = []
+    else:
+        courses = await search_courses(
+            request, current_user, org_slug, search_query, db_session, page, limit
+        )
+    total_courses = len(courses)
+
+    # ── Folders ──────────────────────────────────────────────────────────────
+    folders_q = (
+        select(Folder)
+        .where(Folder.org_id == org.id)
+        .where(_ilike_any([Folder.name, Folder.description], pattern))
+    )
+    if only_public or (
+        is_token and not token_has_right(current_user, "folders", "action_read")
+    ):
+        folders_q = folders_q.where(Folder.public == sa_true())
+    elif not is_token and not await is_org_admin(acting_user_id, org.id, db_session):
+        # Same visibility as the folder listing: UserGroup-restricted folders
+        # only for members of a linked group (or active authors).
+        folders_q = folders_q.where(
+            Folder.id.in_(accessible_folder_ids_select(org.id, acting_user_id))  # type: ignore[union-attr]
+        )
+    folders, total_folders = await _paginate_and_count(
+        db_session, folders_q, page, limit
+    )
+
+    # ── Users (org members only; anonymous and non-member traffic is denied) ─
+    if only_public or (
+        is_token and not token_has_right(current_user, "users", "action_read")
+    ):
+        users: list = []
+        total_users = 0
+    else:
+        users_q = (
+            select(User)
+            .join(UserOrganization, and_(
+                UserOrganization.user_id == User.id,
+                UserOrganization.org_id == org.id,
+            ))
+            .where(
+                _ilike_any(
+                    [User.username, User.first_name, User.last_name, User.bio],
+                    pattern,
+                )
+            )
+        )
+
+        # Membership is what gates this, and in the shared demo everyone who
+        # ever opened it is a member, so a two-letter query returned a roster
+        # of real people, with their names, usernames, bios and avatars, to any
+        # visitor. The seeded students remain searchable; they are the point.
+        from src.services.demo.guards import hide_other_visitors
+
+        if org.is_demo:
+            users_q = hide_other_visitors(
+                users_q, resolve_acting_user_id(current_user)
+            )
+
+        users, total_users = await _paginate_and_count(db_session, users_q, page, limit)
+
+    # ── Communities ──────────────────────────────────────────────────────────
+    communities_q = (
+        select(Community)
+        .where(Community.org_id == org.id)
+        .where(_ilike_any([Community.name, Community.description], pattern))
+    )
+    # Members get the same usergroup-aware visibility as the community
+    # listing; only community managers / org admins see every community.
+    community_filter = None
+    if only_public or (is_token and not _token_reads_content(current_user, "communities")):
+        community_filter = Community.public == sa_true()
+    elif is_token:
+        pass  # communities read right: every community of the token's org
+    elif not await can_read_all_communities(request, org, acting_user_id, db_session):
+        community_filter = Community.id.in_(  # type: ignore[attr-defined]
+            accessible_community_ids_select(org.id, acting_user_id)
+        )
+    if community_filter is not None:
+        communities_q = communities_q.where(community_filter)
+    communities, total_communities = await _paginate_and_count(
+        db_session, communities_q, page, limit
+    )
+
+    # ── Discussions (inherit access from their community) ────────────────────
+    discussions_q = (
+        select(Discussion, Community.community_uuid)
+        .join(Community, Community.id == Discussion.community_id)
+        .where(Discussion.org_id == org.id)
+        .where(_ilike_any([Discussion.title, Discussion.content], pattern))
+    )
+    if community_filter is not None:
+        discussions_q = discussions_q.where(community_filter)
+    discussions, total_discussions = await _paginate_and_count_rows(
+        db_session, discussions_q, page, limit
+    )
+
+    # ── Playgrounds (published only; restricted are usergroup-gated elsewhere) ─
+    playgrounds_q = (
+        select(Playground)
+        .where(Playground.org_id == org.id)
+        .where(Playground.published == sa_true())
+        .where(_ilike_any([Playground.name, Playground.description], pattern))
+    )
+    if only_public or (
+        is_token and not token_has_right(current_user, "playgrounds", "action_read")
+    ):
+        playgrounds_q = playgrounds_q.where(
+            Playground.access_type == PlaygroundAccessType.PUBLIC
+        )
+    else:
+        playgrounds_q = playgrounds_q.where(
+            Playground.access_type.in_([  # type: ignore[attr-defined]
+                PlaygroundAccessType.PUBLIC,
+                PlaygroundAccessType.AUTHENTICATED,
+            ])
+        )
+    playgrounds, total_playgrounds = await _paginate_and_count(
+        db_session, playgrounds_q, page, limit
+    )
+
+    # ── Podcasts ─────────────────────────────────────────────────────────────
+    podcasts_q = (
+        select(Podcast)
+        .where(Podcast.org_id == org.id)
+        .where(Podcast.published == sa_true())
+        .where(_ilike_any([Podcast.name, Podcast.description, Podcast.tags], pattern))
+    )
+    if only_public or (is_token and not _token_reads_content(current_user, "podcasts")):
+        podcasts_q = podcasts_q.where(Podcast.public == sa_true())
+    elif not is_token and not await is_org_admin(acting_user_id, org.id, db_session):
+        # Same visibility as the podcast listing: usergroup-restricted
+        # podcasts only for members of a linked group (or active authors).
+        podcasts_q = podcasts_q.where(
+            Podcast.id.in_(accessible_podcast_ids_query(acting_user_id))  # type: ignore[union-attr]
+        )
+    podcasts, total_podcasts = await _paginate_and_count(
+        db_session, podcasts_q, page, limit
+    )
+
+    folder_reads = [FolderRead.model_validate(f) for f in folders]
+
+    user_reads = [UserReadPublic.model_validate(u) for u in users]
+    community_reads = [community_read(c) for c in communities]
+    discussion_reads = [
+        SearchDiscussionRead(
+            **discussion.model_dump(),
+            community_uuid=community_uuid or "",
+        )
+        for discussion, community_uuid in discussions
+    ]
+
+    playground_reads: list[PlaygroundRead] = []
+    for pg in playgrounds:
+        read = PlaygroundRead.model_validate(pg)
+        read.org_uuid = org.org_uuid
+        read.org_slug = org.slug
+        playground_reads.append(read)
+
+    podcast_reads = [PodcastRead(**p.model_dump(), authors=[]) for p in podcasts]
+
+    return SearchResult(
+        courses=courses,
+        folders=folder_reads,
+        users=user_reads,
+        communities=community_reads,
+        discussions=discussion_reads,
+        playgrounds=playground_reads,
+        podcasts=podcast_reads,
+        total_courses=total_courses,
+        total_folders=total_folders,
+        total_users=total_users,
+        total_communities=total_communities,
+        total_discussions=total_discussions,
+        total_playgrounds=total_playgrounds,
+        total_podcasts=total_podcasts,
+    )

@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: learnhouse
+      POSTGRES_PASSWORD: learnhouse
+      POSTGRES_DB: learnhouse
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Full data snapshot (courses, 2506 problems, students, progress).
+      # Runs only on first boot (empty volume); delete the `pgdata` volume to re-seed.
+      - ./db/zk-dump.sql:/docker-entrypoint-initdb.d/01-zk-dump.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learnhouse -d learnhouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: apps/api
+    restart: unless-stopped
+    environment: &api-env
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql://learnhouse:learnhouse@postgres:5432/learnhouse
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://redis:6379/learnhouse
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-dev-secret-key-please-change-32chars!!}
+      LEARNHOUSE_DEVELOPMENT_MODE: "true"
+      LEARNHOUSE_DOMAIN: localhost:3000
+      LEARNHOUSE_FRONTEND_DOMAIN: localhost:3000
+      LEARNHOUSE_SITE_NAME: ZeroKnowledge
+      LEARNHOUSE_TENANCY: single
+      LEARNHOUSE_PORT: "9000"
+      LEARNHOUSE_INITIAL_ADMIN_EMAIL: ${LEARNHOUSE_INITIAL_ADMIN_EMAIL:-admin@school.dev}
+      LEARNHOUSE_INITIAL_ADMIN_PASSWORD: ${LEARNHOUSE_INITIAL_ADMIN_PASSWORD:-admin12345}
+      LEARNHOUSE_INITIAL_ORG_NAME: ZeroKnowledge Academy
+      LEARNHOUSE_INITIAL_ORG_SLUG: default
+      LEARNHOUSE_JUDGE0_API_URL: http://runner:2358
+    volumes:
+      # Course media (book PDFs, thumbnails, logos) served by the API.
+      - ./apps/api/content:/app/content
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Self-hosted code judge: runs student code in isolated Docker containers.
+  # Needs the host's Docker daemon (mounted socket) to spawn sandboxes.
+  runner:
+    build:
+      context: apps/api
+      dockerfile: Dockerfile.runner
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      LEARNHOUSE_JUDGE0_API_URL: http://runner:2358
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "2358:2358"
+
+  web:
+    build:
+      context: apps/web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_LEARNHOUSE_API_URL: http://localhost:9000/api/v1/
+      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: http://localhost:9000
+      NEXT_PUBLIC_LEARNHOUSE_DOMAIN: localhost:3000
+      NEXT_PUBLIC_LEARNHOUSE_HTTPS: "false"
+      NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG: default
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

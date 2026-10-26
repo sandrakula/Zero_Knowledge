@@ -1,0 +1,19 @@
+# Self-hosted, Judge0-compatible code runner (Docker sandbox).
+#
+# Runs student code in fresh, isolated containers: no network, hard memory/CPU/
+# pid limits, dropped capabilities. This image only carries the Docker *client*
+# — it talks to the host's daemon through the mounted /var/run/docker.sock.
+FROM python:3.14.7-alpine3.24
+
+RUN apk add --no-cache docker-cli
+
+RUN pip install --no-cache-dir \
+    fastapi==0.159.1 \
+    uvicorn==0.54.0 \
+    pydantic==2.14.1
+
+WORKDIR /app
+COPY src/services/code_runner ./code_runner
+
+EXPOSE 2358
+CMD ["uvicorn", "code_runner.app:app", "--host", "0.0.0.0", "--port", "2358"]

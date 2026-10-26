@@ -1,0 +1,74 @@
+# Code attempts and grading
+
+Assignment `CODE` tasks are graded on the server. The browser never receives
+hidden test inputs or expected stdout; it may run only the public examples.
+
+## Run vs Submit
+
+- **Run Tests** (`POST /api/v1/code/execute-batch`) executes the visible test
+  cases for the current activity. It is practice only: it does not submit the
+  assignment and does not award progress. The student editor also offers a
+  free-form stdin run through `POST /api/v1/code/execute`; that is a single
+  Judge0 run, not a graded test suite.
+- **Submit for grading** (`POST /api/v1/assignments/{assignment_uuid}/submissions`)
+  stores the attempt and, when the assignment has `auto_grading` enabled, runs
+  every configured test (hidden included) through Judge0 on the server. The
+  teacher can also finalize the grade later.
+
+## Attempt history
+
+Every learner submission creates one durable `assignmentattempt` row per CODE
+task. Rows survive retries and resubmits; retrying an assignment does not delete
+them.
+
+Fields stored per attempt:
+
+- student, course/activity, assignment and task;
+- source code and language;
+- attempt number and timestamp;
+- aggregate verdict (`ACCEPTED`, `WRONG_ANSWER`, `COMPILATION_ERROR`,
+  `RUNTIME_ERROR`, `TIME_LIMIT_EXCEEDED`, `MEMORY_LIMIT_EXCEEDED`,
+  `EXECUTION_ERROR`, or `PENDING`);
+- passed/total test count, execution time and memory when Judge0 reports them;
+- per-test pass/fail rows **without** hidden stdin/stdout or expected answers.
+
+Read endpoints:
+
+| Endpoint | Who |
+| --- | --- |
+| `GET /api/v1/assignments/{assignment_uuid}/tasks/{task_uuid}/attempts/me` | Signed-in learner, own rows |
+| `GET /api/v1/assignments/{assignment_uuid}/tasks/{task_uuid}/attempts` | Instructor; optional `user_id` filter |
+
+The student task view shows the history under the results panel. The source of
+each attempt is expandable.
+
+## Languages and drafts
+
+A problem added from the library snapshots its supported Judge0 language ids
+into the task contents. When more than one language is available, the student
+editor exposes a language selector. The current code and a `drafts` map keyed by
+language id are saved in the task submission, so switching languages (or
+reloading) does not overwrite another language's unsaved code. The server
+rejects a saved/grader submission whose language is not in the task's snapshot.
+
+## Limits
+
+`time_limit_ms` and `memory_limit_kb` from the problem library are snapshotted
+into the task contents when a problem is added to an assignment. Server-side
+grading passes them to Judge0 as `cpu_time_limit` (seconds) and `memory_limit`
+(kilobytes).
+
+Interactive runs may supply their own limits, but the API clamps them to
+`0.1–10 s` CPU and `16 KB–256 MB` memory. Grading ignores caller-supplied values
+and uses the task snapshot.
+
+## Security notes
+
+- Judge0 credentials stay in API configuration and are never sent to the web
+  client.
+- Hidden test I/O is stripped from task payloads, and hidden rows in stored
+  `task_submission.results` are sanitized before a learner reads them.
+- The submit path checks assignment access and, for a session student, the
+  activity reader gate and deadline.
+- An attempt whose tests could not be executed stays pending rather than being
+  finalized as a zero.

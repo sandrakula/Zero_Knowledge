@@ -1,0 +1,429 @@
+import secrets
+from datetime import datetime
+from typing import List, Optional
+from uuid import uuid4
+
+from fastapi import HTTPException, Request, UploadFile
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.db.organizations import Organization
+from src.db.users import AnonymousUser, APITokenUser, PublicUser
+from src.db.media.media import (
+    Media,
+    MediaCreate,
+    MediaRead,
+    MediaTypeEnum,
+    MediaUpdate,
+)
+from src.db.resource_authors import (
+    ResourceAuthor,
+    ResourceAuthorshipEnum,
+    ResourceAuthorshipStatusEnum,
+)
+from src.db.media.media_share_token import MediaShareToken
+from src.security.auth import resolve_acting_user_id
+from src.security.file_validation import EXT_TO_CANONICAL_MIME
+from src.security.org_auth import is_org_member, require_org_role_permission
+from src.security.rbac import check_resource_access, AccessAction
+from src.services.media.media_access import media_in_any_private_folder
+from src.services.utils.upload_content import upload_file
+
+
+# Validation categories (see src/security/file_validation.py). Office docs and
+# zip archives are validated by magic bytes + a zip-bomb guard and are only ever
+# served as downloads, never executed/rendered inline.
+ALLOWED_MEDIA_TYPES = [
+    "image",
+    "video",
+    "document",
+    "audio",
+    "office",
+    "office_legacy",
+    "archive",
+]
+
+
+async def _get_org_uuid(db_session: AsyncSession, org_id: int) -> str:
+    org = (
+        await db_session.execute(select(Organization).where(Organization.id == org_id))
+    ).scalars().first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org.org_uuid
+
+
+async def create_media(
+    request: Request,
+    media_object: MediaCreate,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+    file: Optional[UploadFile] = None,
+) -> MediaRead:
+    # Resolve the target org before authorizing so an org that does not exist
+    # still answers 404 rather than "not a member of it".
+    await _get_org_uuid(db_session, media_object.org_id)
+
+    # An API token is scoped to its own org: the form's org_id must not let it
+    # write into another org its creator happens to belong to.
+    if isinstance(current_user, APITokenUser) and current_user.org_id != media_object.org_id:
+        raise HTTPException(
+            status_code=403,
+            detail="API token cannot access resources outside its organization",
+        )
+
+    # `media_x` is a placeholder, not a real uuid, so RBAC cannot resolve a
+    # target org from it and falls back to the caller's roles in ANY org. The
+    # org is caller-supplied here, so pin the create right to THAT org first.
+    await require_org_role_permission(
+        resolve_acting_user_id(current_user),
+        media_object.org_id,
+        db_session,
+        "media",
+        "action_create",
+    )
+    await check_resource_access(
+        request, db_session, current_user, "media_x", AccessAction.CREATE
+    )
+
+    media = Media(
+        name=media_object.name,
+        description=media_object.description or "",
+        media_type=media_object.media_type,
+        url=media_object.url or "",
+        thumbnail_image=media_object.thumbnail_image or "",
+        public=media_object.public,
+        org_id=media_object.org_id,
+        media_uuid=f"media_{uuid4()}",
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+
+    if media_object.media_type == MediaTypeEnum.UPLOAD:
+        if file is None:
+            raise HTTPException(status_code=400, detail="A file is required for UPLOAD media")
+        org_uuid = await _get_org_uuid(db_session, media_object.org_id)
+        # Randomize BOTH the directory and the filename so the storage path is
+        # not derivable from the media_uuid (which is returned in API responses).
+        rand_dir = secrets.token_urlsafe(16)
+        directory = f"media/{rand_dir}"
+        filename = await upload_file(
+            file=file,
+            directory=directory,
+            type_of_dir="orgs",
+            uuid=org_uuid,
+            allowed_types=ALLOWED_MEDIA_TYPES,
+            filename_prefix="media",
+        )
+        parts = filename.rsplit(".", 1)
+        media.file_id = filename
+        # Server-only key (under content/), never returned to clients.
+        media.storage_key = f"orgs/{org_uuid}/{directory}/{filename}"
+        media.file_format = parts[1] if len(parts) > 1 else ""
+        # Derive the MIME from the STORED extension, which `upload_file` built
+        # from the validated (magic-byte checked) content type. The client's
+        # own `file.content_type` header is not persisted: this value becomes a
+        # response header when the file is served, so it stays server-decided.
+        media.file_mime = EXT_TO_CANONICAL_MIME.get(f".{media.file_format}".lower(), "")
+        # The upload was already streamed to storage; take its size from the
+        # multipart parse (or the spooled file's end) rather than reading up to
+        # several GB back into memory.
+        media.file_size = file.size
+        if media.file_size is None:
+            try:
+                file.file.seek(0, 2)
+                media.file_size = file.file.tell()
+            except Exception:
+                media.file_size = None
+    elif media_object.media_type == MediaTypeEnum.EMBED:
+        if not media_object.url:
+            raise HTTPException(status_code=400, detail="A url is required for EMBED media")
+
+    db_session.add(media)
+    await db_session.commit()
+    await db_session.refresh(media)
+
+    user_id = resolve_acting_user_id(current_user)
+    if user_id:
+        db_session.add(
+            ResourceAuthor(
+                resource_uuid=media.media_uuid,
+                user_id=user_id,
+                authorship=ResourceAuthorshipEnum.CREATOR,
+                authorship_status=ResourceAuthorshipStatusEnum.ACTIVE,
+                creation_date=str(datetime.now()),
+                update_date=str(datetime.now()),
+            )
+        )
+        await db_session.commit()
+        await db_session.refresh(media)
+
+    # Place into a folder, or at the library root (Drive-like) when no folder given,
+    # so uploaded media always appears in the library.
+    if media_object.folder_uuid:
+        from src.services.folders.folders import add_folder_content
+
+        await add_folder_content(
+            request, media_object.folder_uuid, media.media_uuid, current_user, db_session
+        )
+    else:
+        from src.services.folders.folders import add_org_root_content
+
+        await add_org_root_content(
+            request, media_object.org_id, media.media_uuid, current_user, db_session
+        )
+    await db_session.refresh(media)
+
+    return MediaRead.model_validate(media)
+
+
+async def get_media(
+    request: Request,
+    media_uuid: str,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+) -> MediaRead:
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.READ
+    )
+    return MediaRead.model_validate(media)
+
+
+async def update_media(
+    request: Request,
+    media_object: MediaUpdate,
+    media_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> MediaRead:
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.UPDATE
+    )
+
+    data = media_object.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        if value is not None:
+            setattr(media, key, value)
+    media.update_date = str(datetime.now())
+    db_session.add(media)
+    await db_session.commit()
+    await db_session.refresh(media)
+    return MediaRead.model_validate(media)
+
+
+async def delete_media(
+    request: Request,
+    media_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+):
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.DELETE
+    )
+
+    from src.db.folders.folder_content import FolderContent
+
+    placements = (
+        await db_session.execute(
+            select(FolderContent).where(FolderContent.resource_uuid == media_uuid)
+        )
+    ).scalars().all()
+    for placement in placements:
+        await db_session.delete(placement)
+
+    await db_session.delete(media)
+    await db_session.commit()
+    return {"detail": "Media deleted"}
+
+
+async def get_media_list(
+    request: Request,
+    org_id: str,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+    page: int = 1,
+    limit: int = 50,
+) -> List[MediaRead]:
+    from sqlalchemy import and_, or_
+
+    from src.db.folders.folder_content import FolderContent
+    from src.db.usergroup_resources import UserGroupResource
+    from src.db.usergroup_user import UserGroupUser
+    from src.security.api_token_utils import require_token_right
+    from src.security.org_auth import is_org_admin
+    from src.services.media.media_access import load_folder_tree, viewer_folder_grants
+
+    org_id_int = int(org_id)
+    # Bound page size; negative/zero values would yield bad offsets
+    page = max(1, int(page if page is not None else 1))
+    limit = min(max(1, int(limit if limit is not None else 50)), 100)
+    statement = select(Media).where(Media.org_id == org_id_int)
+
+    def placed_in(folder_ids: set[int]):
+        return Media.media_uuid.in_(
+            select(FolderContent.resource_uuid).where(FolderContent.folder_id.in_(folder_ids))
+        )
+
+    if isinstance(current_user, APITokenUser):
+        # A token reads media through its own rights, as a single media read
+        # does, and only inside its own org.
+        if current_user.org_id != org_id_int:
+            raise HTTPException(
+                status_code=403,
+                detail="API token cannot access resources outside its organization",
+            )
+        require_token_right(current_user, "media", "action_read")
+    else:
+        user_id = resolve_acting_user_id(current_user)
+        # Membership in the requested org, not merely being signed in, is what
+        # opens up the private library. A logged-in non-member sees exactly what
+        # an anonymous visitor sees, so `org_id` in the URL is not a way in.
+        is_member = bool(user_id) and await is_org_member(user_id, org_id_int, db_session)
+        if not is_member or not await is_org_admin(user_id, org_id_int, db_session):
+            # Same per-item rules as a media read, evaluated in bulk: folder
+            # rules reach every item below a folder, at any depth.
+            tree = await load_folder_tree(db_session, org_id_int)
+            private_folders = tree.private_ids()
+            effectively_public = Media.public == True  # noqa: E712
+            if private_folders:
+                effectively_public = and_(effectively_public, ~placed_in(private_folders))
+            if not is_member:
+                statement = statement.where(effectively_public)
+            else:
+                groups, authored_folders = await viewer_folder_grants(db_session, user_id)
+                linked = select(UserGroupResource.resource_uuid).where(
+                    UserGroupResource.resource_uuid == Media.media_uuid
+                )
+                in_linked_group = (
+                    select(UserGroupResource.resource_uuid)
+                    .join(UserGroupUser, UserGroupUser.usergroup_id == UserGroupResource.usergroup_id)
+                    .where(
+                        UserGroupResource.resource_uuid == Media.media_uuid,
+                        UserGroupUser.user_id == user_id,
+                    )
+                )
+                visible = or_(effectively_public, ~linked.exists(), in_linked_group.exists())
+                blocked = tree.blocked_ids(groups, authored_folders)
+                if blocked:
+                    visible = and_(visible, ~placed_in(blocked))
+                authored_media = select(ResourceAuthor.resource_uuid).where(
+                    ResourceAuthor.user_id == user_id,
+                    ResourceAuthor.authorship_status == ResourceAuthorshipStatusEnum.ACTIVE,
+                    ResourceAuthor.authorship.in_([
+                        ResourceAuthorshipEnum.CREATOR,
+                        ResourceAuthorshipEnum.MAINTAINER,
+                        ResourceAuthorshipEnum.CONTRIBUTOR,
+                    ]),
+                )
+                statement = statement.where(
+                    or_(Media.media_uuid.in_(authored_media), visible)
+                )
+    statement = statement.offset((page - 1) * limit).limit(limit)
+    media_items = (await db_session.execute(statement)).scalars().all()
+    return [MediaRead.model_validate(m) for m in media_items]
+
+
+# ---------------------------------------------------------------------------
+# File serving + shareable links
+# ---------------------------------------------------------------------------
+
+async def authorize_media_file(
+    request: Request,
+    media_uuid: str,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+    """Load media and enforce (folder-aware) READ access. Returns (media, is_public)."""
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.READ
+    )
+    is_public = bool(media.public) and not await media_in_any_private_folder(
+        db_session, media.media_uuid
+    )
+    return media, is_public
+
+
+async def create_media_share_link(
+    request: Request,
+    media_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> dict:
+    """Mint a NEW random token (unique every call) for a media the caller can read."""
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.READ
+    )
+    token = secrets.token_urlsafe(32)
+    db_session.add(
+        MediaShareToken(
+            token=token,
+            media_uuid=media.media_uuid,
+            org_id=media.org_id,
+            created_by_user_id=resolve_acting_user_id(current_user) or None,
+            revoked=False,
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        )
+    )
+    await db_session.commit()
+    return {"token": token}
+
+
+async def authorize_share_token(
+    request: Request,
+    token: str,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+    """Resolve a share token → media, then enforce the REQUESTING user's access.
+
+    The token is NOT an access bypass: an anonymous/unauthorized recipient is
+    still denied. Returns (media, is_public).
+    """
+    row = (
+        await db_session.execute(
+            select(MediaShareToken).where(MediaShareToken.token == token)
+        )
+    ).scalars().first()
+    if not row or row.revoked:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    media = (
+        await db_session.execute(select(Media).where(Media.media_uuid == row.media_uuid))
+    ).scalars().first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    await check_resource_access(
+        request, db_session, current_user, media.media_uuid, AccessAction.READ
+    )
+    is_public = bool(media.public) and not await media_in_any_private_folder(
+        db_session, media.media_uuid
+    )
+    return media, is_public

@@ -1,0 +1,7 @@
+# Build context is ./apps/web; keep node_modules/.next out of the image.
+node_modules
+.next
+out
+dist
+.env
+.env.*

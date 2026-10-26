@@ -1,0 +1,155 @@
+# Problem library
+
+The problem library is an organization-scoped bank of reusable programming
+exercises. A problem carries a Markdown statement, input/output formats,
+limits, and one or more test cases (public examples and hidden tests).
+
+Problems are **templates**, not live links: adding one to an assignment copies
+the statement and every test into the assignment task. Editing or archiving the
+library row afterwards does not change what a cohort already received, and it
+never touches student submissions.
+
+## Permissions
+
+Library endpoints reuse the `assignments` permission bucket of the caller's
+organization role:
+
+| Action | Required right |
+| --- | --- |
+| List / read problems | `assignments.action_update` (staff only; the payload contains hidden tests) |
+| Create / import | `assignments.action_create` |
+| Edit / archive | `assignments.action_update` |
+
+API tokens cannot manage the library; use a signed-in staff session.
+
+## Manage problems in the dashboard
+
+Open **Dashboard → Problem library** (`/dash/problems`):
+
+- **New problem** creates one manually; tests are edited as label / stdin /
+  expected stdout rows, with a `hidden` toggle and a weight.
+- **Edit** marks the problem as manually edited. Re-importing a pack will report
+  a `conflict` for that problem instead of overwriting it.
+- **Archive** is a soft delete: the problem disappears from the library and the
+  assignment picker, while existing assignment tasks keep working. Enable
+  **Show archived** to see retired rows and restore one with the same action
+  button.
+
+To use a problem, open an assignment's editor and choose **Add from library**.
+The new task is a `CODE` task with the statement and test snapshot already
+filled in; reorder it like any other task.
+
+## Import a pack
+
+`POST /api/v1/problems/org/{org_id}/import` accepts a ZIP:
+
+```
+pack.zip
+├── manifest.json
+└── problems/
+    └── 2936/
+        ├── problem.json
+        ├── statement.md
+        └── tests.json
+```
+
+`manifest.json`:
+
+```json
+{
+  "format": "learnhouse-problem-pack",
+  "version": 1,
+  "problems": [{ "external_id": "inf-2936", "dir": "problems/2936" }]
+}
+```
+
+`problem.json`:
+
+```json
+{
+  "external_id": "inf-2936",
+  "title": "Hypotenuse",
+  "statement_file": "statement.md",
+  "input_format": "Two integers a and b",
+  "output_format": "One real number",
+  "constraints": "1 <= a,b <= 1000",
+  "difficulty": "easy",
+  "topics": ["io", "arithmetic"],
+  "languages": [71, 54],
+  "limits": { "time_ms": 1000, "memory_kb": 65536 },
+  "source": {
+    "name": "Informatics",
+    "url": "https://informatics.msk.ru/mod/statements/view.php?chapterid=2936",
+    "problem_id": "2936"
+  },
+  "tests_file": "tests.json"
+}
+```
+
+`tests.json`:
+
+```json
+{
+  "tests": [
+    {
+      "id": "t1",
+      "label": "Example 1",
+      "stdin": "3\n4\n",
+      "expected_stdout": "5.0\n",
+      "hidden": false,
+      "weight": 1
+    }
+  ]
+}
+```
+
+### Rules
+
+- Only `.json`, `.md` and `.txt` members are accepted. The statement must be
+  Markdown; HTML tags such as `<script>` are rejected.
+- Paths are validated: absolute paths, drive letters, `..`, symlinks, NULs and
+  backslashes are rejected.
+- Limits: archive ≤ 20 MB, ≤ 1000 entries, ≤ 5 MB per file, ≤ 200 tests per
+  problem, ≤ 64 KB per test input/output.
+- At least one test is required; test ids must be unique; weights must be
+  positive.
+- `dry_run=true` (form field) validates and reports without writing.
+
+### Re-import behavior
+
+Problems are matched by `(organization, source.name, source.problem_id)` when a
+source id exists, otherwise by content checksum.
+
+| Situation | Result |
+| --- | --- |
+| Same content as the stored row | `skipped` |
+| Changed content, problem never manually edited | `updated` |
+| Changed content, problem manually edited | `conflict`, left untouched |
+| Validation error in one problem | `failed` for that entry; other entries still import |
+
+The response reports every problem with its status and error, e.g.
+`{"created": 1, "updated": 0, "skipped": 0, "conflicts": 0, "failed": 0, ...}`.
+
+## Informatics
+
+`informatics.msk.ru` publishes statements, sample tests, languages and limits
+through an undocumented JSON endpoint (`/py/problem/<id>/json`). Hidden tests
+and the judge are not publicly available.
+
+The dashboard exposes **Problem library → From Informatics**: enter the numeric
+problem id, validate, then import. The server:
+
+- fetches only that fixed host and a numeric id (15 s timeout, 2 MB cap; no
+  caller-supplied URL), with a per-user limit of 10 imports/minute;
+- extracts the statement, input/output sections, public sample tests, time
+  limit (seconds → ms) and memory limit (bytes → KB);
+- sets `source.name = Informatics`, `source.problem_id`, and a source URL;
+- runs the result through the regular pack importer, so duplicate/manual-edit
+  conflict rules are identical to a ZIP import.
+
+If the problem has no public sample tests the import is rejected with a clear
+message; hidden tests must be authored in the library editor. Bulk imports are
+deliberately not exposed until a small sample has been reviewed.
+
+API: `POST /api/v1/problems/org/{org_id}/import/informatics` with
+`{"problem_id": 2936, "dry_run": false}`.

@@ -1,0 +1,34 @@
+# Course progress / gradebook
+
+Course → **Students** (`/dash/courses/course/<uuid>/progress`) is a
+session-authenticated gradebook that works without Tinybird or any external
+analytics configuration.
+
+`GET /api/v1/courses/{course_uuid}/progress?page=1&limit=50` requires course
+update permission and returns:
+
+- every learner with a `TrailRun` for the course, plus any learner who already
+  has an assignment submission (so nobody disappears from the table);
+- one card per assignment with `required`, `published`, `due_date`, max grade,
+  submission status, stored grade, attempt number and `is_late`;
+- per-learner completed/submitted counts and a percentage over all assignments.
+
+Non-submitters are shown as `NOT_SUBMITTED`. Optional assignments are marked
+`optional` and are counted separately from required assignments.
+
+Clicking an assignment card opens a per-student drill-down: task list, stored
+task grade/feedback, and (for CODE tasks) the durable attempt history with
+verdict, passed/total and timestamp.
+
+## Struggle map
+
+The same **Students** tab includes a class-level **Struggle map** powered by
+`GET /api/v1/courses/{course_uuid}/struggle`. For every CODE task it reports:
+
+- total attempts and accepted rate;
+- WA / CE / RE / TLE counts;
+- learners attempted and learners stuck (latest attempt not accepted);
+- the five most frequently failed test cases.
+
+This is computed from the transactional `assignmentattempt` rows, so it works
+on a stock install without Tinybird.

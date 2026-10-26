@@ -1,0 +1,40 @@
+# Late submissions
+
+By default an assignment's `due_date` is a hard cutoff: after it passes, a
+learner cannot save task answers, upload a file, submit for grading, or retry.
+The API returns `403 Assignment deadline has passed`.
+
+## Accepting late work
+
+Set `allow_late=true` on an assignment (`Assignment → Edit → Accept late
+submissions`). When the deadline passes:
+
+- task saves, file uploads, submit-for-grading, and retries stay open;
+- the assignment-level submission is stored with `is_late=true`;
+- the learner sees an amber "Deadline passed — late submissions accepted"
+  notice and a "Late submission" badge on the assignment;
+- `assignment_submitted` analytics/audit/webhook payloads include `is_late`.
+
+Late work is graded exactly like on-time work. There is no automatic penalty,
+grace period, or per-student extension yet; if a penalty is needed, the teacher
+applies it through the normal grade/feedback controls.
+
+## Required vs optional
+
+`is_required` defaults to `true`. An optional assignment still appears in the
+course and can be completed, but it does **not** block course completion or the
+certificate: `is_course_fully_completed` excludes activities whose assignment is
+optional. Toggle it in **Assignment → Edit → Required for course completion**.
+
+The `assignmentusersubmission.is_late` flag tracks the **current** attempt and is
+reset by retry. Durable per-attempt CODE history is in `assignmentattempt`; the
+audit log also records `is_late` for each submission event.
+
+## Date format
+
+`due_date` is a free-form string parsed defensively. The dashboard edits a date
+plus an optional time (`YYYY-MM-DDTHH:MM`); a date-only value counts as due at
+the end of that local day. A datetime with an offset (`Z` or `±hh:mm`) is
+compared as an absolute instant; a datetime without an offset keeps the existing
+server-local wall-time behavior. Unparseable or empty values mean "no deadline"
+and never lock a learner out.
