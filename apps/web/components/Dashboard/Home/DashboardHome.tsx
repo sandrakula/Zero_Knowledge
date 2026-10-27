@@ -32,6 +32,21 @@ function Stat({ value, label }: { value: number; label: string }) {
   )
 }
 
+// green ≥ greenAt, yellow ≥ yellowAt, otherwise red.
+function pillClass(value: number, greenAt: number, yellowAt: number) {
+  if (value >= greenAt) return 'bg-emerald-100 text-emerald-700'
+  if (value >= yellowAt) return 'bg-amber-100 text-amber-700'
+  return 'bg-rose-100 text-rose-700'
+}
+
+function ValueBadge({ value, greenAt, yellowAt }: { value: number; greenAt: number; yellowAt: number }) {
+  return (
+    <span className={`inline-flex items-center justify-center min-w-[2.75rem] px-2.5 py-1 rounded-full text-xs font-bold ${pillClass(value, greenAt, yellowAt)}`}>
+      {value}
+    </span>
+  )
+}
+
 export default function DashboardHome() {
   const { t } = useTranslation()
   const session = useLHSession() as any
@@ -103,8 +118,8 @@ export default function DashboardHome() {
                     <tr key={s.user_id} className="border-b border-gray-50 last:border-0">
                       <td className={td}>{i + 1}</td>
                       <td className={td}>{s.name || s.username}</td>
-                      <td className={td}>{s.solved}</td>
-                      <td className={td}>{s.attendance}</td>
+                      <td className={td}><ValueBadge value={s.solved} greenAt={50} yellowAt={1} /></td>
+                      <td className={td}><ValueBadge value={s.attendance} greenAt={3} yellowAt={1} /></td>
                     </tr>
                   ))}
                   {students.length === 0 && (
