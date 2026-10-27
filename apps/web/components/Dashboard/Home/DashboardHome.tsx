@@ -79,6 +79,11 @@ export default function DashboardHome() {
             <Stat value={expiredCategories} label="Просрочено" />
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <RecentCourses />
+            <RecentMembers />
+          </div>
+
           <section className="bg-white rounded-xl nice-shadow overflow-hidden">
             <header className="px-4 py-3 border-b border-gray-100">
               <h2 className="text-sm font-bold text-gray-800">Прогресс учеников</h2>
@@ -117,11 +122,6 @@ export default function DashboardHome() {
               </table>
             </div>
           </section>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <RecentCourses />
-            <RecentMembers />
-          </div>
         </div>
       </div>
     </div>
