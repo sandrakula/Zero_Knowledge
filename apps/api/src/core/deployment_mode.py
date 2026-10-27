@@ -70,3 +70,17 @@ def get_deployment_mode() -> DeploymentMode:
             return 'oss'
         return 'ee' if hooks.is_license_active() else 'oss'
     return 'oss'
+
+
+def email_verification_required() -> bool:
+    """Whether email+password signups must confirm their email before login.
+
+    True by default. The opt-out (``LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION=false``)
+    is a LOCAL-DEV convenience only and is ignored in production: a deployment
+    running with ``development_mode=false`` always requires verification, so the
+    flag cannot be used as a silent production bypass.
+    """
+    cfg = get_learnhouse_config()
+    if not cfg.general_config.development_mode:
+        return True
+    return cfg.general_config.require_email_verification

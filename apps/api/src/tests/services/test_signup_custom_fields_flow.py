@@ -28,7 +28,7 @@ def _signup_patches():
         ("src.services.users.users.dispatch_webhooks", {"new_callable": AsyncMock}),
         ("src.services.users.users.send_account_creation_email", {}),
         ("src.services.users.email_verification.send_verification_email", {"new_callable": AsyncMock}),
-        ("src.services.users.users.get_deployment_mode", {"return_value": "oss"}),
+        ("src.services.users.users.email_verification_required", {"return_value": False}),
         ("src.services.users.users.authorization_verify_based_on_roles_and_authorship", {"new_callable": AsyncMock}),
     ]:
         stack.enter_context(patch(target, **kwargs))

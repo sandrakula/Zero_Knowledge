@@ -7,6 +7,10 @@ contact_email: support@zeroknowledge.example
 general:
   # SECURITY: default to production-safe; enable with LEARNHOUSE_DEVELOPMENT_MODE=true for local dev.
   development_mode: false
+  # Require email confirmation before login (default true). The false value is a
+  # local-dev convenience only: it is honoured solely when development_mode is true.
+  # Set via LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION.
+  require_email_verification: true
 
 security:
   # SECURITY: Set via LEARNHOUSE_AUTH_JWT_SECRET_KEY env var (required, min 32 chars).

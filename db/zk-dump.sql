@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict U4jVGG7QNAyTjdkf9E9euEeb54qkAo1XRfuNVvAw8PaKDsDphxGB2isgtYeIhTw
+\restrict eDgxGE8rg9WSiZcXgXRuXCkBfkSEQ9x2t5ESam6QHAz16tBRtSPsI1bwKWhQfr7
 
 -- Dumped from database version 16.15 (Debian 16.15-1.pgdg12+2)
 -- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg12+2)
@@ -3417,9 +3417,6 @@ COPY public.assignment (title, description, due_date, allow_late, is_required, p
 --
 
 COPY public.assignmentattempt (attempt_number, source_code, language_id, verdict, passed_tests, total_tests, execution_time_ms, memory_kb, test_results, id, attempt_uuid, user_id, org_id, course_id, chapter_id, activity_id, assignment_id, assignment_task_id, created_date, update_date) FROM stdin;
-1	a, b = map(int, input().split())\nprint((a*a + b*b) ** 0.5)\n	71	WRONG_ANSWER	0	1	20	1024	[{"id": "sample_1", "label": "Example 1", "passed": false, "status_id": 4, "status": "Wrong Answer", "time_ms": 18, "memory_kb": 1024}]	1	attempt_demo_2_1	2	1	1	1	1	1	1	2026-10-24 16:09:49.458314	2026-10-24 16:09:49.458323
-2	a, b = map(int, input().split())\nprint((a*a + b*b) ** 0.5)\n	71	COMPILATION_ERROR	0	1	20	1024	[{"id": "sample_1", "label": "Example 1", "passed": false, "status_id": 6, "status": "Compilation Error", "time_ms": null, "memory_kb": null}]	2	attempt_demo_2_2	2	1	1	1	1	1	1	2026-10-24 16:09:49.458817	2026-10-24 16:09:49.458824
-3	a, b = map(int, input().split())\nprint((a*a + b*b) ** 0.5)\n	71	WRONG_ANSWER	0	1	20	1024	[{"id": "sample_1", "label": "Example 1", "passed": false, "status_id": 4, "status": "Wrong Answer", "time_ms": 21, "memory_kb": 1024}]	3	attempt_demo_2_3	2	1	1	1	1	1	1	2026-10-24 16:09:49.459070	2026-10-24 16:09:49.459077
 \.
 
 
@@ -3851,7 +3848,6 @@ abbbcc $\\to$ QQQ	Построить пару reg. exp.-ов для поиска
 --
 
 COPY public.assignmenttasksubmission (assignment_task_submission_uuid, task_submission, grade, task_submission_grade_feedback, manually_graded, assignment_type, user_id, activity_id, course_id, chapter_id, assignment_task_id, id, creation_date, update_date) FROM stdin;
-ats_demo_2	{"source_code": "a, b = map(int, input().split())\\nprint((a*a + b*b) ** 0.5)\\n", "language_id": 71, "results": [{"id": "sample_1", "label": "Example 1", "passed": false, "expected_stdout": "5.0\\n", "actual_stdout": "5\\n"}]}	0		f	CODE	2	1	1	1	1	1	2026-10-24 16:09:49.428277	2026-10-24 16:09:49.428286
 assignmenttasksubmission_14e2796d-2d89-4ac3-9267-898e7039bec8	{"source_code": "import math\\na=float(input())\\nb=float(input())\\nprint(math.hypot(a,b))", "language_id": 71, "drafts": {"71": "import math\\na=float(input())\\nb=float(input())\\nprint(math.hypot(a,b))"}, "results": []}	0		f	CODE	1	2	2	2	3	2	2026-10-25 15:37:07.819713	2026-10-25 15:37:07.819713
 \.
 
@@ -3861,7 +3857,6 @@ assignmenttasksubmission_14e2796d-2d89-4ac3-9267-898e7039bec8	{"source_code": "i
 --
 
 COPY public.assignmentusersubmission (is_late, submission_status, grade, overall_feedback, attempt_number, user_id, assignment_id, id, creation_date, update_date, assignmentusersubmission_uuid) FROM stdin;
-f	SUBMITTED	40	\N	3	2	1	1	2026-10-24 16:09:49.393552	2026-10-24 16:09:49.393566	aus_demo_2
 \.
 
 
@@ -8023,10 +8018,10 @@ COPY public.resourceauthor (id, resource_uuid, user_id, authorship, authorship_s
 --
 
 COPY public.role (name, description, rights, id, org_id, role_type, role_uuid, creation_date, update_date) FROM stdin;
-Admin	Full platform control	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "users": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "usergroups": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "folders": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "media": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "organizations": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "coursechapters": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "activities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "roles": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "dashboard": {"action_access": true}, "communities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}}	1	\N	TYPE_GLOBAL	role_global_admin	2026-10-24 11:27:10.633919	2026-10-26 18:57:59.206203
-Maintainer	Mid-level manager, wide permissions but no platform control	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "users": {"action_create": true, "action_read": true, "action_update": true, "action_delete": false}, "usergroups": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "folders": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "media": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "organizations": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "activities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "roles": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "dashboard": {"action_access": true}, "communities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}}	2	\N	TYPE_GLOBAL	role_global_maintainer	2026-10-24 11:27:10.634536	2026-10-26 18:57:59.220627
-Instructor	Can manage their own content	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "users": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "usergroups": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "folders": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "media": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "organizations": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "activities": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": false}, "roles": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "dashboard": {"action_access": true}, "communities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}}	3	\N	TYPE_GLOBAL	role_global_instructor	2026-10-24 11:27:10.634821	2026-10-26 18:57:59.228612
-User	Read-Only Learner	{"courses": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "users": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "usergroups": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "folders": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "media": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "organizations": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "activities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "assignments": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "roles": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "dashboard": {"action_access": false}, "communities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "podcasts": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "boards": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "playgrounds": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}}	4	\N	TYPE_GLOBAL	role_global_user	2026-10-24 11:27:10.635061	2026-10-26 18:57:59.237417
+Администратор	Полный доступ к платформе	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "users": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "usergroups": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "folders": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "media": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "organizations": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "coursechapters": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "activities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "roles": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "dashboard": {"action_access": true}, "communities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}}	1	\N	TYPE_GLOBAL	role_global_admin	2026-10-24 11:27:10.633919	2026-10-26 19:57:10.385746
+Преподаватель	Полный доступ к контенту и студентам	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "users": {"action_create": true, "action_read": true, "action_update": true, "action_delete": false}, "usergroups": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "folders": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "media": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "organizations": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "activities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "roles": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "dashboard": {"action_access": true}, "communities": {"action_create": true, "action_read": true, "action_update": true, "action_delete": true}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": true, "action_update_own": true, "action_delete": true, "action_delete_own": true}}	2	\N	TYPE_GLOBAL	role_global_maintainer	2026-10-24 11:27:10.634536	2026-10-26 19:57:10.385746
+Студент+	Проверка и оценка задач	{"courses": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "users": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "usergroups": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "folders": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "media": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "organizations": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "activities": {"action_create": true, "action_read": true, "action_update": false, "action_delete": false}, "assignments": {"action_create": true, "action_read": true, "action_update": true, "action_delete": false}, "roles": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "dashboard": {"action_access": true}, "communities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "podcasts": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "boards": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "playgrounds": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}}	3	\N	TYPE_GLOBAL	role_global_instructor	2026-10-24 11:27:10.634821	2026-10-26 19:57:10.385746
+Студент	Обычный пользователь	{"courses": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "users": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "usergroups": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "folders": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "media": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "organizations": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "coursechapters": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "activities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "assignments": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "roles": {"action_create": false, "action_read": false, "action_update": false, "action_delete": false}, "dashboard": {"action_access": false}, "communities": {"action_create": false, "action_read": true, "action_update": false, "action_delete": false}, "discussions": {"action_create": true, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": true, "action_delete": false, "action_delete_own": true}, "podcasts": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "boards": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}, "playgrounds": {"action_create": false, "action_read": true, "action_read_own": true, "action_update": false, "action_update_own": false, "action_delete": false, "action_delete_own": false}}	4	\N	TYPE_GLOBAL	role_global_user	2026-10-24 11:27:10.635061	2026-10-26 19:57:10.385746
 \.
 
 
@@ -8044,7 +8039,6 @@ COPY public.superadmin_apitoken (name, description, id, token_uuid, token_prefix
 
 COPY public.trail (org_id, user_id, id, trail_uuid, creation_date, update_date) FROM stdin;
 1	1	1	trail_c806dd51-c0e4-44cd-bf3e-b611609d1572	2026-10-24 13:49:40.522331	2026-10-24 13:49:40.522351
-1	2	2	trail_demo_2	2026-10-24 16:09:49.282165	2026-10-24 16:09:49.282182
 1	3	3	trail_e6008cd0-0d22-4553-8643-591720328696	2026-10-26 17:00:21.454568	2026-10-26 17:00:21.454592
 \.
 
@@ -8054,7 +8048,6 @@ COPY public.trail (org_id, user_id, id, trail_uuid, creation_date, update_date) 
 --
 
 COPY public.trailrun (id, data, status, trail_id, course_id, org_id, user_id, creation_date, update_date) FROM stdin;
-1	{}	STATUS_IN_PROGRESS	2	1	1	2	2026-10-24 16:09:49.333663	2026-10-24 16:09:49.333672
 2	{}	STATUS_IN_PROGRESS	3	2	1	3	2026-10-26 17:00:24.095990	2026-10-26 17:00:24.096004
 \.
 
@@ -8092,7 +8085,6 @@ COPY public.used_link_token (jti, purpose, expires_at) FROM stdin;
 --
 
 COPY public."user" (username, first_name, last_name, email, avatar_image, bio, details, profile, extra_metadata, id, password, user_uuid, email_verified, email_verified_at, failed_login_attempts, locked_until, last_login_at, last_login_ip, signup_method, is_superadmin, password_changed_at, creation_date, update_date) FROM stdin;
-student			student@school.dev			{}	{}	null	2	$argon2id$v=19$m=65536,t=3,p=4$aPs6TQ6baEOTs4gU9KLEzA$emcBs7sdfY60d7Fdq3zl4cAHFpNzdRUXx/07YDq4yg8	user_dd427c99-5ff6-4dbf-9076-02511af2fad1	f	\N	0	\N	2026-10-26T15:43:48.885561+00:00	::1	\N	f	\N	2026-10-24 16:09:48.742138	2026-10-24 16:09:48.742163
 vladsnegg	Uladzislau	Sniahurski	vlladsnegg@gmail.com			{}	{}	null	3	$argon2id$v=19$m=65536,t=3,p=4$h/EpapTWvUsspX7dsf++6A$dT2WEyx3m2qOFMhctsOD4JqJ0rNcA4GbG2Dh7Loiuoc	user_f7c8a91e-74d8-4e75-a843-283521dbced8	t	2026-10-26T13:59:49.030988+00:00	0	\N	2026-10-26T16:20:26.946836+00:00	::1	email	f	2026-10-26 13:59:49	2026-10-26 16:59:49.031034	2026-10-26 16:59:49.031051
 victoriapesetskaya	Виктория Олеговна	Песецкая	victoriapesetskaya@gmail.com	\N	\N	\N	\N	\N	44	$argon2id$v=19$m=65536,t=3,p=4$VZdpe3KiNDtQSAkb8pVyZA$Hfvwwmg+OqrUQWBjZsqjDMxHVYQRCabodDTPjFYjYnE	user_8d58a897-cb81-4ce9-ae7c-729f0161dd34	f	\N	0	\N	\N	\N	\N	f	\N	2026-10-26 17:33:33.988848	2026-10-26 17:33:33.988848
 20volkovskaya09	Маргарита Александровна	Волковская	20volkovskaya09@gmail.com	\N	\N	\N	\N	\N	45	$argon2id$v=19$m=65536,t=3,p=4$yXzPkG7suvDKgm2RxD/zLg$fA66mXdc3cB1EALR0bYvB3ekVpuLh102wivLmEJn7Uk	user_ef214d66-74ae-40e3-9d24-bf009f34d44c	f	\N	0	\N	\N	\N	\N	f	\N	2026-10-26 17:33:34.093328	2026-10-26 17:33:34.093328
@@ -8133,6 +8125,8 @@ jjjy4054	Арсений Павлович	Батин	jjjy4054@gmail.com	\N	\N	\N	
 katerizw1	Екатерина Артуровна	Зволимбовская	katerizw1@gmail.com	\N	\N	\N	\N	\N	80	$argon2id$v=19$m=65536,t=3,p=4$PAniiUkUbTPSIYYEJxmbGQ$kEP6ptfrFtlbnqPAFlMWuv3FxM6X9ky22JaA81U5A3s	user_516cf8d3-2fed-4865-930e-0856fa599916	f	\N	0	\N	\N	\N	\N	f	\N	2026-10-26 17:33:37.546305	2026-10-26 17:33:37.546305
 pudovasveta09	Светлана Дмитриевна	Пудова	pudovasveta09@gmail.com	\N	\N	\N	\N	\N	43	$argon2id$v=19$m=65536,t=3,p=4$s4akkOljIP269XSQ8LMDqA$MLfRbZChyWCo06oZaK6FcEvdVbmphytdpo2uXN0CY8s	user_bef5972d-cbaa-4c0a-a0d2-49152acac5a6	f	\N	0	\N	2026-10-26T15:58:05.181895+00:00	127.0.0.1	\N	f	\N	2026-10-26 17:33:33.883243	2026-10-26 17:33:33.883243
 admin			admin@school.dev			{}	{}	null	1	$argon2id$v=19$m=65536,t=3,p=4$jJoOe+3H2hkhBr1KbiPztQ$bprFZrEOrvYDfik3vcn/0FGA7pUCw8f3qAKWefjZ4m4	user_65b5fe1a-507a-466b-9904-0fef79a89458	f	\N	0	\N	2026-10-26T16:38:08.673601+00:00	::1	\N	t	\N	2026-10-24 11:27:10.984226	2026-10-24 11:27:10.984245
+admin2			admin2@school.dev			{}	{}	null	81	$argon2id$v=19$m=65536,t=3,p=4$jJoOe+3H2hkhBr1KbiPztQ$bprFZrEOrvYDfik3vcn/0FGA7pUCw8f3qAKWefjZ4m4	user_b7392878-2002-41e4-bc30-4134bf1ba631	f	\N	0	\N	\N	\N	\N	t	\N	2026-10-26 19:57:10.385746	2026-10-26 19:57:10.385746
+admin3			admin3@school.dev			{}	{}	null	82	$argon2id$v=19$m=65536,t=3,p=4$jJoOe+3H2hkhBr1KbiPztQ$bprFZrEOrvYDfik3vcn/0FGA7pUCw8f3qAKWefjZ4m4	user_699e4385-41e9-4a76-a5d2-2b469df15922	f	\N	0	\N	\N	\N	\N	t	\N	2026-10-26 19:57:10.385746	2026-10-26 19:57:10.385746
 \.
 
 
@@ -8157,8 +8151,6 @@ COPY public.user_audit_event (id, org_id, user_id, event_type, ip, user_agent, t
 6	1	1	login	127.0.0.1	python-httpx/0.28.1	\N	{"method": "password"}	2026-10-24 10:47:21.025455+00
 7	1	1	login	127.0.0.1	python-httpx/0.28.1	\N	{"method": "password"}	2026-10-24 10:59:45.837373+00
 8	1	1	login	127.0.0.1	python-httpx/0.28.1	\N	{"method": "password"}	2026-10-24 13:09:55.897584+00
-9	1	2	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 13:10:48.315617+00
-10	1	2	login	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	{"method": "password"}	2026-10-24 13:14:59.363066+00
 11	1	1	login	127.0.0.1	python-httpx/0.28.1	\N	{"method": "password"}	2026-10-24 16:47:45.201435+00
 12	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 16:48:52.552209+00
 13	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 16:48:55.292231+00
@@ -8170,7 +8162,6 @@ COPY public.user_audit_event (id, org_id, user_id, event_type, ip, user_agent, t
 19	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 18:27:11.704175+00
 20	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 18:27:36.442808+00
 21	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 18:32:18.717174+00
-22	1	2	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-24 18:32:54.107933+00
 23	1	1	login	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	{"method": "password"}	2026-10-24 18:33:48.578107+00
 24	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-25 11:15:49.209207+00
 25	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-25 11:16:30.571594+00
@@ -8196,7 +8187,6 @@ COPY public.user_audit_event (id, org_id, user_id, event_type, ip, user_agent, t
 45	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-26 14:19:43.391627+00
 46	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-26 14:34:05.417295+00
 47	1	1	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-26 14:35:42.714628+00
-48	1	2	login	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	{"method": "password"}	2026-10-26 15:43:48.946306+00
 49	1	43	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-26 15:50:27.680492+00
 50	1	43	login	::1	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36	\N	{"method": "password"}	2026-10-26 15:54:28.041476+00
 51	1	43	login	127.0.0.1	curl/8.21.0	\N	{"method": "password"}	2026-10-26 15:58:05.195903+00
@@ -8252,7 +8242,6 @@ COPY public.usermfabackupcode (id, user_id, code_hash, used_at, creation_date) F
 
 COPY public.userorganization (id, user_id, org_id, role_id, creation_date, update_date) FROM stdin;
 1	1	1	1	2026-10-24 11:27:11.038706	2026-10-24 11:27:11.038717
-2	2	1	1	2026-10-24 16:09:48.819145	2026-10-24 16:09:48.819158
 3	3	1	4	2026-10-26 16:59:49.156614	2026-10-26 16:59:49.156625
 4	44	1	4	2026-10-26 15:53:49.522938+00	2026-10-26 15:53:49.522938+00
 5	45	1	4	2026-10-26 15:53:49.522938+00	2026-10-26 15:53:49.522938+00
@@ -8292,6 +8281,8 @@ COPY public.userorganization (id, user_id, org_id, role_id, creation_date, updat
 39	79	1	4	2026-10-26 15:53:49.522938+00	2026-10-26 15:53:49.522938+00
 40	80	1	4	2026-10-26 15:53:49.522938+00	2026-10-26 15:53:49.522938+00
 41	43	1	4	2026-10-26 15:53:49.522938+00	2026-10-26 15:53:49.522938+00
+42	81	1	1	2026-10-26 19:57:10.385746	2026-10-26 19:57:10.385746
+43	82	1	1	2026-10-26 19:57:10.385746	2026-10-26 19:57:10.385746
 \.
 
 
@@ -8714,7 +8705,7 @@ SELECT pg_catalog.setval('public.user_audit_event_id_seq', 54, true);
 -- Name: user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.user_id_seq', 80, true);
+SELECT pg_catalog.setval('public.user_id_seq', 82, true);
 
 
 --
@@ -8756,7 +8747,7 @@ SELECT pg_catalog.setval('public.usermfabackupcode_id_seq', 1, false);
 -- Name: userorganization_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.userorganization_id_seq', 41, true);
+SELECT pg_catalog.setval('public.userorganization_id_seq', 43, true);
 
 
 --
@@ -11509,5 +11500,5 @@ ALTER TABLE ONLY public.webhook_endpoint
 -- PostgreSQL database dump complete
 --
 
-\unrestrict U4jVGG7QNAyTjdkf9E9euEeb54qkAo1XRfuNVvAw8PaKDsDphxGB2isgtYeIhTw
+\unrestrict eDgxGE8rg9WSiZcXgXRuXCkBfkSEQ9x2t5ESam6QHAz16tBRtSPsI1bwKWhQfr7
 

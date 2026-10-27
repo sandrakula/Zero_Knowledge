@@ -249,7 +249,7 @@ class TestMagicLinkRequest:
         with patch(
             "src.routers.auth.check_login_rate_limit", return_value=(True, None)
         ), patch(
-            "src.routers.auth.get_deployment_mode", return_value="saas"
+            "src.routers.auth.email_verification_required", return_value=True
         ), patch(
             "src.services.auth.magic_login.send_magic_login_email"
         ) as send_mock, patch(

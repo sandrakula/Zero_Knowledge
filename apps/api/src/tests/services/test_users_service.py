@@ -338,8 +338,8 @@ class TestCreateAndUpdateUser:
             "src.services.users.email_verification.send_verification_email",
             new_callable=AsyncMock,
         ), patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="oss",
+            "src.services.users.users.email_verification_required",
+            return_value=False,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -405,8 +405,8 @@ class TestCreateAndUpdateUser:
         ) as mock_verification_email, patch(
             "src.services.users.users.send_account_creation_email"
         ) as mock_account_email, patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="saas",
+            "src.services.users.users.email_verification_required",
+            return_value=True,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -473,8 +473,8 @@ class TestCreateAndUpdateUser:
             "src.services.users.email_verification.send_verification_email",
             new_callable=AsyncMock,
         ), patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="saas",
+            "src.services.users.users.email_verification_required",
+            return_value=True,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -500,8 +500,8 @@ class TestCreateAndUpdateUser:
         ), patch(
             "src.services.users.users.send_account_creation_email"
         ), patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="oss",
+            "src.services.users.users.email_verification_required",
+            return_value=False,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -686,8 +686,8 @@ class TestUserPasswordAvatarSession:
         ) as mock_verification_email, patch(
             "src.services.users.users.send_account_creation_email"
         ) as mock_account_email, patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="saas",
+            "src.services.users.users.email_verification_required",
+            return_value=True,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -756,8 +756,8 @@ class TestUserPasswordAvatarSession:
             "src.services.users.email_verification.send_verification_email",
             new_callable=AsyncMock,
         ) as mock_send, patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="saas",
+            "src.services.users.users.email_verification_required",
+            return_value=True,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,
@@ -782,8 +782,8 @@ class TestUserPasswordAvatarSession:
             new_callable=AsyncMock,
             side_effect=Exception("boom"),
         ), patch(
-            "src.services.users.users.get_deployment_mode",
-            return_value="saas",
+            "src.services.users.users.email_verification_required",
+            return_value=True,
         ), patch(
             "src.services.users.users.authorization_verify_based_on_roles_and_authorship",
             new_callable=AsyncMock,

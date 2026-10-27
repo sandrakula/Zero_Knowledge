@@ -26,8 +26,8 @@ async def install_default_elements(db_session: AsyncSession):
 
     # Build the desired role definitions
     role_global_admin = Role(
-        name="Admin",
-        description="Full platform control",
+        name="Администратор",
+        description="Полный доступ к платформе",
         id=1,
         role_type=RoleTypeEnum.TYPE_GLOBAL,
         role_uuid="role_global_admin",
@@ -146,8 +146,8 @@ async def install_default_elements(db_session: AsyncSession):
     )
 
     role_global_maintainer = Role(
-        name="Maintainer",
-        description="Mid-level manager, wide permissions but no platform control",
+        name="Преподаватель",
+        description="Полный доступ к контенту и студентам",
         id=2,
         role_type=RoleTypeEnum.TYPE_GLOBAL,
         role_uuid="role_global_maintainer",
@@ -266,8 +266,8 @@ async def install_default_elements(db_session: AsyncSession):
     )
 
     role_global_instructor = Role(
-        name="Instructor",
-        description="Can manage their own content",
+        name="Студент+",
+        description="Проверка и оценка задач",
         id=3,
         role_type=RoleTypeEnum.TYPE_GLOBAL,
         role_uuid="role_global_instructor",
@@ -386,8 +386,8 @@ async def install_default_elements(db_session: AsyncSession):
     )
 
     role_global_user = Role(
-        name="User",
-        description="Read-Only Learner",
+        name="Студент",
+        description="Обычный пользователь",
         role_type=RoleTypeEnum.TYPE_GLOBAL,
         role_uuid="role_global_user",
         id=4,

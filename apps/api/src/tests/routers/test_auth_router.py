@@ -355,8 +355,48 @@ class TestAuthRouter:
             "src.routers.auth.create_refresh_token",
             return_value="refresh-token",
         ), patch("src.routers.auth.set_auth_cookies"), patch(
-            "src.routers.auth.get_deployment_mode",
-            return_value="oss",
+            "src.routers.auth.email_verification_required",
+            return_value=False,
+        ), patch(
+            "src.routers.auth.get_token_expiry_ms",
+            return_value=12345,
+        ):
+            response = await client.post(
+                "/api/v1/auth/login",
+                data={"username": auth_user.email, "password": "secret"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["user"]["email"] == auth_user.email
+
+    async def test_login_superadmin_unverified_is_exempt(self, client, auth_user):
+        # Superadmins are exempt from email verification: their bootstrap
+        # addresses (e.g. admin@school.dev) cannot receive mail, so blocking
+        # them would lock the platform operator out.
+        auth_user.email_verified = False
+        auth_user.is_superadmin = True
+        with patch(
+            "src.routers.auth.check_login_rate_limit",
+            return_value=(True, None),
+        ), patch(
+            "src.routers.auth.check_account_locked",
+            return_value=(False, None),
+        ), patch(
+            "src.routers.auth.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=auth_user,
+        ), patch("src.routers.auth.reset_failed_attempts"), patch(
+            "src.routers.auth.get_client_ip",
+            return_value="127.0.0.1",
+        ), patch("src.routers.auth.update_login_info"), patch(
+            "src.routers.auth.create_access_token",
+            return_value="access-token",
+        ), patch(
+            "src.routers.auth.create_refresh_token",
+            return_value="refresh-token",
+        ), patch("src.routers.auth.set_auth_cookies"), patch(
+            "src.routers.auth.email_verification_required",
+            return_value=True,
         ), patch(
             "src.routers.auth.get_token_expiry_ms",
             return_value=12345,
@@ -402,8 +442,8 @@ class TestAuthRouter:
             new_callable=AsyncMock,
             return_value=auth_user,
         ), patch(
-            "src.routers.auth.get_deployment_mode",
-            return_value="saas",
+            "src.routers.auth.email_verification_required",
+            return_value=True,
         ):
             response = await client.post(
                 "/api/v1/auth/login",

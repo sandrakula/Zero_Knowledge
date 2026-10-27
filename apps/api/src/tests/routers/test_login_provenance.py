@@ -84,7 +84,7 @@ def _login_patches():
         patch("src.routers.auth.update_login_info"),
         patch("src.routers.auth.record_audit_event"),
         patch("src.routers.auth.set_auth_cookies"),
-        patch("src.routers.auth.get_deployment_mode", return_value="oss"),
+        patch("src.routers.auth.email_verification_required", return_value=False),
     ]
 
 

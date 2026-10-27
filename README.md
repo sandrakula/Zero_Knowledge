@@ -70,6 +70,55 @@ This spins up PostgreSQL and Redis, installs dependencies, and starts the API, W
 
 > See the full [CLI documentation](apps/cli/README.md) for all commands and options.
 
+## ✉️ Email verification (ZeroKnowledge)
+
+New email+password signups are **unverified by default**: the backend creates the
+account with `email_verified=false`, sends a confirmation link (valid 1 hour,
+single-use, rate-limited), and refuses login until it is clicked. OAuth sign-ins
+are only verified when the provider returns a verified email.
+
+### Configure a sender
+
+Copy `.env.example` to `.env` and set the email variables (see comments there).
+Two providers are supported:
+
+- **Resend** (recommended): set `LEARNHOUSE_EMAIL_PROVIDER=resend`,
+  `LEARNHOUSE_RESEND_API_KEY`, and `LEARNHOUSE_SYSTEM_EMAIL_ADDRESS`.
+  In the Resend dashboard, add your sending domain and apply its DNS records
+  (SPF + DKIM) until it is "Verified"; the `From` address must be on that domain.
+- **SMTP** (Gmail fallback): set `LEARNHOUSE_EMAIL_PROVIDER=smtp` and the
+  `LEARNHOUSE_SMTP_*` variables. For Gmail, generate an
+  [App Password](https://myaccount.google.com/apppasswords) — never your real
+  password. Port 465 uses implicit TLS, 587 uses STARTTLS.
+
+The `From` name defaults to **ZeroKnowledge** (`LEARNHOUSE_SYSTEM_EMAIL_SENDER_NAME`).
+
+### Apply
+
+```bash
+docker compose up -d --build   # re-create the api/web containers with the new env
+```
+
+Then test real delivery by signing up with a real inbox (Gmail) and clicking the
+link. If the provider is unconfigured, signups keep the account unverified and
+report the send failure; verification never silently succeeds.
+
+### Existing accounts
+
+Enabling verification does **not** mass-update users. Accounts already verified
+keep working. **Superadmins are exempt** from the check — their bootstrap
+addresses (e.g. `admin@school.dev`) cannot receive mail, so platform operators
+keep access. Regular existing unverified accounts (imported students) must verify
+through the "resend verification" link on the login page, which requires a real,
+reachable inbox.
+
+### Local development
+
+To develop without a mail provider, set `LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION=false`
+together with `LEARNHOUSE_DEVELOPMENT_MODE=true` (email+password signups then
+auto-verify). This opt-out is **ignored in production**: with
+`LEARNHOUSE_DEVELOPMENT_MODE` unset/false, verification is always enforced.
+
 ## 🛠️ Tech Stack
 
 <p align="center">

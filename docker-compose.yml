@@ -66,6 +66,21 @@ services:
       # Set 0 when the chat provider has no embeddings API: skips event-driven
       # RAG indexing as well as the periodic backfill.
       LEARNHOUSE_RAG_ENABLED: ${LEARNHOUSE_RAG_ENABLED:-true}
+      # Email delivery + verification. Secrets come from the environment, never
+      # from the repo. Set these in your deployment's .env file.
+      LEARNHOUSE_EMAIL_PROVIDER: ${LEARNHOUSE_EMAIL_PROVIDER:-resend}
+      LEARNHOUSE_SYSTEM_EMAIL_ADDRESS: ${LEARNHOUSE_SYSTEM_EMAIL_ADDRESS:-}
+      LEARNHOUSE_SYSTEM_EMAIL_SENDER_NAME: ${LEARNHOUSE_SYSTEM_EMAIL_SENDER_NAME:-ZeroKnowledge}
+      LEARNHOUSE_RESEND_API_KEY: ${LEARNHOUSE_RESEND_API_KEY:-}
+      LEARNHOUSE_SMTP_HOST: ${LEARNHOUSE_SMTP_HOST:-}
+      LEARNHOUSE_SMTP_PORT: ${LEARNHOUSE_SMTP_PORT:-587}
+      LEARNHOUSE_SMTP_USERNAME: ${LEARNHOUSE_SMTP_USERNAME:-}
+      LEARNHOUSE_SMTP_PASSWORD: ${LEARNHOUSE_SMTP_PASSWORD:-}
+      LEARNHOUSE_SMTP_USE_TLS: ${LEARNHOUSE_SMTP_USE_TLS:-true}
+      # Base URL of emailed verification/login links for org-less (apex) signups.
+      LEARNHOUSE_PLATFORM_URL: ${LEARNHOUSE_PLATFORM_URL:-}
+      # Require email confirmation before login. Production-safe default is true.
+      LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION: ${LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION:-true}
     volumes:
       # Course media (book PDFs, thumbnails, logos) served by the API.
       - ./apps/api/content:/app/content

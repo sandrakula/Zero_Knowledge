@@ -14,7 +14,7 @@ from src.security.features_utils.usage import (
     check_limits_with_usage,
     increase_feature_usage,
 )
-from src.core.deployment_mode import get_deployment_mode
+from src.core.deployment_mode import email_verification_required
 from src.services.users.usergroups import add_users_to_usergroup
 from src.services.users.emails import (
     send_account_creation_email,
@@ -215,14 +215,19 @@ async def create_user(
     user.user_uuid = f"user_{uuid4()}"
     user.password = security_hash_password(user_object.password) if user_object.password else ""
 
-    # OAuth users and OSS mode get auto-verified email
-    if is_oauth or get_deployment_mode() != 'saas':
+    # OAuth accounts are verified by the provider (signWithGoogle checks Google's
+    # email_verified flag). Email+password accounts stay unverified until they
+    # click the emailed confirmation link, unless email verification is disabled
+    # for local development.
+    if is_oauth:
         user.email_verified = True
         user.email_verified_at = datetime.now(timezone.utc).isoformat()
-        user.signup_method = signup_provider if is_oauth else "email"
+        user.signup_method = signup_provider
     else:
-        user.email_verified = False
-        user.email_verified_at = None
+        user.email_verified = not email_verification_required()
+        user.email_verified_at = (
+            datetime.now(timezone.utc).isoformat() if user.email_verified else None
+        )
         user.signup_method = "email"
 
     user.creation_date = str(datetime.now())
@@ -344,7 +349,7 @@ async def create_user(
             org_name=org.name if org else None,
             **resolve_org_email_branding(org, org_config, request).as_kwargs(),
         )
-    elif get_deployment_mode() == 'saas':
+    elif not user.email_verified:
         # Import here to avoid circular imports
         from src.services.users.email_verification import send_verification_email
         await send_verification_email(request, db_session, user, org_id)
@@ -465,14 +470,19 @@ async def create_user_without_org(
     user.user_uuid = f"user_{uuid4()}"
     user.password = security_hash_password(user_object.password) if user_object.password else ""
 
-    # OAuth users and OSS mode get auto-verified email
-    if is_oauth or get_deployment_mode() != 'saas':
+    # OAuth accounts are verified by the provider (signWithGoogle checks Google's
+    # email_verified flag). Email+password accounts stay unverified until they
+    # click the emailed confirmation link, unless email verification is disabled
+    # for local development.
+    if is_oauth:
         user.email_verified = True
         user.email_verified_at = datetime.now(timezone.utc).isoformat()
-        user.signup_method = signup_provider if is_oauth else "email"
+        user.signup_method = signup_provider
     else:
-        user.email_verified = False
-        user.email_verified_at = None
+        user.email_verified = not email_verification_required()
+        user.email_verified_at = (
+            datetime.now(timezone.utc).isoformat() if user.email_verified else None
+        )
         user.signup_method = "email"
 
     user.creation_date = str(datetime.now())
@@ -519,9 +529,9 @@ async def create_user_without_org(
 
     user_read = UserRead.model_validate(user)
 
-    # OAuth users get welcome email (already verified)
-    # Non-OAuth SaaS users get verification email (no org needed)
-    if is_oauth or get_deployment_mode() != 'saas':
+    # OAuth users get welcome email (already verified). Unverified password
+    # accounts get the verification email (no org needed).
+    if is_oauth or user.email_verified:
         send_account_creation_email(
             user=user_read,
             email=user_read.email,

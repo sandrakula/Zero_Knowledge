@@ -34,6 +34,11 @@ class GeneralConfig(BaseModel):
     sentry_config: SentryConfig
     saas_mode: bool
     env: str
+    # When True (default), password signups are unverified until the user clicks
+    # the emailed link, and login is refused for unverified accounts. This is the
+    # production-safe default. The opt-out is a LOCAL-DEV convenience only: it is
+    # honoured solely when development_mode is True (see email_verification_required()).
+    require_email_verification: bool = True
 
 
 class SecurityConfig(BaseModel):
@@ -254,6 +259,18 @@ def get_learnhouse_config() -> LearnHouseConfig:
     saas_mode = (
         env_saas_mode.lower() in ("true", "1", "yes") if env_saas_mode != "None"
         else yaml_config.get("general", {}).get("saas_mode", False)
+    )
+
+    # Email verification requirement. Defaults to True (production-safe). The
+    # False value is a local-dev escape hatch and is only honoured when
+    # development_mode is also True.
+    env_require_email_verification = os.environ.get(
+        "LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION", "None"
+    )
+    require_email_verification = (
+        env_require_email_verification.lower() in ("true", "1", "yes")
+        if env_require_email_verification != "None"
+        else yaml_config.get("general", {}).get("require_email_verification", True)
     )
 
     # Security Config
@@ -732,6 +749,7 @@ def get_learnhouse_config() -> LearnHouseConfig:
             sentry_config=SentryConfig(dsn=sentry_dsn),
             saas_mode=bool(saas_mode),
             env=learnhouse_env,
+            require_email_verification=bool(require_email_verification),
         ),
         hosting_config=hosting_config,
         database_config=database_config,

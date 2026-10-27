@@ -41,6 +41,14 @@ os.environ["LEARNHOUSE_AUTH_JWT_SECRET_KEY"] = (
     "test-secret-key-for-unit-tests-32chars!"
 )
 
+# Run the suite as local dev with email verification DISABLED, so signup
+# auto-verifies exactly as it did before the verification flag existed. Tests
+# that exercise the verification-enforcement path patch
+# email_verification_required() (or set LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION)
+# themselves; see test_email_verification_enforcement.py.
+os.environ["LEARNHOUSE_DEVELOPMENT_MODE"] = "true"
+os.environ["LEARNHOUSE_REQUIRE_EMAIL_VERIFICATION"] = "false"
+
 
 from datetime import datetime
 from unittest.mock import AsyncMock, patch

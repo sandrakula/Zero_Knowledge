@@ -115,7 +115,7 @@ class TestSessionEpoch:
             "src.services.users.users.track", new_callable=AsyncMock
         ), patch("src.services.users.users.dispatch_webhooks", new_callable=AsyncMock), patch(
             "src.services.users.users.send_account_creation_email"
-        ), patch("src.services.users.users.get_deployment_mode", return_value="oss"), patch(
+        ), patch("src.services.users.users.email_verification_required", return_value=False), patch(
             "src.services.users.users._get_welcome_cta_url", new_callable=AsyncMock, return_value="/"
         ):
             await create_user(
@@ -562,7 +562,7 @@ class TestCustomDomainSignIn:
         with patch("src.routers.auth.get_learnhouse_config", return_value=_config()), patch(
             "src.routers.auth.check_login_rate_limit", return_value=(True, None)
         ), patch("src.routers.auth.authenticate_user", new_callable=AsyncMock, return_value=user), patch(
-            "src.routers.auth.get_deployment_mode", return_value="oss"
+            "src.routers.auth.email_verification_required", return_value=False
         ), patch("src.routers.auth.record_audit_event", new_callable=AsyncMock):
             ok = await _post(
                 auth_app, "/api/v1/auth/login", headers=ORIGIN,
