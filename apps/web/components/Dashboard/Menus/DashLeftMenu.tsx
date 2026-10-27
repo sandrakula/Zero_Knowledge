@@ -190,7 +190,7 @@ function DashLeftMenu() {
   const mode = getDeploymentMode()
   // Only org managers (admins/superadmins) see billing surfaces; non-admins
   // shouldn't manage the plan/subscription.
-  const { canManageOrg } = useAdminStatus()
+  const { canManageOrg, isAdmin } = useAdminStatus()
 
   if (!org || !session) return null
   const planLabel =
@@ -363,80 +363,6 @@ function DashLeftMenu() {
               onClick={() => track(AnalyticsEvent.DashboardNavClicked, { section: 'home' })}
             />
 
-            {canManage && (
-            <>
-            {/* Courses with hover menu */}
-            <HoverMenu
-              content={
-                <HoverMenuContent className="w-64">
-                  <HoverMenuLabel className="text-white/70 font-medium">{t('courses.courses')}</HoverMenuLabel>
-                  <HoverMenuSeparator />
-                  <HoverMenuItem asChild>
-                    <Link href="/dash/courses" className="flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:text-white hover:bg-white/[0.08] cursor-pointer transition-colors">
-                      <BookOpen size={16} weight="fill" />
-                      <span>{t('common.all_courses')}</span>
-                    </Link>
-                  </HoverMenuItem>
-                  {recentCourses.length > 0 && (
-                    <>
-                      <HoverMenuSeparator />
-                      <HoverMenuLabel className="text-white/40">{t('common.recent')}</HoverMenuLabel>
-                      {recentCourses.map((course: any) => (
-                        <HoverMenuItem key={course.course_uuid} asChild>
-                          <Link
-                            href={`/dash/courses/course/${course.course_uuid.replace('course_', '')}/settings`}
-                            className="flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:text-white hover:bg-white/[0.08] cursor-pointer transition-colors"
-                          >
-                            <PencilSimple size={14} className="text-white/40" />
-                            <span className="truncate">{course.name}</span>
-                          </Link>
-                        </HoverMenuItem>
-                      ))}
-                    </>
-                  )}
-                </HoverMenuContent>
-              }
-            >
-              {(() => {
-                const active = isActivePath('/dash/courses')
-                return (
-                  <Link
-                    href="/dash/courses"
-                    aria-label={t('dashboard.nav.open_courses_menu')}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      "relative flex items-center w-full rounded-lg transition-all",
-                      active
-                        ? "text-white bg-white/[0.08]"
-                        : "text-white/50 hover:text-white hover:bg-white/[0.08]",
-                      isCollapsed ? "justify-center h-10" : "px-3 py-2 gap-3"
-                    )}
-                  >
-                    {active && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute start-0.5 top-1/2 -translate-y-1/2 h-5 w-[3px] bg-white rounded-full"
-                      />
-                    )}
-                    <span className="relative flex items-center justify-center">
-                      <BookOpen size={20} weight="fill" />
-                      {isCollapsed && (
-                        <CaretDown aria-hidden="true" size={8} weight="bold" className={cn("absolute -end-2.5", active ? "text-white/60" : "text-white/30")} />
-                      )}
-                    </span>
-                    {!isCollapsed && (
-                      <>
-                        <span className="text-sm font-medium flex-1 text-start">{t('courses.courses')}</span>
-                        <CaretDown aria-hidden="true" size={14} weight="bold" className={active ? "text-white/70" : "text-white/40"} />
-                      </>
-                    )}
-                  </Link>
-                )
-              })()}
-            </HoverMenu>
-            </>
-            )}
-
             {/* Assignments stay reachable through Courses -> Content, so the
                 direct entry is hidden in the Coding Academy navigation. */}
             {!codingAcademyNav && (
@@ -516,32 +442,14 @@ function DashLeftMenu() {
             </div>
             </>
             )}
-            {canManage && (
-            <MenuLink
-              href="/dash/problems"
-              icon={<Books size={20} weight="fill" />}
-              label={t('problems.title', { defaultValue: 'Problem library' })}
-              isCollapsed={isCollapsed}
-              active={isActivePath('/dash/problems')}
-            />
-            )}
-            {canManage && (
-            <MenuLink
-              href="/dash/students"
-              icon={<Student size={20} weight="fill" />}
-              label={t('common.students', { defaultValue: 'Students' })}
-              isCollapsed={isCollapsed}
-              active={isActivePath('/dash/students')}
-            />
-            )}
             <MenuLink
               href="/dash/informatics"
               icon={<ChartBar size={20} weight="fill" />}
-              label={t('dashboard.home.progress', { defaultValue: 'Прогресс' })}
+              label={t('dashboard.home.progress', { defaultValue: 'Stats' })}
               isCollapsed={isCollapsed}
               active={isActivePath('/dash/informatics')}
             />
-            {canManage && showLibrary && (
+            {isAdmin && showLibrary && (
               <MenuLink
                 href="/dash/library"
                 icon={<FolderSimple size={20} weight="fill" />}
@@ -586,7 +494,7 @@ function DashLeftMenu() {
                 active={isActivePath('/dash/playgrounds')}
               />
             )}
-            {canManage && (
+            {isAdmin && (
             <>
             {/* Users with hover menu */}
             <HoverMenu

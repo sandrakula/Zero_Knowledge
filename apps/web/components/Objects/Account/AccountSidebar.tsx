@@ -2,7 +2,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { useTranslation } from 'react-i18next'
-import { User, Lock, ShoppingBag, Settings } from 'lucide-react'
+import { User, Lock, ShoppingBag, Settings, Link2 } from 'lucide-react'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
 import UserAvatar from '@components/Objects/UserAvatar'
 import { getUriWithOrg } from '@services/config/config'
@@ -12,11 +12,19 @@ interface AccountSidebarProps {
   currentSubpage: string
 }
 
-const NAV_ITEMS = [
+type NavItem = {
+  id: string
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  labelKey?: string
+  label?: string
+}
+
+const NAV_ITEMS: NavItem[] = [
   { id: 'general', icon: Settings, labelKey: 'account.general' },
   { id: 'profile', icon: User, labelKey: 'account.profile' },
   { id: 'security', icon: Lock, labelKey: 'account.security' },
   { id: 'purchases', icon: ShoppingBag, labelKey: 'account.purchases' },
+  { id: 'connections', icon: Link2, label: 'Informatics' },
 ]
 
 export function AccountSidebar({ orgslug, currentSubpage }: AccountSidebarProps) {
@@ -71,7 +79,7 @@ export function AccountSidebar({ orgslug, currentSubpage }: AccountSidebarProps)
                   }`}
                 >
                   <Icon size={18} className={isActive ? 'text-white' : 'text-gray-500'} />
-                  <span className="text-sm font-medium">{t(item.labelKey)}</span>
+                  <span className="text-sm font-medium">{item.label ?? t(item.labelKey ?? '')}</span>
                 </Link>
               )
             })}

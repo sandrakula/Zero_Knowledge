@@ -190,6 +190,9 @@ type CodeTaskContents = {
   // The teacher-facing toggle was removed (it silently did nothing), but the
   // field is kept on the type so existing stored contents round-trip unchanged.
   show_solution_after_submit?: boolean
+  // Informatics problem id (source_id). When set, the student can submit their
+  // code to the Informatics judge for this problem.
+  informatics_problem_id?: number | null
 }
 
 type CodeTestResult = {
@@ -268,6 +271,7 @@ const DEFAULT_CONTENTS: CodeTaskContents = {
   show_hidden_test_count: true,
   require_passing_to_submit: false,
   show_solution_after_submit: false,
+  informatics_problem_id: null,
 }
 
 // Helper: merge a contents blob from the API with the student-behavior
@@ -301,6 +305,7 @@ function normalizeCodeContents(raw: any): CodeTaskContents {
     show_hidden_test_count: raw?.show_hidden_test_count ?? true,
     require_passing_to_submit: raw?.require_passing_to_submit ?? false,
     show_solution_after_submit: raw?.show_solution_after_submit ?? false,
+    informatics_problem_id: raw?.informatics_problem_id ?? null,
   }
 }
 
@@ -438,6 +443,10 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   const [customStdin, setCustomStdin] = useState('')
   const [customResult, setCustomResult] = useState<CustomRunResult | null>(null)
   const [isCustomRunning, setIsCustomRunning] = useState(false)
+
+  // Informatics judge submission (only when the task has an informatics_problem_id)
+  const [isInformaticsSubmitting, setIsInformaticsSubmitting] = useState(false)
+  const [informaticsResult, setInformaticsResult] = useState<any>(null)
 
   // Submission state (student/grading)
   const [userSubmissions, setUserSubmissions] = useState<any>(null)
@@ -900,6 +909,40 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
     }
   }
 
+  // --- SUBMIT TO INFORMATICS ---
+  // Sends the current code to the Informatics judge for the task's linked
+  // problem (contents.informatics_problem_id). Requires the learner to have
+  // linked their Informatics account. Local run/grading are untouched.
+  async function submitToInformatics() {
+    if (!contents.informatics_problem_id || isInformaticsSubmitting) return
+    setIsInformaticsSubmitting(true)
+    setInformaticsResult(null)
+    try {
+      const resp = await fetch(`${getAPIUrl()}informatics/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${access_token}`,
+        },
+        body: JSON.stringify({
+          problem_id: contents.informatics_problem_id,
+          language_id: inferLanguageIdFromSource(code, languageId),
+          source_code: code,
+        }),
+      })
+      const data = await resp.json().catch(() => null)
+      if (!resp.ok) {
+        setInformaticsResult({ error: data?.detail || 'Submit failed' })
+      } else {
+        setInformaticsResult(data)
+      }
+    } catch {
+      setInformaticsResult({ error: 'Submit failed' })
+    } finally {
+      setIsInformaticsSubmitting(false)
+    }
+  }
+
   // --- RUN WITH CUSTOM INPUT ---
   async function runWithInput() {
     if (isCustomRunning) return
@@ -1159,6 +1202,26 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                   <option value="custom_weights">Custom Weights</option>
                 </select>
               </div>
+            </div>
+
+            {/* Informatics problem id: when set, the learner can send their code
+                to the Informatics judge for this problem. */}
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-semibold text-slate-500">
+                Informatics problem ID
+              </label>
+              <input
+                type="number"
+                value={contents.informatics_problem_id ?? ''}
+                onChange={(e) =>
+                  setContents((prev) => ({
+                    ...prev,
+                    informatics_problem_id: e.target.value === '' ? null : Number(e.target.value),
+                  }))
+                }
+                placeholder="e.g. 2936"
+                className="px-3 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
+              />
             </div>
 
             {/* Starter Code */}
@@ -1521,6 +1584,39 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                       {taskSubmitResult.total_tests != null &&
                         ` · ${taskSubmitResult.passed_tests ?? 0}/${taskSubmitResult.total_tests} tests`}
                     </span>
+                  </div>
+                )}
+
+                {/* Submit to Informatics: only shown when the teacher linked this
+                    task to an Informatics problem. */}
+                {contents.informatics_problem_id != null && (
+                  <div className="flex flex-col space-y-2">
+                    <button
+                      type="button"
+                      onClick={submitToInformatics}
+                      disabled={isInformaticsSubmitting}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {isInformaticsSubmitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      <span>{isInformaticsSubmitting ? 'Отправка…' : 'Отправить на Informatics'}</span>
+                    </button>
+                    {informaticsResult && (
+                      <div
+                        className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                          informaticsResult.error
+                            ? 'border-rose-200 bg-rose-50 text-rose-700'
+                            : informaticsResult.solved
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {informaticsResult.error
+                          ? informaticsResult.error
+                          : informaticsResult.solved
+                            ? 'Принято на Informatics ✓'
+                            : `Не решено (status ${informaticsResult.status ?? '?'})`}
+                      </div>
+                    )}
                   </div>
                 )}
 

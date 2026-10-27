@@ -4,6 +4,7 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { getAPIUrl } from '@services/config/config'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import InformaticsLinkPrompt from './InformaticsLinkPrompt'
 
 type CatProgress = {
   code: string
@@ -74,6 +75,8 @@ export default function StudentDashboard() {
             </h1>
             <p className="text-sm text-gray-400 mt-1">Твой прогресс на задачах Informatics</p>
           </div>
+
+          <InformaticsLinkPrompt />
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {stats.map((s) => (
