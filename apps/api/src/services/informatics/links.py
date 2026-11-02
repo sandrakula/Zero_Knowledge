@@ -42,36 +42,39 @@ async def get_link_status(user_id: int, db_session: AsyncSession) -> dict:
 
 async def link_account(
     user: PublicUser,
-    session_cookie: str,
+    username: str,
+    password: str,
     db_session: AsyncSession,
 ) -> dict:
-    """Verify an Informatics session and bind it to the user (upsert)."""
-    session_cookie = (session_cookie or "").strip()
-    if not session_cookie:
-        raise HTTPException(status_code=400, detail="Session cookie is required")
+    """Verify Informatics credentials and bind the account to the user (upsert)."""
+    username = (username or "").strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Логин и пароль обязательны")
 
     try:
-        identity = await asyncio.to_thread(client.verify_session, session_cookie)
+        session = await asyncio.to_thread(client.login, username, password)
     except client.InformaticsError as exc:
-        raise HTTPException(status_code=400, detail=f"Informatics session invalid: {exc}")
+        raise HTTPException(status_code=400, detail=f"Не удалось войти в Informatics: {exc}")
 
     now = str(datetime.now())
     link = await _get_link(int(user.id), db_session)
     if link is None:
         link = InformaticsLink(
             user_id=int(user.id),
-            session_cookie=encrypt_secret(session_cookie),
-            informatics_user_id=identity["informatics_user_id"],
-            informatics_username=identity["informatics_username"],
+            username=username,
+            password=encrypt_secret(password),
+            informatics_user_id=session["informatics_user_id"],
+            informatics_username=session["informatics_username"],
             last_error=None,
             created_at=now,
             updated_at=now,
         )
         db_session.add(link)
     else:
-        link.session_cookie = encrypt_secret(session_cookie)
-        link.informatics_user_id = identity["informatics_user_id"]
-        link.informatics_username = identity["informatics_username"]
+        link.username = username
+        link.password = encrypt_secret(password)
+        link.informatics_user_id = session["informatics_user_id"]
+        link.informatics_username = session["informatics_username"]
         link.last_error = None
         link.updated_at = now
     await db_session.commit()
@@ -90,13 +93,19 @@ async def unlink_account(user_id: int, db_session: AsyncSession) -> None:
         await db_session.commit()
 
 
-def _decrypt_cookie(link: InformaticsLink) -> str:
+async def _login_session(link: InformaticsLink) -> dict:
+    """Log in with the stored credentials and return a fresh session cookie."""
     try:
-        return decrypt_secret(link.session_cookie)
+        username = link.username
+        password = decrypt_secret(link.password)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
-            status_code=500, detail="Could not decrypt Informatics session"
+            status_code=500, detail="Could not decrypt Informatics credentials"
         ) from exc
+    try:
+        return await asyncio.to_thread(client.login, username, password)
+    except client.InformaticsError as exc:
+        raise HTTPException(status_code=502, detail=f"Informatics login failed: {exc}") from exc
 
 
 async def _record_submission(
@@ -172,7 +181,8 @@ async def submit_and_grade(
             status_code=400,
             detail="Informatics account is not linked. Link it in your profile first.",
         )
-    cookie = _decrypt_cookie(link)
+    session = await _login_session(link)
+    cookie = session["cookie"]
 
     try:
         run_id = await asyncio.to_thread(

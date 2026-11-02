@@ -84,6 +84,53 @@ def verify_session(cookie: str) -> dict[str, Any]:
     }
 
 
+def login(username: str, password: str) -> dict[str, Any]:
+    """Log in with username/password and return a fresh session cookie + identity.
+
+    Raises ``InformaticsError`` when the credentials are rejected or the login
+    form cannot be parsed.
+    """
+    username = (username or "").strip()
+    password = password or ""
+    if not username or not password:
+        raise InformaticsError("username and password are required")
+
+    with httpx.Client(
+        base_url=BASE,
+        timeout=TIMEOUT,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0"},
+    ) as c:
+        c.get("/")
+        login_page = c.get("/login/index.php")
+        token_m = re.search(r'name="logintoken" value="([^"]+)"', login_page.text)
+        token = token_m.group(1) if token_m else ""
+        c.post(
+            "/login/index.php",
+            data={
+                "username": username,
+                "password": password,
+                "logintoken": token,
+                "anchor": "",
+            },
+        )
+        cookie = c.cookies.get("MoodleSession")
+        if not cookie:
+            raise InformaticsError("login failed (no MoodleSession cookie)")
+        home = c.get("/")
+        text = home.text
+        if "Вы зашли под именем" not in text:
+            raise InformaticsError("login failed (wrong credentials)")
+        m_id = re.search(r"profile\.php\?id=(\d+)", text) or re.search(r"/user/view\.php\?id=(\d+)", text)
+        stripped = re.sub(r"<[^>]+>", " ", text)
+        m_name = re.search(r"Вы зашли под именем\s+([^<(]+)", stripped)
+        return {
+            "cookie": cookie,
+            "informatics_user_id": int(m_id.group(1)) if m_id else 0,
+            "informatics_username": (m_name.group(1).strip() if m_name else ""),
+        }
+
+
 def submit(problem_id: int, lang_id: int, source: str, cookie: str) -> int:
     """Submit source code and return the new run id."""
     ext = LANG_EXT.get(lang_id, "txt")

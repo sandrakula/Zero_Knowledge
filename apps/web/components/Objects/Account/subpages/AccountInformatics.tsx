@@ -17,7 +17,8 @@ export default function AccountInformatics() {
   const token = session?.data?.tokens?.access_token
 
   const [status, setStatus] = useState<LinkStatus | null>(null)
-  const [cookie, setCookie] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,19 +35,20 @@ export default function AccountInformatics() {
   }, [refresh])
 
   async function doLink() {
-    if (!cookie.trim() || busy) return
+    if (!username.trim() || !password || busy) return
     setBusy(true)
     setError('')
     try {
       const res = await fetch(`${getAPIUrl()}informatics/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ session_cookie: cookie.trim() }),
+        body: JSON.stringify({ username: username.trim(), password }),
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
         setStatus(data)
-        setCookie('')
+        setUsername('')
+        setPassword('')
       } else {
         setError(data?.detail || 'Не удалось привязать аккаунт Informatics')
       }
@@ -101,18 +103,27 @@ export default function AccountInformatics() {
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-xs font-semibold text-gray-600">Session cookie из Informatics</label>
+          <label className="block text-xs font-semibold text-gray-600">Логин</label>
           <input
             type="text"
-            value={cookie}
-            onChange={(e) => setCookie(e.target.value)}
-            placeholder="Вставьте session cookie (из cookies informatics.msk.ru)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Логин от informatics.msk.ru"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-gray-200"
+          />
+          <label className="block text-xs font-semibold text-gray-600">Пароль</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Пароль от informatics.msk.ru"
+            autoComplete="new-password"
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-gray-200"
           />
           <button
             type="button"
             onClick={doLink}
-            disabled={busy || !cookie.trim()}
+            disabled={busy || !username.trim() || !password}
             className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}

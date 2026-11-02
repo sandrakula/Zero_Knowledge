@@ -7,7 +7,7 @@ Informatics verdict (status + tests passed + score).
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -22,7 +22,8 @@ router = APIRouter()
 
 
 class LinkRequest(BaseModel):
-    session_cookie: str = Field(max_length=512)
+    username: str = Field(max_length=255)
+    password: str = Field(max_length=1024)
 
 
 class SubmitRequest(BaseModel):
@@ -56,7 +57,7 @@ async def link_account(
     db_session: AsyncSession = Depends(get_db_session),
 ):
     user = _require_learner(current_user)
-    return await links.link_account(user, body.session_cookie, db_session)
+    return await links.link_account(user, body.username, body.password, db_session)
 
 
 @router.delete("/link", summary="Unlink the Informatics account")
