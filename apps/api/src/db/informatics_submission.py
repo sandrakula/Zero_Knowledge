@@ -26,5 +26,6 @@ class InformaticsSubmission(SQLModel, table=True):
     tests: int = Field(default=0)
     score: int = Field(default=0)
     solved: bool = Field(default=False)
+    logged_to_form: bool = Field(default=False)
     created_at: str = Field(default="")
     updated_at: str = Field(default="")

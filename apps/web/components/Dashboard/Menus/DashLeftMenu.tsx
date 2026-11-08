@@ -308,16 +308,10 @@ function DashLeftMenu() {
           </Link>
         ) : (
           <div className="rounded-lg bg-white/[0.03] ring-1 ring-inset ring-white/5 p-2">
-            <div className="flex items-center justify-between px-1 pb-1.5">
+            <div className="px-1 pb-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-white/35">
                 {t('courses.my_courses')}
               </span>
-              <Link
-                href={getUriWithOrg(org?.slug || '', '/courses')}
-                className="text-[10px] font-semibold text-white/40 hover:text-white transition-colors"
-              >
-                {t('common.all_courses')}
-              </Link>
             </div>
             <div className="space-y-0.5 max-h-[180px] overflow-y-auto">
               {recentCourses.slice(0, 5).map((course: { course_uuid?: string; name?: string }) => {

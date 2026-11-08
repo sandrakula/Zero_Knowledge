@@ -4,6 +4,7 @@ import { useLHSession } from '@components/Contexts/LHSessionContext'
 import { getAPIUrl } from '@services/config/config'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import LearnerProgressSummary from '@components/Dashboard/Informatics/LearnerProgressSummary'
 
 type Category = { code: string; name: string; total: number; deadline?: string | null }
 type Student = {
@@ -24,6 +25,12 @@ type Overdue = {
   total: number
 }
 type Statistics = { categories: Category[]; students: Student[]; overdue: Overdue[] }
+type FormResponses = {
+  configured: boolean
+  headers: string[]
+  rows: string[][]
+  error: string | null
+}
 
 const th = 'px-3 py-2 text-start text-[11px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap'
 const td = 'px-3 py-2 text-sm text-gray-700 whitespace-nowrap'
@@ -39,7 +46,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   )
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({ value, label }: { value: number | string; label: string }) {
   return (
     <div className="bg-white rounded-xl nice-shadow px-4 py-3">
       <div className="text-2xl font-bold text-gray-900">{value}</div>
@@ -62,6 +69,19 @@ export default function InformaticsStatsPage() {
       return res.json()
     },
     enabled: !!token,
+  })
+
+  const { data: responses } = useQuery<FormResponses>({
+    queryKey: ['informatics', 'form-responses'],
+    queryFn: async () => {
+      const res = await fetch(`${getAPIUrl()}informatics/form-responses`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to fetch form responses')
+      return res.json()
+    },
+    enabled: !!token,
+    retry: false,
   })
 
   if (isLoading) {
@@ -92,12 +112,55 @@ export default function InformaticsStatsPage() {
         <p className="text-sm text-gray-500 mt-1">Прогресс по задачам Informatics</p>
       </div>
 
+      <LearnerProgressSummary />
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat value={categories.length} label="Всего категорий" />
         <Stat value={totalTasks} label="Всего задач" />
         <Stat value={deadlinesSet} label="Дедлайнов задано" />
         <Stat value={expiredCategories} label="Просрочено" />
       </div>
+
+      <Card title="Ответы Google Формы — Хроники">
+        {!responses ? (
+          <div className="p-4 text-sm text-gray-500">Загрузка…</div>
+        ) : !responses.configured ? (
+          <div className="p-4 text-sm text-gray-500">
+            Таблица не подключена: укажите ID таблицы ответов в{' '}
+            <code>LEARNHOUSE_INFORMATICS_SHEET_ID</code>.
+          </div>
+        ) : responses.error ? (
+          <div className="p-4 text-sm text-amber-700">
+            Не удалось прочитать таблицу ({responses.error}). Откройте доступ
+            «Все, у кого есть ссылка — Читатель».
+          </div>
+        ) : responses.rows.length === 0 ? (
+          <div className="p-4 text-sm text-gray-500">Ответов пока нет.</div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100">
+                {responses.headers.map((h, i) => (
+                  <th key={i} className={th}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {responses.rows.map((row, r) => (
+                <tr key={r} className="border-b border-gray-50 last:border-0">
+                  {row.map((cell, c) => (
+                    <td key={c} className={td}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
 
       <Card title="Лидерборд — всего решено">
         <table className="w-full">

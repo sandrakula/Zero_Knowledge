@@ -15,7 +15,7 @@ MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 
 class AttachmentData(BaseModel):
     """Attachment data sent with a message"""
-    type: Literal['image', 'video', 'file', 'youtube']
+    type: Literal['image', 'video', 'file', 'youtube', 'youtube_search', 'article']
     name: str = Field(max_length=AI_LABEL_MAX_CHARS)
     url: Optional[str] = Field(default=None, max_length=2048)  # For YouTube links
     content_base64: Optional[str] = None  # For uploaded files
@@ -114,6 +114,18 @@ class CoursePlanningMessage(BaseModel):
     content: str
 
 
+class SourceInfo(BaseModel):
+    """A used source (video/article) and the distilled notes taken from it.
+
+    Exposed so the UI can list which sources were used and what came from each,
+    without parsing the free-text DISTILLED SOURCE NOTES block.
+    """
+    kind: str = ""
+    title: str = ""
+    url: str = ""
+    summary: str = ""
+
+
 class CoursePlanningSessionData(BaseModel):
     """Session data stored in Redis"""
     session_uuid: str
@@ -131,6 +143,9 @@ class CoursePlanningSessionData(BaseModel):
     # activity content generation can ground lectures/tests on the same files.
     material_context: str = ""
     material_names: List[str] = []
+    # Structured list of used sources (videos/articles) and the distilled notes
+    # taken from each, so the UI can show which sources were used.
+    sources: List[SourceInfo] = []
 
 
 class StartCoursePlanningSession(BaseModel):
@@ -189,6 +204,7 @@ class CoursePlanningSessionResponse(BaseModel):
     current_plan: Optional[CoursePlan]
     message_history: List[CoursePlanningMessage]
     course_id: Optional[int] = None
+    sources: List[SourceInfo] = []
 
 
 class FinalizeCoursePlanResponse(BaseModel):

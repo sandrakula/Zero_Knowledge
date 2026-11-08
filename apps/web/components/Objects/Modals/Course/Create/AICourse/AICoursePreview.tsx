@@ -10,13 +10,14 @@ import { cn } from '@/lib/utils'
 import Image from 'next/image'
 import lrnaiIcon from 'public/lrnai_icon.png'
 import toast from 'react-hot-toast'
-import type { CoursePlan, ChapterPlan, ActivityPlan, CreatedChapter, AISource } from '@services/ai/courseplanning'
+import type { CoursePlan, ChapterPlan, ActivityPlan, CreatedChapter, AISource, SourceInfo } from '@services/ai/courseplanning'
 import {
   generateActivityContent,
   parseActivityContentFromStream,
   ENABLE_ACTIVITY_CONTENT_GENERATION,
 } from '@services/ai/courseplanning'
 import { updateActivity } from '@services/courses/activities'
+import { safeExternalUrl } from '@services/security/url'
 
 interface AICoursePreviewProps {
   plan: CoursePlan | null
@@ -24,6 +25,7 @@ interface AICoursePreviewProps {
   courseUuid: string | null
   sessionUuid: string | null
   accessToken: string
+  sources?: SourceInfo[]
   onUpdatePlan: (plan: CoursePlan) => void
   isLoading: boolean
   streamingContent: string
@@ -72,12 +74,87 @@ function SourceBadge({ source, refs }: { source?: AISource; refs?: string[] }) {
   )
 }
 
+const SOURCE_KIND_STYLES: Record<string, string> = {
+  youtube: 'bg-red-500/15 text-red-300 ring-red-500/25',
+  article: 'bg-teal-500/15 text-teal-300 ring-teal-500/25',
+}
+
+function SourceKindBadge({ kind }: { kind: string }) {
+  const label = kind === 'youtube' ? 'YouTube' : kind === 'article' ? 'Статья' : kind
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ring-1 ring-inset flex-shrink-0',
+        SOURCE_KIND_STYLES[kind] ?? 'bg-white/10 text-white/50 ring-white/15'
+      )}
+    >
+      {label}
+    </span>
+  )
+}
+
+function SourcesSection({ sources }: { sources: SourceInfo[] }) {
+  const [open, setOpen] = React.useState(sources.length <= 5)
+
+  if (sources.length === 0) return null
+
+  return (
+    <div className="bg-white/5 rounded-xl ring-1 ring-inset ring-white/10 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="w-full flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors text-left"
+      >
+        {open
+          ? <ChevronDown className="w-4 h-4 text-white/50" />
+          : <ChevronRight className="w-4 h-4 text-white/50" />}
+        <span className="text-sm font-semibold text-white/80">📚 Источники ({sources.length})</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-3 space-y-2">
+          {sources.map((source, i) => {
+            const href = safeExternalUrl(source.url)
+            return (
+              <div key={i} className="p-3 bg-white/5 rounded-lg ring-1 ring-inset ring-white/5">
+                <div className="flex items-start gap-2 min-w-0">
+                  <SourceKindBadge kind={source.kind} />
+                  <div className="flex-1 min-w-0">
+                    {href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-white/80 hover:text-purple-300 transition-colors break-words"
+                      >
+                        {source.title}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium text-white/80">{source.title}</span>
+                    )}
+                  </div>
+                </div>
+                {source.summary && (
+                  <p title={source.summary} className="text-xs text-white/40 mt-1 line-clamp-3">
+                    <span className="text-purple-300/70">Взято:</span> {source.summary}
+                  </p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AICoursePreview({
   plan,
   createdChapters,
   courseUuid,
   sessionUuid,
   accessToken,
+  sources = [],
   onUpdatePlan,
   isLoading,
   streamingContent,
@@ -253,6 +330,7 @@ function AICoursePreview({
         {activeTab === 'plan' ? (
           <PlanTabContent
             plan={plan}
+            sources={sources}
             onUpdatePlan={onUpdatePlan}
             isLoading={isLoading}
             streamingContent={streamingContent}
@@ -286,6 +364,7 @@ function AICoursePreview({
 
 function PlanTabContent({
   plan,
+  sources,
   onUpdatePlan,
   isLoading,
   streamingContent,
@@ -295,6 +374,7 @@ function PlanTabContent({
   onOpenInEditor,
 }: {
   plan: CoursePlan | null
+  sources: SourceInfo[]
   onUpdatePlan: (plan: CoursePlan) => void
   isLoading: boolean
   streamingContent: string
@@ -371,6 +451,9 @@ function PlanTabContent({
             <PlanChapterCard key={ci} chapter={chapter} chapterIndex={ci} plan={plan} onUpdatePlan={onUpdatePlan} />
           ))}
         </div>
+
+        {/* Sources */}
+        {sources.length > 0 && <SourcesSection sources={sources} />}
 
         {/* Bottom actions - always visible */}
         <div className="pt-4 pb-8 flex justify-center gap-3">

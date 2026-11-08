@@ -32,6 +32,7 @@ from src.services.ai.courseplanning import (
     save_course_planning_session,
     generate_course_plan_stream,
     generate_activity_content_stream,
+    PROGRESS_PREFIX,
     MAX_PLANNING_ITERATIONS,
     MAX_ACTIVITY_ITERATIONS,
     ENABLE_ACTIVITY_CONTENT_GENERATION,
@@ -57,7 +58,11 @@ async def event_generator(generator, session_uuid: str):
     """Convert async generator to SSE format"""
     try:
         async for chunk in generator:
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            if chunk.startswith(PROGRESS_PREFIX):
+                payload = json.loads(chunk[len(PROGRESS_PREFIX):])
+                yield f"data: {json.dumps({'type': 'progress', **payload})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'session_uuid': session_uuid})}\n\n"
     except Exception:
         logger.exception("Error in event_generator for session %s", session_uuid)
@@ -70,7 +75,11 @@ async def event_generator_with_save(generator, session_uuid: str, activity_uuid:
     called from the frontend after parsing the stream."""
     try:
         async for chunk in generator:
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            if chunk.startswith(PROGRESS_PREFIX):
+                payload = json.loads(chunk[len(PROGRESS_PREFIX):])
+                yield f"data: {json.dumps({'type': 'progress', **payload})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
 
         # Content is saved via the dedicated save endpoint called from frontend
         logger.info(f"[AI Content] Streaming complete for activity {activity_uuid}, content will be saved via explicit API call")
@@ -796,4 +805,5 @@ async def get_session_state(
             for msg in session.message_history
         ],
         course_id=session.course_id,
+        sources=session.sources,
     )

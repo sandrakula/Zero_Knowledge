@@ -12,12 +12,13 @@ import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
 import lrnaiIcon from 'public/lrnai_icon.png'
 import AICoursePreview from './AICoursePreview'
 import AICourseChat from './AICourseChat'
-import type { CoursePlan, CoursePlanningMessage, CreatedChapter, Attachment } from '@services/ai/courseplanning'
+import type { CoursePlan, CoursePlanningMessage, CreatedChapter, Attachment, CourseProgress, SourceInfo } from '@services/ai/courseplanning'
 import {
   startCoursePlanningSession,
   iterateCoursePlanning,
   finalizeCoursePlan,
   parseCoursePlanFromStream,
+  getCoursePlanningSession,
   ENABLE_ACTIVITY_CONTENT_GENERATION,
 } from '@services/ai/courseplanning'
 
@@ -49,11 +50,13 @@ function AICourseCreationModal({
   const [streamingContent, setStreamingContent] = React.useState('')
   const [currentPlan, setCurrentPlan] = React.useState<CoursePlan | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  const [progress, setProgress] = React.useState<CourseProgress | null>(null)
 
   const [createdChapters, setCreatedChapters] = React.useState<CreatedChapter[]>([])
   const [courseUuid, setCourseUuid] = React.useState<string | null>(null)
   const [isFinalizingPlan, setIsFinalizingPlan] = React.useState(false)
   const [hasVideoAttachment, setHasVideoAttachment] = React.useState(false)
+  const [sources, setSources] = React.useState<SourceInfo[]>([])
 
   const isCourseCreated = courseUuid !== null
 
@@ -65,10 +68,12 @@ function AICourseCreationModal({
       setStreamingContent('')
       setCurrentPlan(null)
       setError(null)
+      setProgress(null)
       setCreatedChapters([])
       setCourseUuid(null)
       setIsFinalizingPlan(false)
       setHasVideoAttachment(false)
+      setSources([])
     }
   }, [isOpen])
 
@@ -78,6 +83,8 @@ function AICourseCreationModal({
     setIsLoading(true)
     setError(null)
     setStreamingContent('')
+    setProgress(null)
+    setSources([])
 
     if (attachments?.some(a => a.type === 'youtube')) {
       setHasVideoAttachment(true)
@@ -99,6 +106,17 @@ function AICourseCreationModal({
     const onComplete = (newSessionUuid: string) => {
       setSessionUuid(newSessionUuid)
       setIterationCount((prev) => prev + 1)
+      setProgress(null)
+
+      getCoursePlanningSession(newSessionUuid, accessToken)
+        .then((res) => {
+          if (res.success && res.data) {
+            setSources(res.data.sources ?? [])
+          }
+        })
+        .catch(() => {
+          // Best-effort enrichment; ignore errors so the plan remains usable.
+        })
 
       setTimeout(() => {
         setStreamingContent((current) => {
@@ -122,6 +140,7 @@ function AICourseCreationModal({
       setIsLoading(false)
       setStreamingContent('')
       setHasVideoAttachment(false)
+      setProgress(null)
     }
 
     try {
@@ -129,13 +148,13 @@ function AICourseCreationModal({
         await startCoursePlanningSession(
           orgId, message, accessToken,
           onChunk, onComplete, onError,
-          i18n.language, attachments
+          i18n.language, attachments, setProgress
         )
       } else {
         await iterateCoursePlanning(
           sessionUuid, message, accessToken,
           onChunk, onComplete, onError,
-          currentPlan, attachments
+          currentPlan, attachments, setProgress
         )
       }
     } catch (err) {
@@ -291,6 +310,7 @@ function AICourseCreationModal({
                   courseUuid={courseUuid}
                   sessionUuid={sessionUuid}
                   accessToken={accessToken}
+                  sources={sources}
                   onUpdatePlan={handleUpdatePlan}
                   isLoading={isLoading}
                   streamingContent={streamingContent}
@@ -311,6 +331,7 @@ function AICourseCreationModal({
                   onSendMessage={handleSendMessage}
                   hasVideoAttachment={hasVideoAttachment}
                   isCourseCreated={isCourseCreated}
+                  progress={progress}
                 />
               </div>
             </div>

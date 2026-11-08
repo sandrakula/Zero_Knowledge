@@ -1,10 +1,10 @@
 'use client'
 import React from 'react'
-import { Send, Loader2, Paperclip, FolderOpen, X, Image as ImageIcon, Link as LinkIcon, FileText, Video } from 'lucide-react'
+import { Send, Loader2, Paperclip, FolderOpen, X, Image as ImageIcon, Link as LinkIcon, FileText, Video, Search, Globe } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
-import type { CoursePlanningMessage, Attachment } from '@services/ai/courseplanning'
+import type { CoursePlanningMessage, Attachment, CourseProgress } from '@services/ai/courseplanning'
 import lrnaiIcon from 'public/lrnai_icon.png'
 import { safeImageSrc } from '@services/security/url'
 
@@ -16,6 +16,16 @@ interface AICourseChatProps {
   onSendMessage: (message: string, attachments?: Attachment[]) => void
   hasVideoAttachment?: boolean
   isCourseCreated?: boolean
+  progress?: CourseProgress | null
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  youtube: 'Ищу видео на YouTube',
+  transcripts: 'Читаю транскрипты',
+  slides: 'Анализирую слайды видео',
+  articles: 'Разбираю статьи',
+  summaries: 'Сжимаю в конспекты',
+  planning: 'Пишу план курса',
 }
 
 const SUGGESTION_CHIPS = [
@@ -38,6 +48,7 @@ function AICourseChat({
   onSendMessage,
   hasVideoAttachment = false,
   isCourseCreated = false,
+  progress = null,
 }: AICourseChatProps) {
   const { t } = useTranslation()
   const [inputValue, setInputValue] = React.useState('')
@@ -46,6 +57,8 @@ function AICourseChat({
   const [isDragging, setIsDragging] = React.useState(false)
   const [youtubeUrl, setYoutubeUrl] = React.useState('')
   const [showYoutubeInput, setShowYoutubeInput] = React.useState(false)
+  const [articleUrl, setArticleUrl] = React.useState('')
+  const [showArticleInput, setShowArticleInput] = React.useState(false)
   const [loadingDuration, setLoadingDuration] = React.useState(0)
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
@@ -53,7 +66,16 @@ function AICourseChat({
 
   const canSendMessage = !isLoading && !isCourseCreated && iterationCount < maxIterations && (inputValue.trim() || attachments.length > 0)
   const isExhausted = iterationCount >= maxIterations
-  const currentHasVideo = attachments.some(a => a.type === 'youtube') || hasVideoAttachment
+  const currentHasVideo = attachments.some(a => a.type === 'youtube' || a.type === 'youtube_search' || a.type === 'article') || hasVideoAttachment
+
+  const progressTotal = progress && typeof progress.total === 'number' && progress.total > 0 ? progress.total : 0
+  const progressDone = progress && typeof progress.done === 'number' ? progress.done : 0
+  const progressLabel = progress
+    ? `${STAGE_LABELS[progress.stage] ?? progress.stage}${progressTotal > 0 ? ` ${progressDone}/${progressTotal}` : ''}`
+    : ''
+  const progressPercent = progressTotal > 0
+    ? Math.max(0, Math.min(100, (progressDone / progressTotal) * 100))
+    : 0
 
   React.useEffect(() => {
     if (isLoading) {
@@ -82,6 +104,7 @@ function AICourseChat({
       setAttachments([])
       setAttachError('')
       setShowYoutubeInput(false)
+      setShowArticleInput(false)
     }
   }
 
@@ -228,10 +251,51 @@ function AICourseChat({
         url: youtubeUrl.trim(),
         preview: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
       }])
-      setYoutubeUrl('')
-      setShowYoutubeInput(false)
-      setAttachError('')
+    } else {
+      const searchTerm = youtubeUrl.trim()
+      setAttachments((prev) => [...prev, {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: 'youtube_search',
+        name: searchTerm,
+        url: undefined,
+        preview: undefined,
+      }])
     }
+    setYoutubeUrl('')
+    setShowYoutubeInput(false)
+    setAttachError('')
+  }
+
+  const handleArticleAdd = () => {
+    const trimmed = articleUrl.trim()
+    if (!trimmed) return
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachError(
+        t('courses.create.ai.attach_limit_count', { max: MAX_ATTACHMENTS }) || `You can attach up to ${MAX_ATTACHMENTS} files.`
+      )
+      return
+    }
+    if (!/^https?:\/\//i.test(trimmed)) {
+      setAttachError(
+        t('courses.create.ai.attach_article_invalid') || 'Please enter a valid article URL (starting with http:// or https://).'
+      )
+      return
+    }
+    let name = trimmed
+    try {
+      name = new URL(trimmed).hostname
+    } catch {
+      name = trimmed
+    }
+    setAttachments((prev) => [...prev, {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'article',
+      name,
+      url: trimmed,
+    }])
+    setArticleUrl('')
+    setShowArticleInput(false)
+    setAttachError('')
   }
 
   const removeAttachment = (id: string) => {
@@ -243,12 +307,20 @@ function AICourseChat({
     switch (type) {
       case 'image': return <ImageIcon className="w-3 h-3" />
       case 'youtube': return <LinkIcon className="w-3 h-3 text-red-400" />
+      case 'youtube_search': return <Search className="w-3 h-3 text-purple-400" />
+      case 'article': return <Globe className="w-3 h-3 text-teal-400" />
       default: return <FileText className="w-3 h-3" />
     }
   }
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <style>{`
+        @keyframes ai-progress-stripe {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+      `}</style>
       {/* Messages area */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 scrollbar-hide">
         {/* Empty state with suggestions */}
@@ -312,41 +384,64 @@ function AICourseChat({
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-white/5 rounded-2xl rounded-es-md px-4 py-3 ring-1 ring-inset ring-white/10 max-w-[85%]">
+            <div className="bg-white/5 rounded-2xl rounded-es-md px-4 py-3 ring-1 ring-inset ring-white/10 max-w-[85%] w-full min-w-0">
               <div className="flex items-center gap-3">
-                <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
-                <div className="flex flex-col gap-1">
+                <Loader2 className="w-5 h-5 animate-spin text-purple-400 shrink-0" />
+                <div className="flex flex-col gap-1 min-w-0">
                   <span className="text-sm text-white/70 font-medium">
-                    {currentHasVideo && loadingDuration < 10
-                      ? t('courses.create.ai.processing_video')
-                      : t('courses.create.ai.generating')}
+                    {progress
+                      ? progressLabel
+                      : currentHasVideo && loadingDuration < 10
+                        ? t('courses.create.ai.processing_video')
+                        : t('courses.create.ai.generating')}
                   </span>
-                  {loadingDuration >= 5 && (
+                  {!progress && loadingDuration >= 5 && (
                     <span className="text-xs text-white/40">
                       {currentHasVideo
                         ? t('courses.create.ai.video_processing_hint')
                         : t('courses.create.ai.still_working')}
                     </span>
                   )}
-                  {loadingDuration >= 15 && currentHasVideo && (
+                  {!progress && loadingDuration >= 15 && currentHasVideo && (
                     <span className="text-xs text-amber-400/70">
                       {t('courses.create.ai.video_takes_time')}
                     </span>
                   )}
                 </div>
               </div>
-              {loadingDuration >= 3 && (
+              {progress ? (
                 <div className="mt-2 flex items-center gap-2">
-                  <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-purple-500/50 rounded-full animate-pulse"
-                      style={{ width: `${Math.min(loadingDuration * 2, 95)}%`, transition: 'width 1s ease-out' }}
-                    />
+                  <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
+                    {progressTotal > 0 ? (
+                      <div
+                        className="h-full bg-purple-500/80 rounded-full"
+                        style={{ width: `${progressPercent}%`, transition: 'width 0.3s ease-out' }}
+                      />
+                    ) : (
+                      <div className="relative h-full w-full overflow-hidden">
+                        <div
+                          className="absolute inset-y-0 w-1/3 rounded-full bg-gradient-to-r from-transparent via-purple-500/80 to-transparent"
+                          style={{ animation: 'ai-progress-stripe 1.2s linear infinite' }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs text-white/30 tabular-nums">
-                    {loadingDuration}s
-                  </span>
+                  <span className="text-xs text-white/30 tabular-nums">{loadingDuration}s</span>
                 </div>
+              ) : (
+                loadingDuration >= 3 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500/50 rounded-full animate-pulse"
+                        style={{ width: `${Math.min(loadingDuration * 2, 95)}%`, transition: 'width 1s ease-out' }}
+                      />
+                    </div>
+                    <span className="text-xs text-white/30 tabular-nums">
+                      {loadingDuration}s
+                    </span>
+                  </div>
+                )
               )}
             </div>
           </div>
@@ -389,6 +484,16 @@ function AICourseChat({
                       {attachment.type === 'youtube' && (
                         <span className="text-[10px] text-red-400/70 flex items-center gap-1">
                           <Video className="w-3 h-3" /> YouTube
+                        </span>
+                      )}
+                      {attachment.type === 'youtube_search' && (
+                        <span className="text-[10px] text-purple-400/70 flex items-center gap-1">
+                          <Search className="w-3 h-3" /> YouTube search
+                        </span>
+                      )}
+                      {attachment.type === 'article' && (
+                        <span className="text-[10px] text-teal-400/70 flex items-center gap-1">
+                          <Globe className="w-3 h-3" /> Article
                         </span>
                       )}
                     </div>
@@ -493,7 +598,7 @@ function AICourseChat({
                       type="button"
                       onClick={() => setShowYoutubeInput((prev) => !prev)}
                       disabled={isLoading}
-                      title={t('courses.create.ai.attach_youtube') || 'YouTube Video'}
+                      title={t('courses.create.ai.attach_youtube') || 'YouTube video or topic'}
                       className={cn(
                         "flex items-center justify-center w-8 h-8 rounded-lg transition-all",
                         !isLoading
@@ -510,7 +615,7 @@ function AICourseChat({
                           type="text"
                           value={youtubeUrl}
                           onChange={(e) => setYoutubeUrl(e.target.value)}
-                          placeholder="Paste YouTube URL..."
+                          placeholder="Paste a YouTube URL or a topic (e.g. decision trees)..."
                           className="w-full px-3 py-2.5 text-sm bg-white/5 rounded-lg text-white placeholder:text-white/30 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-purple-500/30"
                           autoFocus
                           onKeyDown={(e) => {
@@ -529,6 +634,55 @@ function AICourseChat({
                             type="button"
                             onClick={handleYoutubeAdd}
                             className="flex-1 px-3 py-2 text-xs font-medium text-white bg-purple-500/50 hover:bg-purple-500/70 rounded-lg transition-colors"
+                          >
+                            {t('common.add') || 'Add'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowArticleInput((prev) => !prev)}
+                      disabled={isLoading}
+                      title={t('courses.create.ai.attach_article') || 'Article URL'}
+                      className={cn(
+                        "flex items-center justify-center w-8 h-8 rounded-lg transition-all",
+                        !isLoading
+                          ? "bg-white/5 text-white/50 hover:text-teal-300 hover:bg-white/10 ring-1 ring-inset ring-white/10"
+                          : "bg-white/5 text-white/20 cursor-not-allowed"
+                      )}
+                    >
+                      <Globe className="w-4 h-4" />
+                    </button>
+
+                    {showArticleInput && (
+                      <div className="absolute bottom-full start-0 mb-2 w-72 max-w-[calc(100vw-2rem)] bg-gray-900 rounded-xl ring-1 ring-white/10 shadow-2xl p-3 space-y-2 z-50">
+                        <input
+                          type="text"
+                          value={articleUrl}
+                          onChange={(e) => setArticleUrl(e.target.value)}
+                          placeholder="Paste an article URL (https://...)"
+                          className="w-full px-3 py-2.5 text-sm bg-white/5 rounded-lg text-white placeholder:text-white/30 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-purple-500/30"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleArticleAdd() }
+                          }}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowArticleInput(false)}
+                            className="flex-1 px-3 py-2 text-xs font-medium text-white/50 hover:text-white/70 bg-white/5 rounded-lg transition-colors"
+                          >
+                            {t('common.cancel') || 'Cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleArticleAdd}
+                            className="flex-1 px-3 py-2 text-xs font-medium text-white bg-teal-500/50 hover:bg-teal-500/70 rounded-lg transition-colors"
                           >
                             {t('common.add') || 'Add'}
                           </button>
@@ -569,7 +723,7 @@ function AICourseChat({
               <p className="text-xs text-amber-400/70 text-center">{attachError}</p>
             )}
 
-            {attachments.some(a => a.type === 'youtube') && (
+            {attachments.some(a => a.type === 'youtube' || a.type === 'youtube_search' || a.type === 'article') && (
               <p className="text-xs text-amber-400/60 text-center">
                 {t('courses.create.ai.video_hint') || 'Videos may take 1-2 minutes to process'}
               </p>

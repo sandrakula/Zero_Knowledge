@@ -9,6 +9,7 @@ type LinkStatus = {
   linked: boolean
   informatics_user_id?: number | null
   informatics_username?: string | null
+  email?: string | null
   last_error?: string | null
 }
 
@@ -17,6 +18,7 @@ export default function AccountInformatics() {
   const token = session?.data?.tokens?.access_token
 
   const [status, setStatus] = useState<LinkStatus | null>(null)
+  const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -35,18 +37,19 @@ export default function AccountInformatics() {
   }, [refresh])
 
   async function doLink() {
-    if (!username.trim() || !password || busy) return
+    if (!username.trim() || !password || !email.trim() || busy) return
     setBusy(true)
     setError('')
     try {
       const res = await fetch(`${getAPIUrl()}informatics/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), username: username.trim(), password }),
       })
       const data = await res.json().catch(() => null)
       if (res.ok) {
         setStatus(data)
+        setEmail('')
         setUsername('')
         setPassword('')
       } else {
@@ -90,6 +93,11 @@ export default function AccountInformatics() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
           <div className="text-sm text-emerald-700">
             Привязан: <span className="font-semibold">{status.informatics_username || status.informatics_user_id}</span>
+            {status.email && (
+              <div className="text-sm text-emerald-700">
+                Email: <span className="font-semibold">{status.email}</span>
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -103,6 +111,14 @@ export default function AccountInformatics() {
         </div>
       ) : (
         <div className="space-y-2">
+          <label className="block text-xs font-semibold text-gray-600">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email ученика"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-gray-200"
+          />
           <label className="block text-xs font-semibold text-gray-600">Логин</label>
           <input
             type="text"
@@ -123,7 +139,7 @@ export default function AccountInformatics() {
           <button
             type="button"
             onClick={doLink}
-            disabled={busy || !username.trim() || !password}
+            disabled={busy || !email.trim() || !username.trim() || !password}
             className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}

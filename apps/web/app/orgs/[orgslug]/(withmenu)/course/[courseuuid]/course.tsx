@@ -30,6 +30,9 @@ import CourseShare from '@components/Objects/Courses/CourseShare/CourseShare'
 import CourseAccessError from '@components/Objects/Courses/CourseAccessError/CourseAccessError'
 import { JsonLd } from '@components/SEO/JsonLd'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
+import LearnerProgressSummary from '@components/Dashboard/Informatics/LearnerProgressSummary'
+
+const INFORMATICS_COURSE_UUID = '153ebd33-e07a-48c1-83ea-eda9378a0119'
 
 const CourseClient = (props: any) => {
   const { t } = useTranslation()
@@ -55,6 +58,9 @@ const CourseClient = (props: any) => {
   });
 
   const course = initialCourse || clientCourseData;
+
+  const isInformaticsCourse = courseuuid.replace('course_', '') === INFORMATICS_COURSE_UUID
+  const firstActivity = course?.chapters?.[0]?.activities?.[0]
 
   const { data: taskProgressData } = useQuery({
     queryKey: ['courses', 'my-task-progress', courseuuid],
@@ -445,6 +451,31 @@ const CourseClient = (props: any) => {
                   }
                 })()}
 
+                {isInformaticsCourse && (
+                  <div className="flex">
+                    {firstActivity ? (
+                      <Link
+                        href={
+                          getUriWithOrg(orgslug, '') +
+                          `/course/${courseuuid}/activity/${firstActivity.activity_uuid.replace('activity_', '')}`
+                        }
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-6 py-3 text-base font-semibold text-white hover:bg-neutral-800 transition-colors"
+                      >
+                        Решать
+                        <ArrowRight size={16} />
+                      </Link>
+                    ) : (
+                      <button
+                        disabled
+                        title="Нет доступных заданий"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-300 px-6 py-3 text-base font-semibold text-gray-500 cursor-not-allowed"
+                      >
+                        Решать
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {(() => {
                   const cleanCourseUuid = course.course_uuid?.replace('course_', '');
                   const run = trailData?.runs?.find(
@@ -482,6 +513,12 @@ const CourseClient = (props: any) => {
                 </div>
               </div>
             </div>
+
+            {isInformaticsCourse && (
+              <div className="w-full my-5 space-y-6">
+                <LearnerProgressSummary />
+              </div>
+            )}
 
             <div className="w-full my-5 mb-10">
               <h2 className="py-5 text-xl md:text-2xl font-bold">{t('courses.course_lessons')}</h2>

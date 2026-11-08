@@ -31,6 +31,7 @@ class ProblemBase(SQLModel):
     source_name: Optional[str] = Field(default=None, max_length=200)
     source_url: Optional[str] = Field(default=None, max_length=2000)
     source_id: Optional[str] = Field(default=None, max_length=200)
+    task_id: Optional[str] = Field(default=None, max_length=64)
     # Informatics topic category (CAT_001_INF_IO …), for progress statistics.
     category: Optional[str] = Field(default=None, max_length=64)
     checksum: str = Field(default="", max_length=64)

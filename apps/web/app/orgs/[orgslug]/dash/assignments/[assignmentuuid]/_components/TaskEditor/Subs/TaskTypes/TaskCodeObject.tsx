@@ -913,8 +913,8 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   // Sends the current code to the Informatics judge for the task's linked
   // problem (contents.informatics_problem_id). Requires the learner to have
   // linked their Informatics account. Local run/grading are untouched.
-  async function submitToInformatics() {
-    if (!contents.informatics_problem_id || isInformaticsSubmitting) return
+  async function submitToInformatics(): Promise<boolean> {
+    if (!contents.informatics_problem_id || isInformaticsSubmitting) return false
     setIsInformaticsSubmitting(true)
     setInformaticsResult(null)
     try {
@@ -933,14 +933,31 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
       const data = await resp.json().catch(() => null)
       if (!resp.ok) {
         setInformaticsResult({ error: data?.detail || 'Submit failed' })
-      } else {
-        setInformaticsResult(data)
+        return false
       }
+      setInformaticsResult(data)
+      return data?.solved === true
     } catch {
       setInformaticsResult({ error: 'Submit failed' })
+      return false
     } finally {
       setIsInformaticsSubmitting(false)
     }
+  }
+
+  // One «Сдать» action. When the task is linked to an Informatics problem the
+  // real check runs on informatics.msk.ru; on a solved verdict the backend also
+  // posts the row to the «Хроники» Google Form. Local grading then credits the
+  // task in the course. Without a linked problem it falls back to local grading.
+  async function submitTask() {
+    if (!assignmentTaskUUID || isTaskSubmitting || isInformaticsSubmitting || !canStudentSave) {
+      return
+    }
+    if (contents.informatics_problem_id != null) {
+      const solved = await submitToInformatics()
+      if (!solved) return
+    }
+    await submitTaskForGrading()
   }
 
   // --- RUN WITH CUSTOM INPUT ---
@@ -1553,15 +1570,19 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                   </button>
                   <button
                     type="button"
-                    onClick={submitTaskForGrading}
-                    disabled={isTaskSubmitting || !canStudentSave}
+                    onClick={submitTask}
+                    disabled={isTaskSubmitting || isInformaticsSubmitting || !canStudentSave}
                     className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-slate-900 text-white rounded-md hover:bg-slate-800 disabled:opacity-50"
                   >
-                    {isTaskSubmitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    {isTaskSubmitting || isInformaticsSubmitting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={14} />
+                    )}
                     <span>
-                      {isTaskSubmitting
-                        ? t('assignments.submitting', { defaultValue: 'Submitting…' })
-                        : t('assignments.submit_task', { defaultValue: 'Submit' })}
+                      {isTaskSubmitting || isInformaticsSubmitting
+                        ? t('assignments.submitting', { defaultValue: 'Проверяем…' })
+                        : t('assignments.submit_task', { defaultValue: 'Сдать' })}
                     </span>
                   </button>
                 </div>
@@ -1587,36 +1608,23 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                   </div>
                 )}
 
-                {/* Submit to Informatics: only shown when the teacher linked this
-                    task to an Informatics problem. */}
-                {contents.informatics_problem_id != null && (
-                  <div className="flex flex-col space-y-2">
-                    <button
-                      type="button"
-                      onClick={submitToInformatics}
-                      disabled={isInformaticsSubmitting}
-                      className="flex items-center space-x-1.5 px-3 py-1.5 text-sm font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {isInformaticsSubmitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                      <span>{isInformaticsSubmitting ? 'Отправка…' : 'Отправить на Informatics'}</span>
-                    </button>
-                    {informaticsResult && (
-                      <div
-                        className={`rounded-md border px-3 py-2 text-xs font-semibold ${
-                          informaticsResult.error
-                            ? 'border-rose-200 bg-rose-50 text-rose-700'
-                            : informaticsResult.solved
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-amber-200 bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {informaticsResult.error
-                          ? informaticsResult.error
-                          : informaticsResult.solved
-                            ? 'Принято на Informatics ✓'
-                            : `Не решено (status ${informaticsResult.status ?? '?'})`}
-                      </div>
-                    )}
+                {/* Informatics verdict for tasks linked to an Informatics
+                    problem; the single «Сдать» button above drives it. */}
+                {contents.informatics_problem_id != null && informaticsResult && (
+                  <div
+                    className={`rounded-md border px-3 py-2 text-xs font-semibold ${
+                      informaticsResult.error
+                        ? 'border-rose-200 bg-rose-50 text-rose-700'
+                        : informaticsResult.solved
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}
+                  >
+                    {informaticsResult.error
+                      ? informaticsResult.error
+                      : informaticsResult.solved
+                        ? 'Принято на Informatics ✓'
+                        : `Не решено (status ${informaticsResult.status ?? '?'})`}
                   </div>
                 )}
 

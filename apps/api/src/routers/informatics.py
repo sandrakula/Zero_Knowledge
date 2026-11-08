@@ -16,7 +16,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from src.core.events.database import get_db_session
 from src.db.users import APITokenUser, PublicUser
 from src.security.auth import get_authenticated_user
-from src.services.informatics import links, progress, statistics
+from src.services.informatics import links, progress, sheet, statistics
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ router = APIRouter()
 class LinkRequest(BaseModel):
     username: str = Field(max_length=255)
     password: str = Field(max_length=1024)
+    email: str = Field(max_length=255)
 
 
 class SubmitRequest(BaseModel):
@@ -57,7 +58,7 @@ async def link_account(
     db_session: AsyncSession = Depends(get_db_session),
 ):
     user = _require_learner(current_user)
-    return await links.link_account(user, body.username, body.password, db_session)
+    return await links.link_account(user, body.username, body.password, body.email, db_session)
 
 
 @router.delete("/link", summary="Unlink the Informatics account")
@@ -161,3 +162,12 @@ async def set_completion(
     return await progress.set_completion(
         body.user_id, body.category, body.validation_status, body.checked_by, body.dosdacha, db_session
     )
+
+
+@router.get("/form-responses", summary="Google Form responses table (Хроники)")
+async def get_form_responses(
+    request: Request,
+    current_user: Union[PublicUser, APITokenUser] = Depends(get_authenticated_user),
+):
+    """Read the form's responses sheet (shared via link / published to web)."""
+    return await sheet.fetch_sheet_rows()

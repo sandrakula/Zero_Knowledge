@@ -76,6 +76,33 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
   const [error, setError] = React.useState('')
   const [message, setMessage] = React.useState<{ email_verified: boolean } | null>(null)
   const [resendState, setResendState] = React.useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [usernameOnly, setUsernameOnly] = React.useState('')
+  const [usernameOnlyBusy, setUsernameOnlyBusy] = React.useState(false)
+
+  async function handleUsernameLogin() {
+    const name = usernameOnly.trim()
+    if (!name || usernameOnlyBusy) return
+    setUsernameOnlyBusy(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/username-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: name }),
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data?.detail || 'Не удалось войти')
+        return
+      }
+      window.location.href = '/home'
+    } catch {
+      setError('Не удалось войти')
+    } finally {
+      setUsernameOnlyBusy(false)
+    }
+  }
   const turnstileRef = React.useRef<TurnstileWidgetHandle>(null)
   const turnstileRequired = useTurnstileRequired()
 
@@ -86,6 +113,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
   const allowedMethods = React.useMemo(() => getAllowedAuthMethods(org), [org])
   const passwordAllowed = allowedMethods.has('password')
   const googleAllowed = allowedMethods.has('google')
+  const usernameOnlyAuth = true
 
   // Field definitions ship with the org config the page already loaded, so no
   // extra request is needed to render them.
@@ -242,7 +270,28 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
           </div>
         )}
 
-        {passwordAllowed && (
+        {usernameOnlyAuth && (
+        <div className="space-y-2">
+          <form onSubmit={(e) => { e.preventDefault(); handleUsernameLogin() }}>
+            <label className="text-[13px] font-semibold text-black/70">Логин</label>
+            <input
+              value={usernameOnly}
+              onChange={(e) => setUsernameOnly(e.target.value)}
+              placeholder="Введите логин"
+              className="box-border w-full bg-neutral-50 text-black rounded-lg px-4 border border-neutral-200 inline-flex h-[44px] appearance-none items-center focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-neutral-400 transition-all placeholder:text-black/25 text-sm mt-1.5"
+            />
+            <button
+              type="submit"
+              disabled={usernameOnlyBusy || !usernameOnly.trim()}
+              className="box-border w-full inline-flex h-[44px] rounded-lg items-center justify-center bg-black hover:bg-black/85 text-white px-[15px] font-bold text-[14px] leading-none mt-2 transition-all disabled:opacity-50"
+            >
+              {usernameOnlyBusy ? '…' : 'Продолжить'}
+            </button>
+          </form>
+        </div>
+        )}
+
+        {!usernameOnlyAuth && passwordAllowed && (
         <FormLayout onSubmit={formik.handleSubmit}>
           <FormField name="email">
             <div className="flex items-center space-x-2 mb-1.5">
@@ -397,7 +446,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
         )}
 
         {/* Divider: only earns its place between two sets of options. */}
-        {passwordAllowed && googleAllowed && (
+        {!usernameOnlyAuth && passwordAllowed && googleAllowed && (
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-neutral-200" />
@@ -409,7 +458,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
         )}
 
         {/* Google Sign In */}
-        {googleAllowed && (
+        {!usernameOnlyAuth && googleAllowed && (
         <button
           onClick={handleGoogleSignIn}
           disabled={isSubmitting}
@@ -420,7 +469,7 @@ function OpenSignUpComponent({ org: propOrg }: OpenSignUpComponentProps = {}) {
         </button>
         )}
 
-        {!passwordAllowed && !googleAllowed && (
+        {!usernameOnlyAuth && !passwordAllowed && !googleAllowed && (
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-start gap-3">
             <Info size={16} className="shrink-0 mt-0.5 text-black/40" />
             <p className="text-sm text-black/60">

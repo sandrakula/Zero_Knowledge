@@ -5,7 +5,7 @@ export const ENABLE_ACTIVITY_CONTENT_GENERATION = true
 
 export interface Attachment {
   id: string
-  type: 'image' | 'video' | 'file' | 'youtube'
+  type: 'image' | 'video' | 'file' | 'youtube' | 'youtube_search' | 'article'
   name: string
   url?: string
   file?: File
@@ -13,7 +13,7 @@ export interface Attachment {
 }
 
 export interface AttachmentData {
-  type: 'image' | 'video' | 'file' | 'youtube'
+  type: 'image' | 'video' | 'file' | 'youtube' | 'youtube_search' | 'article'
   name: string
   url?: string
   content_base64?: string
@@ -50,6 +50,13 @@ export interface CoursePlanningMessage {
   content: string
 }
 
+export interface SourceInfo {
+  kind: string
+  title: string
+  url: string
+  summary: string
+}
+
 export interface CoursePlanningSession {
   session_uuid: string
   planning_iteration_count: number
@@ -57,6 +64,7 @@ export interface CoursePlanningSession {
   current_plan: CoursePlan | null
   message_history: CoursePlanningMessage[]
   course_id: number | null
+  sources?: SourceInfo[]
 }
 
 export interface CreatedChapter {
@@ -78,11 +86,22 @@ export interface FinalizeCoursePlanResponse {
   chapters: CreatedChapter[]
 }
 
+export interface CourseProgress {
+  stage: string
+  done?: number
+  total?: number
+  detail?: string
+}
+
 interface StreamChunk {
-  type: 'chunk' | 'done' | 'error'
+  type: 'chunk' | 'done' | 'error' | 'progress'
   content?: string
   session_uuid?: string
   message?: string
+  stage?: string
+  done?: number
+  total?: number
+  detail?: string
 }
 
 /**
@@ -115,6 +134,17 @@ async function prepareAttachments(attachments: Attachment[]): Promise<Attachment
         name: attachment.name,
         url: attachment.url,
       })
+    } else if (attachment.type === 'youtube_search') {
+      prepared.push({
+        type: 'youtube_search',
+        name: attachment.name,
+      })
+    } else if (attachment.type === 'article' && attachment.url) {
+      prepared.push({
+        type: 'article',
+        name: attachment.name,
+        url: attachment.url,
+      })
     } else if (attachment.file) {
       const base64 = await fileToBase64(attachment.file)
       prepared.push({
@@ -140,7 +170,8 @@ export async function startCoursePlanningSession(
   onComplete: (_sessionUuid: string) => void,
   onError: (_error: string) => void,
   language: string = 'en',
-  attachments?: Attachment[]
+  attachments?: Attachment[],
+  onProgress?: (_progress: CourseProgress) => void
 ): Promise<void> {
   // Prepare attachments if provided (only send if there are actual attachments)
   const attachmentData = attachments && attachments.length > 0
@@ -173,7 +204,7 @@ export async function startCoursePlanningSession(
       throw new Error(errorData.detail || `HTTP error ${response.status}`)
     }
 
-    await processStream(response, onChunk, onComplete, onError)
+    await processStream(response, onChunk, onComplete, onError, onProgress)
   } catch (error) {
     onError(error instanceof Error ? error.message : 'Unknown error occurred')
   }
@@ -190,7 +221,8 @@ export async function iterateCoursePlanning(
   onComplete: (_sessionUuid: string) => void,
   onError: (_error: string) => void,
   currentPlan?: CoursePlan | null,
-  attachments?: Attachment[]
+  attachments?: Attachment[],
+  onProgress?: (_progress: CourseProgress) => void
 ): Promise<void> {
   // Prepare attachments if provided (only send if there are actual attachments)
   const attachmentData = attachments && attachments.length > 0
@@ -223,7 +255,7 @@ export async function iterateCoursePlanning(
       throw new Error(errorData.detail || `HTTP error ${response.status}`)
     }
 
-    await processStream(response, onChunk, onComplete, onError)
+    await processStream(response, onChunk, onComplete, onError, onProgress)
   } catch (error) {
     onError(error instanceof Error ? error.message : 'Unknown error occurred')
   }
@@ -406,7 +438,8 @@ async function processStream(
   response: Response,
   onChunk: (_chunk: string) => void,
   onComplete: (_sessionUuid: string) => void | Promise<void>,
-  onError: (_error: string) => void
+  onError: (_error: string) => void,
+  onProgress?: (_progress: CourseProgress) => void
 ): Promise<void> {
   const reader = response.body?.getReader()
   if (!reader) {
@@ -438,6 +471,13 @@ async function processStream(
 
             if (event.type === 'chunk' && event.content) {
               onChunk(event.content)
+            } else if (event.type === 'progress') {
+              onProgress?.({
+                stage: event.stage ?? '',
+                done: event.done,
+                total: event.total,
+                detail: event.detail,
+              })
             } else if (event.type === 'done' && event.session_uuid) {
               await onComplete(event.session_uuid)
             } else if (event.type === 'error' && event.message) {

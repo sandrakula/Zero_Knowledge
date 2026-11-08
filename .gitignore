@@ -72,3 +72,7 @@ apps/web/ee
 # Playwright MCP session artifacts
 .playwright-mcp/
 .demo-secrets
+
+# Runtime uploaded content and local agent state
+apps/api/content/
+.omo/

@@ -3,7 +3,7 @@ import logging
 from datetime import timedelta, datetime, timezone
 from typing import Literal, Optional
 from fastapi import Depends, APIRouter, HTTPException, Response, status, Request, Form
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 from sqlmodel import select
 from src.db.users import AnonymousUser, User, UserRead
@@ -727,6 +727,154 @@ async def login(
         },
     }
     return result
+
+
+class UsernameLoginRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=64)
+
+
+@router.post(
+    "/username-login",
+    summary="Log in or sign up by username only",
+    description=(
+        "Dev convenience: find a user by username, or create one with a "
+        "synthesized email, and issue a session. No password or email required."
+    ),
+    responses={
+        200: {"description": "Login successful; cookies set and body contains user + tokens."},
+        400: {"description": "username is required"},
+    },
+)
+async def username_login(
+    request: Request,
+    response: Response,
+    body: UsernameLoginRequest,
+    db_session: AsyncSession = Depends(get_db_session),
+):
+    username = body.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="username is required")
+
+    user = (
+        await db_session.execute(
+            select(User).where(func.lower(User.username) == username.lower())
+        )
+    ).scalars().first()
+
+    if user is None:
+        from uuid import uuid4
+
+        user = User(
+            username=username,
+            first_name=username,
+            last_name="",
+            email=f"user{uuid4().hex[:12]}@zeroknowledge.local",  # type: ignore[arg-type]
+            password="",
+            user_uuid=str(uuid4()),
+            email_verified=True,
+            signup_method="username",
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        )
+        db_session.add(user)
+        await db_session.commit()
+        await db_session.refresh(user)
+
+    org_id = await _resolve_org_id_from_slug(None, db_session)
+
+    if org_id is None:
+        first_org = (
+            await db_session.execute(
+                select(Organization).order_by(Organization.id).limit(1)
+            )
+        ).scalars().first()
+        if first_org is not None:
+            org_id = first_org.id
+
+    session_org_id, on_custom_domain = await _bind_session_to_custom_domain(
+        request,
+        db_session,
+        user.id,
+        org_id,
+        AUTH_METHOD_PASSWORD,
+    )
+
+    # Dev convenience: a username-login user gets a session but no
+    # UserOrganization membership, so they carry no role in the org and the
+    # role-gated UI (e.g. "Create course") stays hidden. Only the username
+    # "admin" (or a superadmin) gets the global-admin role; every other
+    # username user is a plain learner (global-user), and any accidental
+    # admin/instructor membership is downgraded to learner on login.
+    if org_id is not None:
+        from src.db.user_organizations import UserOrganization
+        from src.db.roles import Role
+
+        is_admin_login = (
+            (user.username or "").strip().lower() == "admin"
+            or bool(getattr(user, "is_superadmin", False))
+        )
+        target_role_uuid = "role_global_admin" if is_admin_login else "role_global_user"
+        target_role = (
+            await db_session.execute(
+                select(Role).where(Role.role_uuid == target_role_uuid)
+            )
+        ).scalars().first()
+        target_role_id = target_role.id if target_role else (1 if is_admin_login else 4)
+
+        existing_membership = (
+            await db_session.execute(
+                select(UserOrganization).where(
+                    (UserOrganization.user_id == user.id)
+                    & (UserOrganization.org_id == org_id)
+                )
+            )
+        ).scalars().first()
+
+        changed = False
+        if not existing_membership:
+            db_session.add(
+                UserOrganization(
+                    user_id=user.id,
+                    org_id=org_id,
+                    role_id=target_role_id,
+                    creation_date=str(datetime.now()),
+                    update_date=str(datetime.now()),
+                )
+            )
+            changed = True
+        elif existing_membership.role_id != target_role_id:
+            existing_membership.role_id = target_role_id
+            existing_membership.update_date = str(datetime.now())
+            db_session.add(existing_membership)
+            changed = True
+
+        if changed:
+            await db_session.commit()
+
+            from src.routers.users import _invalidate_session_cache
+
+            _invalidate_session_cache(user.id)
+
+    issue = await issue_session_or_challenge(
+        db_session,
+        user,
+        amr=AUTH_METHOD_PASSWORD,
+        org_id=session_org_id,
+        custom_domain=on_custom_domain,
+    )
+    if issue.mfa_required:
+        return {"mfa_required": True, "mfa_token": issue.mfa_token}
+
+    set_auth_cookies(response, issue.access_token, issue.refresh_token, request)
+
+    return {
+        "user": UserRead.model_validate(user),
+        "tokens": {
+            "access_token": issue.access_token,
+            "refresh_token": issue.refresh_token,
+            "expiry": get_token_expiry_ms(),
+        },
+    }
 
 
 class ThirdPartyLogin(BaseModel):

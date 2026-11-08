@@ -5,7 +5,7 @@ import importlib
 from config.config import get_learnhouse_config
 from fastapi import FastAPI
 from sqlmodel import SQLModel, Session
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -385,7 +385,6 @@ async def _bootstrap_schema():
     async with engine.begin() as conn:
         # Enable pgvector extension for vector similarity search (optional; used by the RAG feature)
         try:
-            from sqlalchemy import text
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         except Exception as e:
             logging.warning(
@@ -393,6 +392,38 @@ async def _bootstrap_schema():
                 "Install pgvector on your PostgreSQL server to enable course chatbot. "
                 "Error: %s", e
             )
+        # ``create_all`` only creates tables that do not yet exist; it never adds
+        # columns to tables created by an older build. These idempotent ALTERs
+        # backfill existing PostgreSQL tables with columns added since, so a
+        # running deployment picks them up without a destructive re-create. Each
+        # statement is wrapped in its own try/except because a fresh database has
+        # none of these tables yet: the ALTER fails, we log it, and ``create_all``
+        # below then creates the table with the new columns already present.
+        if not is_testing:
+            _legacy_column_migrations = (
+                "ALTER TABLE informatics_link ADD COLUMN IF NOT EXISTS email VARCHAR NOT NULL DEFAULT ''",
+                "ALTER TABLE problem ADD COLUMN IF NOT EXISTS task_id VARCHAR(64)",
+                "ALTER TABLE informatics_submission ADD COLUMN IF NOT EXISTS logged_to_form BOOLEAN NOT NULL DEFAULT FALSE",
+                # Pre-existing drift: the AssignmentTask model gained these
+                # problem-library provenance columns after the table was first
+                # created; create_all never adds columns to an existing table.
+                "ALTER TABLE assignmenttask ADD COLUMN IF NOT EXISTS problem_uuid VARCHAR(255)",
+                "ALTER TABLE assignmenttask ADD COLUMN IF NOT EXISTS problem_checksum VARCHAR(64)",
+                # Late-submission policy and required-flag were added to the
+                # Assignment model after older databases were created; without
+                # them every assignment SELECT fails (UndefinedColumnError).
+                "ALTER TABLE assignment ADD COLUMN IF NOT EXISTS allow_late BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE assignment ADD COLUMN IF NOT EXISTS is_required BOOLEAN NOT NULL DEFAULT TRUE",
+            )
+            for _statement in _legacy_column_migrations:
+                try:
+                    await conn.execute(text(_statement))
+                except Exception as e:
+                    logging.warning(
+                        "Skipped column migration (table may not exist yet): %s — %s",
+                        _statement, e,
+                    )
+
         # Create all tables
         if not is_testing:
             await conn.run_sync(SQLModel.metadata.create_all)

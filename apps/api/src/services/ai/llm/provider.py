@@ -8,7 +8,9 @@ logic touches a vendor SDK. Embeddings are handled provider-agnostically in ``em
 from __future__ import annotations
 
 import logging
+import uuid
 
+import httpx
 from pydantic_ai.models import Model
 
 from config.config import get_learnhouse_config
@@ -24,6 +26,29 @@ _GOOGLE_ALIASES = {"google", "google-gla", "gemini"}
 # Providers that speak the OpenAI Chat Completions API (incl. local/compatible servers).
 # `openrouter` has its own branch (it auto-configures its base URL), so it's not listed here.
 _OPENAI_ALIASES = {"openai", "openai-compatible", "azure", "together"}
+
+# The OpenCode Go OpenAI-compatible inference endpoint rejects requests without an
+# `x-opencode-session` header ("MissingSessionID ... cannot be routed efficiently").
+# A single stable per-process id is enough for routing.
+_OPENCODE_SESSION_ID = uuid.uuid4().hex
+_opencode_http_client: httpx.AsyncClient | None = None
+
+
+def _openai_http_client(base_url: str | None) -> httpx.AsyncClient | None:
+    """Return a shared httpx client carrying the OpenCode Go routing header.
+
+    Only used for the OpenCode Go inference endpoints; other OpenAI-compatible
+    gateways get ``None`` so Pydantic AI builds its own default client.
+    """
+    global _opencode_http_client
+    if not base_url or "opencode.ai" not in base_url:
+        return None
+    if _opencode_http_client is None:
+        _opencode_http_client = httpx.AsyncClient(
+            headers={"x-opencode-session": _OPENCODE_SESSION_ID},
+            timeout=httpx.Timeout(600.0),
+        )
+    return _opencode_http_client
 
 
 class AINotConfiguredError(Exception):
@@ -113,7 +138,11 @@ def build_model(model_name: str) -> Model:
 
         return OpenAIChatModel(
             model_name,
-            provider=OpenAIProvider(api_key=api_key, base_url=base_url),
+            provider=OpenAIProvider(
+                api_key=api_key,
+                base_url=base_url,
+                http_client=_openai_http_client(base_url),
+            ),
             settings=_deepseek_settings(model_name),
         )
 

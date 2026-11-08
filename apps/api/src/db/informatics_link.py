@@ -20,6 +20,7 @@ class InformaticsLink(SQLModel, table=True):
     user_id: int = Field(primary_key=True, foreign_key="user.id", ondelete="CASCADE")
     username: str = Field(default="")
     password: str = Field(default="")
+    email: str = Field(default="")
     informatics_user_id: int = Field(default=0)
     informatics_username: str = Field(default="")
     last_error: Optional[str] = Field(default=None)

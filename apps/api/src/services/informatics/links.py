@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -11,13 +12,32 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.db.informatics_link import InformaticsLink
 from src.db.informatics_submission import InformaticsSubmission
-from src.db.problems import Problem
+from src.db.informatics_task_map import InformaticsTaskMap
 from src.db.users import PublicUser
 from src.services.informatics import client
+from src.services.informatics.google_form import submit_solved_task
 from src.services.webhooks.crypto import decrypt_secret, encrypt_secret
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 2.0
 POLL_MAX_SECONDS = 90.0
+
+# Best-effort Google Form submissions scheduled fire-and-forget. The set keeps a
+# strong reference to each in-flight task so the event loop cannot garbage
+# collect it before it runs; the done callback drops it and drains the result.
+_PENDING_FORM_TASKS: set[asyncio.Task[bool]] = set()
+
+
+def _forget_form_task(task: asyncio.Task[bool]) -> None:
+    """Drop a finished form task and surface any exception it raised."""
+    _PENDING_FORM_TASKS.discard(task)
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Informatics: background Google Form submission failed")
 
 
 async def _get_link(user_id: int, db_session: AsyncSession) -> InformaticsLink | None:
@@ -36,6 +56,7 @@ async def get_link_status(user_id: int, db_session: AsyncSession) -> dict:
         "linked": True,
         "informatics_user_id": link.informatics_user_id,
         "informatics_username": link.informatics_username,
+        "email": link.email,
         "last_error": link.last_error,
     }
 
@@ -44,12 +65,16 @@ async def link_account(
     user: PublicUser,
     username: str,
     password: str,
+    email: str,
     db_session: AsyncSession,
 ) -> dict:
     """Verify Informatics credentials and bind the account to the user (upsert)."""
     username = (username or "").strip()
+    email = (email or "").strip()
     if not username or not password:
         raise HTTPException(status_code=400, detail="Логин и пароль обязательны")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email обязателен")
 
     try:
         session = await asyncio.to_thread(client.login, username, password)
@@ -63,6 +88,7 @@ async def link_account(
             user_id=int(user.id),
             username=username,
             password=encrypt_secret(password),
+            email=email,
             informatics_user_id=session["informatics_user_id"],
             informatics_username=session["informatics_username"],
             last_error=None,
@@ -73,6 +99,7 @@ async def link_account(
     else:
         link.username = username
         link.password = encrypt_secret(password)
+        link.email = email
         link.informatics_user_id = session["informatics_user_id"]
         link.informatics_username = session["informatics_username"]
         link.last_error = None
@@ -115,26 +142,49 @@ async def _record_submission(
     db_session: AsyncSession,
 ) -> None:
     """Upsert the latest verdict for (user, problem) so statistics can aggregate it."""
-    from sqlmodel import select as _select
-
-    category = (
+    mapping = (
         await db_session.execute(
-            _select(Problem.category).where(
-                Problem.source_id == str(problem_id),
-                Problem.source_name == "Informatics",
+            select(InformaticsTaskMap).where(
+                InformaticsTaskMap.problem_id == problem_id
             )
         )
-    ).scalars().first() or ""
+    ).scalars().first()
+    category = (mapping.category if mapping else "") or ""
+    task_id = (mapping.task_id if mapping else "") or ""
+
+    link = await _get_link(user_id, db_session)
+    email = (link.email or "").strip() if link else ""
 
     now = str(datetime.now())
     row = (
         await db_session.execute(
-            select(InformaticsSubmission).where(
+            select(InformaticsSubmission)
+            .where(
                 InformaticsSubmission.user_id == user_id,
                 InformaticsSubmission.problem_id == problem_id,
             )
+            .with_for_update()
         )
     ).scalars().first()
+
+    was_solved = row.solved if row else False
+    already_logged = row.logged_to_form if row else False
+    new_solved = bool(verdict.get("solved"))
+    first_solved_transition = (not was_solved) and new_solved and (not already_logged)
+    should_log = first_solved_transition and bool(task_id) and bool(email)
+    if first_solved_transition and not should_log:
+        if not task_id:
+            logger.warning(
+                "Informatics: skipping Google Form log for problem %s: no task_id",
+                problem_id,
+            )
+        if not email:
+            logger.warning(
+                "Informatics: skipping Google Form log for problem %s (user %s): no email",
+                problem_id,
+                user_id,
+            )
+
     if row is None:
         row = InformaticsSubmission(
             user_id=user_id,
@@ -144,7 +194,8 @@ async def _record_submission(
             status=int(verdict.get("status") or 0),
             tests=int(verdict.get("tests") or 0),
             score=int(verdict.get("score") or 0),
-            solved=bool(verdict.get("solved")),
+            solved=new_solved,
+            logged_to_form=should_log,
             created_at=now,
             updated_at=now,
         )
@@ -155,9 +206,17 @@ async def _record_submission(
         row.status = int(verdict.get("status") or 0)
         row.tests = int(verdict.get("tests") or 0)
         row.score = int(verdict.get("score") or 0)
-        row.solved = bool(verdict.get("solved"))
+        row.solved = new_solved
+        if should_log:
+            row.logged_to_form = True
         row.updated_at = now
     await db_session.commit()
+
+    if should_log:
+        date = datetime.now().strftime("%Y-%m-%d")
+        task = asyncio.create_task(submit_solved_task(email, task_id, date))
+        _PENDING_FORM_TASKS.add(task)
+        task.add_done_callback(_forget_form_task)
 
 
 async def submit_and_grade(
