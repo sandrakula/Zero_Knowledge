@@ -788,6 +788,36 @@ def _normalize_code_output(s):
     return "\n".join(lines)
 
 
+def _code_outputs_match(actual: str, expected: str, allow_numeric: bool = False) -> bool:
+    """Compare stdout, tolerating equivalent numeric formatting when enabled.
+
+    Informatics judges compare numbers with a tolerance; a C++ program that
+    prints ``5`` is accepted there even when the sample is written as ``5.0``.
+    The local Judge0 path used to require an exact string, so an accepted
+    Informatics solution could still fail the local task with 0/1 tests.
+    Exact text still wins; numeric tolerance is opt-in for imported numeric
+    problems (``informatics_problem_id`` / ``numeric_output``).
+    """
+    if actual == expected:
+        return True
+    if not allow_numeric:
+        return False
+    actual_tokens = actual.split()
+    expected_tokens = expected.split()
+    if not actual_tokens or len(actual_tokens) != len(expected_tokens):
+        return False
+    try:
+        for actual_token, expected_token in zip(actual_tokens, expected_tokens):
+            actual_value = float(actual_token)
+            expected_value = float(expected_token)
+            tolerance = max(1e-6, abs(expected_value) * 1e-6)
+            if abs(actual_value - expected_value) > tolerance:
+                return False
+    except ValueError:
+        return False
+    return True
+
+
 async def _evaluate_code_task(task, task_submission):
     """Evaluate a CODE task and return both the grade and attempt details.
 
@@ -911,6 +941,9 @@ async def _evaluate_code_task(task, task_submission):
     # wrong-answer/compile/runtime failure that is the student's fault:
     #   1 = In Queue, 2 = Processing, 13 = Internal Error, 14 = Exec Format Error
     JUDGE0_UNEXECUTED_STATUS_IDS = {1, 2, 13, 14}
+    allow_numeric_output = bool(
+        contents.get("informatics_problem_id") or contents.get("numeric_output")
+    )
 
     async def run_one(tc):
         stdin = tc.get("stdin") or ""
@@ -944,7 +977,10 @@ async def _evaluate_code_task(task, task_submission):
             )
             return (tc, None, r)
         actual = _normalize_code_output(r.get("stdout"))
-        passed = status_id == 3 and actual == _normalize_code_output(expected)
+        expected_normalized = _normalize_code_output(expected)
+        passed = status_id == 3 and _code_outputs_match(
+            actual, expected_normalized, allow_numeric=allow_numeric_output
+        )
         return (tc, passed, r)
 
     raw_results = await asyncio.gather(*(run_one(tc) for tc in test_cases))
