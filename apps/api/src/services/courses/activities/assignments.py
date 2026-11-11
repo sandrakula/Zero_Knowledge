@@ -5068,6 +5068,70 @@ async def get_assignments_from_course(
     return results
 
 
+async def _finalize_assignment_if_all_tasks_submitted(
+    request: Request,
+    assignment: Assignment,
+    user_id: int,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> None:
+    """Close the assignment once its last task has a submission.
+
+    Code tasks are graded one by one from the task editor, and the old
+    assignment-level submit button is gone. Without this step a learner could
+    finish every task and still leave the activity incomplete forever: the
+    trail marks an assignment complete only when the assignment submission is
+    graded. Reuse the normal submission path so auto-grading, the trail step
+    and the certificate check all follow the exact same rules.
+    """
+    task_ids = (
+        await db_session.execute(
+            select(AssignmentTask.id).where(
+                AssignmentTask.assignment_id == assignment.id
+            )
+        )
+    ).scalars().all()
+    if not task_ids:
+        return
+
+    submitted_ids = (
+        await db_session.execute(
+            select(AssignmentTaskSubmission.assignment_task_id).where(
+                AssignmentTaskSubmission.user_id == user_id,
+                AssignmentTaskSubmission.assignment_task_id.in_(task_ids),  # type: ignore[attr-defined]
+            )
+        )
+    ).scalars().all()
+    if not set(task_ids).issubset(set(submitted_ids)):
+        return
+
+    existing = (
+        await db_session.execute(
+            select(AssignmentUserSubmission).where(
+                AssignmentUserSubmission.assignment_id == assignment.id,
+                AssignmentUserSubmission.user_id == user_id,
+            )
+        )
+    ).scalars().first()
+    reusable_states = (
+        AssignmentUserSubmissionStatus.PENDING,
+        AssignmentUserSubmissionStatus.NOT_SUBMITTED,
+    )
+    if existing is not None and existing.submission_status not in reusable_states:
+        return
+
+    try:
+        await create_assignment_submission(
+            request, assignment.assignment_uuid, current_user, db_session
+        )
+    except HTTPException as exc:
+        # A concurrent submit may have created the row between our check and
+        # create_assignment_submission's own check; the assignment is still
+        # finalized by that request.
+        if exc.status_code != 400:
+            raise
+
+
 async def submit_and_grade_assignment_task(
     request: Request,
     assignment_uuid: str,
@@ -5166,6 +5230,15 @@ async def submit_and_grade_assignment_task(
     db_session.add(task_submission)
     await db_session.commit()
     await db_session.refresh(task_submission)
+
+    if current_user.id is not None:
+        await _finalize_assignment_if_all_tasks_submitted(
+            request,
+            assignment,
+            int(current_user.id),
+            current_user,
+            db_session,
+        )
 
     return {
         "assignment_task_submission_uuid": task_submission.assignment_task_submission_uuid,
