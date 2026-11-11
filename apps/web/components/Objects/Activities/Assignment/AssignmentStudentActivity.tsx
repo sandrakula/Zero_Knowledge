@@ -11,6 +11,8 @@ import TaskShortAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignme
 import TaskNumberAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskNumberAnswerObject'
 import TaskOfflineObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskOfflineObject'
 import TaskExplanation from '@components/Objects/Activities/Assignment/TaskExplanation'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import toast from 'react-hot-toast';
 import { AlarmClock, AlarmClockOff, Backpack, BookOpenCheck, Calendar, CheckCircle2, ClipboardCheck, Download, EllipsisVertical, Info, Lock, MessageSquare, RotateCcw, XCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -64,6 +66,43 @@ export function isAssignmentPastDue(raw?: string | null, now: number = Date.now(
   // shifted to the following midnight), so the due date itself is still on time.
   if (!parsed.hasTime) cutoff.setDate(cutoff.getDate() + 1)
   return cutoff.getTime() < now
+}
+
+const taskDescriptionComponents: Components = {
+  h1: ({ children }) => <h1 className="mt-3 mb-1 text-base font-bold text-slate-800 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mt-3 mb-1 text-sm font-bold text-slate-800 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mt-2 mb-1 text-sm font-semibold text-slate-800 first:mt-0">{children}</h3>,
+  p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
+  ul: ({ children }) => <ul className="my-1.5 list-disc space-y-0.5 ps-5">{children}</ul>,
+  ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 ps-5">{children}</ol>,
+  li: ({ children }) => <li>{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-slate-800">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+      {children}
+    </a>
+  ),
+  hr: () => <hr className="my-3 border-slate-200" />,
+  code: ({ className, children }) => {
+    const isInline = !className
+    if (isInline) {
+      return <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em] text-slate-700">{children}</code>
+    }
+    return <code className={`block font-mono text-xs text-slate-800 ${className || ''}`}>{children}</code>
+  },
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto rounded-md border border-slate-200 bg-slate-50 p-2.5 text-xs leading-relaxed">
+      {children}
+    </pre>
+  ),
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => <th className="border border-slate-200 bg-slate-50 px-2 py-1 text-start">{children}</th>,
+  td: ({ children }) => <td className="border border-slate-200 px-2 py-1">{children}</td>,
 }
 
 function AssignmentStudentActivity() {
@@ -327,9 +366,13 @@ function AssignmentStudentActivity() {
         return (
           <div className='flex flex-col space-y-2' key={task.assignment_task_uuid}>
             <div className='flex flex-col md:flex-row md:justify-between py-2 space-y-2 md:space-y-0'>
-              <div className='flex flex-wrap space-x-2 font-semibold text-slate-800'>
+              <div className='flex min-w-0 flex-col space-y-1 font-semibold text-slate-800'>
                 <p>{t('assignments.task')} {index + 1} : </p>
-                <p className='text-slate-500 break-words'>{task.description}</p>
+                <div className='min-w-0 break-words font-normal text-sm text-slate-600'>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={taskDescriptionComponents}>
+                    {task.description || ''}
+                  </ReactMarkdown>
+                </div>
               </div>
               <div className='flex flex-wrap gap-2'>
                 {task.hint && <div
