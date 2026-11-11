@@ -318,6 +318,7 @@ async def get_my_task_progress(
                 select(
                     AssignmentTaskSubmission.assignment_task_id,
                     AssignmentTaskSubmission.grade,
+                    AssignmentTaskSubmission.task_submission_grade_feedback,
                 ).where(
                     AssignmentTaskSubmission.user_id == user_id,
                     AssignmentTaskSubmission.assignment_task_id.in_(  # type: ignore[attr-defined]
@@ -328,10 +329,16 @@ async def get_my_task_progress(
         ).all()
         solved_ids = {
             int(task_id)
-            for task_id, grade in submission_rows
+            for task_id, grade, feedback in submission_rows
             if task_id is not None
             and task_max.get(int(task_id), 0) > 0
-            and int(grade or 0) >= task_max[int(task_id)]
+            and (
+                int(grade or 0) >= task_max[int(task_id)]
+                # A graded explanation can lower the combined score below the
+                # task maximum even when every code test passed. Accepted is
+                # the verdict that matters for the solved counter.
+                or (feedback or '').strip().upper().startswith('ACCEPTED')
+            )
         }
 
     per_activity_solved: dict[str, int] = {}
