@@ -766,9 +766,28 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
     // WHOLE assignment. `'blocked'` is handled by useAutoSave as terminal:
     // no retry, no error state. Genuine network/server failures below still
     // return `false` so they keep being retried.
+    let resultsToSave = results
     if (submissionBlocked) {
-      if (!opts?.silent) toast.error(t('dashboard.assignments.editor.task_editor.code.must_pass_toast'))
-      return 'blocked' as const
+      // A manual save is allowed to run the visible tests itself: the learner
+      // already has a correct solution, and forcing a separate "Run" click
+      // before every save is a dead end. Background auto-saves stay silent
+      // and do not hit the judge on every keystroke.
+      const freshResults = opts?.silent ? null : await runCode()
+      const freshVisible = (freshResults ?? []).filter((result) => {
+        const testCase = contents.test_cases.find((item) => item.id === result.id)
+        return !testCase?.hidden
+      })
+      if (
+        !freshResults ||
+        freshVisible.length === 0 ||
+        !freshVisible.every((result) => result.passed)
+      ) {
+        if (!opts?.silent) {
+          toast.error(t('dashboard.assignments.editor.task_editor.code.must_pass_toast'))
+        }
+        return 'blocked' as const
+      }
+      resultsToSave = freshResults
     }
     const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
     if (effectiveLanguageId !== languageId) {
@@ -781,7 +800,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         source_code: code,
         language_id: effectiveLanguageId,
         drafts: { ...drafts, [String(effectiveLanguageId)]: code },
-        results: results,
+        results: resultsToSave,
       },
       grade: 0,
       task_submission_grade_feedback: '',
@@ -814,8 +833,8 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
   }
 
   // --- RUN CODE ---
-  async function runCode() {
-    if (isRunning) return
+  async function runCode(): Promise<CodeTestResult[] | null> {
+    if (isRunning) return null
     const effectiveLanguageId = inferLanguageIdFromSource(code, languageId)
     if (effectiveLanguageId !== languageId) {
       setLanguageId(effectiveLanguageId)
@@ -839,7 +858,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
             })
           : 'No test cases defined'
       )
-      return
+      return null
     }
     setIsRunning(true)
     setShowResults(true)
@@ -869,7 +888,7 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         const errText = await resp.text().catch(() => '')
         console.error('Judge0 error response:', resp.status, errText)
         toast.error(`Code execution failed (${resp.status})`)
-        return
+        return null
       }
 
       const data = await resp.json()
@@ -891,9 +910,11 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
         }
       })
       setResults(newResults)
+      return newResults
     } catch (err) {
       console.error('Code execution error:', err)
       toast.error('Code execution failed')
+      return null
     } finally {
       setIsRunning(false)
     }
@@ -1545,6 +1566,11 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                       if (!canStudentSave) return
                       interactedRef.current = true
                       setCode(val)
+                      // Results belong to the previous source. Keeping them
+                      // would let the "must pass visible tests" gate accept a
+                      // code change that was never tested.
+                      setResults([])
+                      setShowResults(false)
                     }}
                     extensions={[...studentCmExtensions, ...completionExtensions, ...analysisExtensions]}
                     theme={cmTheme}
