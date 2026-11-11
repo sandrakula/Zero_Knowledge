@@ -73,6 +73,9 @@ _PROBE_OPTS = {
     "no_warnings": True,
     "skip_download": True,
     "format": "bestvideo[height<=720]/best",
+    # The default web client is often bot-challenged; the Android client
+    # still returns a playable media URL without browser cookies.
+    "extractor_args": {"youtube": {"player_client": ["android"]}},
 }
 
 # 11-char YouTube video id, in watch/embed/shorts/live/you.tu.be forms.

@@ -13,6 +13,7 @@ import TaskCodeObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskCode
 import TaskShortAnswerObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskShortAnswerObject';
 import TaskNumberAnswerObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskNumberAnswerObject';
 import TaskOfflineObject from '../../_components/TaskEditor/Subs/TaskTypes/TaskOfflineObject';
+import TaskExplanation from '@components/Objects/Activities/Assignment/TaskExplanation';
 import { useOrg } from '@components/Contexts/OrgContext';
 import { getTaskRefFileDir } from '@services/media/media';
 import { deleteUserSubmission, getFinalGrade, markActivityAsDoneForUser, putFinalGrade } from '@services/courses/assignments';
@@ -348,6 +349,7 @@ function EvaluateAssignment({ user_id }: any) {
                             {task.assignment_type === 'FILE_SUBMISSION' && <TaskFileObject key={task.assignment_task_uuid} view='custom-grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {task.assignment_type === 'FORM' && <TaskFormObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {task.assignment_type === 'CODE' && <TaskCodeObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
+                            {task.assignment_type === 'CODE' && <TaskExplanation key={`explanation-${task.assignment_task_uuid}`} view='grading' userId={user_id} assignmentTaskUUID={task.assignment_task_uuid} assignmentUUID={assignments?.assignment_object?.assignment_uuid} />}
                             {task.assignment_type === 'SHORT_ANSWER' && <TaskShortAnswerObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {task.assignment_type === 'NUMBER_ANSWER' && <TaskNumberAnswerObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}
                             {(task.assignment_type === 'CUSTOM' || task.assignment_type === 'OTHER') && <TaskOfflineObject key={task.assignment_task_uuid} view='grading' user_id={user_id} assignmentTaskUUID={task.assignment_task_uuid} onGraded={refreshGradePreview} />}

@@ -8,10 +8,12 @@ persisted and streamed exactly like an uploaded file and the frontend can treat
 the result identically to an upload.
 """
 
+import asyncio
 import io
 import logging
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import Headers
@@ -25,6 +27,7 @@ from src.security.auth import get_authenticated_user
 from src.security.features_utils.usage import refund_ai_credit, reserve_ai_credit
 from src.security.org_auth import is_org_member, enforce_org_mfa
 from src.security.rbac import check_resource_access, AccessAction
+from src.services.ai.asr import transcribe_audio_bytes
 from src.services.ai.audio.generator import (
     OUTPUT_EXT,
     Speaker,
@@ -46,6 +49,11 @@ router = APIRouter()
 
 # Audio generation is more expensive than a text turn but cheaper than an image.
 AUDIO_CREDIT_COST = 3
+
+# Local speech-to-text fallback for browsers without the Web Speech API.
+MAX_ASR_BYTES = 20 * 1024 * 1024
+ALLOWED_ASR_SUFFIXES = {".webm", ".ogg", ".oga", ".wav", ".mp3", ".m4a", ".mp4", ".opus"}
+_ASR_SEMAPHORE = asyncio.Semaphore(1)
 
 # Writing a podcast script is a single cheap text turn.
 SCRIPT_CREDIT_COST = 1
@@ -72,6 +80,40 @@ async def _resolve_org_id_for_activity(request: Request, activity_uuid: str, cur
         request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
     )
     return activity.org_id
+
+
+@router.post(
+    "/audio/transcribe",
+    summary="Transcribe a short voice recording with local faster-whisper",
+    description=(
+        "Fallback for Firefox/Safari, where the browser Web Speech API is not "
+        "available. Accepts a short audio recording and returns Russian (or "
+        "auto-detected) text. Runs locally on the API host; no audio leaves the machine."
+    ),
+)
+async def api_transcribe_audio(
+    file: UploadFile = File(...),
+    language: str = Form("ru"),
+):
+    data = await file.read(MAX_ASR_BYTES + 1)
+    if len(data) > MAX_ASR_BYTES:
+        raise HTTPException(status_code=413, detail="Recording is too large")
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty recording")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_ASR_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Unsupported audio format")
+
+    # One local Whisper instance: serialise requests so CPU is not oversubscribed.
+    async with _ASR_SEMAPHORE:
+        try:
+            return await transcribe_audio_bytes(data, suffix, language)
+        except Exception:
+            logger.exception("Local ASR transcription failed")
+            raise HTTPException(
+                status_code=503,
+                detail="Speech recognition is temporarily unavailable",
+            )
 
 
 @router.post(

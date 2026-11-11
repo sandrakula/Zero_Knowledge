@@ -57,6 +57,7 @@ import dynamic from 'next/dynamic'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query/keys'
 import { applyManualGrade } from './applyManualGrade'
+import { clearTaskContext, publishTaskContext } from '@/lib/tutor/task-context'
 
 const CPP_COMPLETIONS: Completion[] = [
   { label: '#include <iostream>', type: 'keyword', detail: 'подключить ввод-вывод', apply: '#include <iostream>\n' },
@@ -173,6 +174,8 @@ type CodeTaskContents = {
   starter_code: string
   solution_code: string
   grading_mode: 'equal_weight' | 'binary' | 'custom_weights'
+  // Share of the task grade taken by the AI-assessed explanation (0 = off).
+  explanation_weight?: number
   test_cases: CodeTestCase[]
   // Snapshotted from the problem library; passed to Judge0 for server grading
   // and for the student's Run requests. Null/absent = Judge0 defaults.
@@ -261,6 +264,7 @@ const DEFAULT_CONTENTS: CodeTaskContents = {
   starter_code: '# Write your code here\n',
   solution_code: '',
   grading_mode: 'equal_weight',
+  explanation_weight: 0,
   test_cases: [
     { id: 'tc_' + uuidv4(), label: 'Test 1', stdin: '', expectedStdout: '', hidden: false, weight: 1 },
   ],
@@ -297,6 +301,7 @@ function normalizeCodeContents(raw: any): CodeTaskContents {
     starter_code: starterCode,
     solution_code: raw?.solution_code ?? '',
     grading_mode: raw?.grading_mode ?? 'equal_weight',
+    explanation_weight: raw?.explanation_weight ?? 0,
     test_cases: raw?.test_cases ?? [],
     time_limit_ms: raw?.time_limit_ms ?? null,
     memory_limit_kb: raw?.memory_limit_kb ?? null,
@@ -650,6 +655,46 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
       getAssignmentTaskSubmissionFromIdentifiedUserUI()
     }
   }, [view, assignmentTaskUUID, assignment, access_token])
+
+  const tutorTaskTitle =
+    assignmentTaskOutsideProvider?.title || assignmentTaskState?.assignmentTask?.title
+
+  useEffect(() => {
+    if (view !== 'student') return
+    publishTaskContext({
+      course_uuid: assignment?.course_object?.course_uuid,
+      course_title: assignment?.course_object?.name,
+      activity_uuid: assignment?.activity_object?.activity_uuid,
+      activity_title: assignment?.activity_object?.name,
+      assignment_uuid: assignment?.assignment_object?.assignment_uuid,
+      assignment_title: assignment?.assignment_object?.title,
+      task_uuid: assignmentTaskUUID,
+      task_title: tutorTaskTitle,
+      code,
+      language_id: languageId,
+      last_run: results.length
+        ? `${results.filter((result) => result.passed).length}/${results.length} tests passed`
+        : undefined,
+    })
+  }, [
+    view,
+    code,
+    languageId,
+    results,
+    assignmentTaskUUID,
+    tutorTaskTitle,
+    assignment?.course_object?.course_uuid,
+    assignment?.course_object?.name,
+    assignment?.activity_object?.activity_uuid,
+    assignment?.activity_object?.name,
+    assignment?.assignment_object?.assignment_uuid,
+    assignment?.assignment_object?.title,
+  ])
+
+  useEffect(() => {
+    if (view !== 'student') return
+    return () => clearTaskContext(assignmentTaskUUID)
+  }, [view, assignmentTaskUUID])
 
   // --- SAVE (teacher) ---
   async function saveFC() {
@@ -1219,6 +1264,31 @@ function TaskCodeObject({ view, assignmentTaskUUID, user_id, onGraded }: TaskCod
                   <option value="custom_weights">Custom Weights</option>
                 </select>
               </div>
+            </div>
+
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-semibold text-slate-500">
+                Explanation weight
+              </label>
+              <select
+                value={contents.explanation_weight ?? 0}
+                onChange={(e) =>
+                  setContents((prev) => ({
+                    ...prev,
+                    explanation_weight: Number(e.target.value),
+                  }))
+                }
+                className="px-3 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
+              >
+                <option value={0}>Off (tests only)</option>
+                <option value={20}>20% explanation</option>
+                <option value={30}>30% explanation</option>
+                <option value={40}>40% explanation</option>
+                <option value={50}>50% explanation</option>
+              </select>
+              <p className="text-[11px] text-slate-400">
+                Learners explain their solution after writing code; the AI score is blended into this task's grade.
+              </p>
             </div>
 
             {/* Informatics problem id: when set, the learner can send their code

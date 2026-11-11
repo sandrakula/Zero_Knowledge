@@ -24,7 +24,7 @@ from src.routers.orgs import ai_credits
 from src.routers.orgs import custom_domains
 from src.routers.orgs import packs
 from src.routers.orgs import org_plan
-from src.routers.courses import chapters, courses, assignments, certifications
+from src.routers.courses import chapters, courses, assignments, certifications, explanations
 from src.routers.folders import folders as folders_router_module
 from src.routers.media import media as media_router_module
 from src.routers.courses import migration as migration_router_module
@@ -218,6 +218,12 @@ v1_router.include_router(
     # authorize_assignment_access (assignments rights bucket), while learner
     # /me + submission endpoints keep _block_api_tokens (session-only).
     dependencies=[Depends(require_authenticated_user_or_api_token)]
+)
+v1_router.include_router(
+    explanations.router,
+    prefix="/assignments",
+    tags=["assignments"],
+    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 v1_router.include_router(
     problems_router_module.router,

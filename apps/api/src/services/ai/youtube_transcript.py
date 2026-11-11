@@ -14,8 +14,14 @@ YouTube is unreachable.
 import logging
 import os
 import re
+import shutil
+import subprocess
+import tempfile
+import threading
 import time
+import wave
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -25,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 # Per-video and per-block caps keep the material context bounded (the caller
 # also enforces an overall 600k cap on the combined reference-materials block).
-MAX_TRANSCRIPT_CHARS = 12_000
-MAX_YOUTUBE_BLOCK_CHARS = 600_000
+MAX_TRANSCRIPT_CHARS = 200_000
+MAX_YOUTUBE_BLOCK_CHARS = 1_500_000
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -36,6 +42,21 @@ def _env_int(name: str, default: int) -> int:
 
 
 MAX_VIDEOS = _env_int("LEARNHOUSE_YOUTUBE_MAX_VIDEOS", 50)
+_TRANSCRIPT_CACHE_DIR = Path(
+    os.getenv("LEARNHOUSE_YOUTUBE_CACHE_DIR", "content/youtube_transcripts")
+)
+_TRANSCRIPT_MIN_INTERVAL = float(
+    os.getenv("LEARNHOUSE_YOUTUBE_MIN_INTERVAL", "1.5")
+)
+_TRANSCRIPT_RATE = threading.Semaphore(1)
+_TRANSCRIPT_LAST = [0.0]
+_TRANSCRIPT_CLIENTS = ("android", "ios", "web")
+_ASR_ENABLED = os.getenv("LEARNHOUSE_YOUTUBE_ASR", "1").lower() not in ("0", "false", "no")
+_ASR_MODEL_NAME = os.getenv("LEARNHOUSE_YOUTUBE_ASR_MODEL", "small")
+_ASR_CPU_THREADS = int(os.getenv("LEARNHOUSE_YOUTUBE_ASR_CPU_THREADS", "12"))
+_SKIP_CAPTIONS = os.getenv("LEARNHOUSE_YOUTUBE_SKIP_CAPTIONS", "0").lower() in ("1", "true", "yes")
+_ASR_MODEL = None
+_ASR_LOCK = threading.Lock()
 
 # Cue timing line, e.g. "00:00:00.000 --> 00:00:05.000 align:start position:0%".
 _CUE_TIME_RE = re.compile(r"^(?:\d+:)?\d{1,2}:\d{2}[.,]\d{3}\s*-->")
@@ -43,16 +64,37 @@ _CUE_TIME_RE = re.compile(r"^(?:\d+:)?\d{1,2}:\d{2}[.,]\d{3}\s*-->")
 _TAG_RE = re.compile(r"<[^>]*>")
 _METADATA_RE = re.compile(r"^(Kind|Language)\s*:", re.IGNORECASE)
 
+_COOKIE_OPTS: dict[str, object] = {}
+_COOKIE_FILE = os.getenv("LEARNHOUSE_YOUTUBE_COOKIES_FILE", "").strip()
+_COOKIE_BROWSER = os.getenv("LEARNHOUSE_YOUTUBE_COOKIES_FROM_BROWSER", "").strip()
+if _COOKIE_FILE and Path(_COOKIE_FILE).exists():
+    _COOKIE_OPTS["cookiefile"] = _COOKIE_FILE
+elif _COOKIE_BROWSER:
+    _COOKIE_OPTS["cookiesfrombrowser"] = (_COOKIE_BROWSER,)
+
 _SEARCH_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
     "extract_flat": True,
+    **_COOKIE_OPTS,
 }
+# The default web client is frequently challenged with a bot check on
+# datacenter-like IPs. The Android client still serves metadata and caption
+# tracks without cookies, so transcript extraction uses it explicitly.
+_ANDROID_CLIENT = {"extractor_args": {"youtube": {"player_client": ["android"]}}}
 _FETCH_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
+    **_ANDROID_CLIENT,
+    **_COOKIE_OPTS,
+}
+_FETCH_OPTS_WEB = {
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    **_COOKIE_OPTS,
 }
 
 
@@ -130,12 +172,25 @@ def search_videos(query: str, limit: int = 6) -> list[dict]:
 
 
 def _pick_track(tracks_by_lang: dict, lang: str) -> Optional[dict]:
-    """Pick the best subtitle track for ``lang`` (matched by first subtag)."""
+    """Pick the best subtitle track for ``lang`` (matched by first subtag).
+
+    Prefers original tracks over machine-translated ones: ``tlang=`` URLs are
+    the translation endpoint, which is rate-limited far more aggressively.
+    """
     for code, tracks in (tracks_by_lang or {}).items():
         if code.split("-")[0].lower() != lang:
             continue
         if not tracks:
             continue
+        original = [
+            track for track in tracks
+            if track.get("url") and "tlang=" not in track["url"]
+        ]
+        for track in original:
+            if (track.get("ext") or "").lower() == "vtt":
+                return track
+        if original:
+            return original[0]
         for track in tracks:
             if (track.get("ext") or "").lower() == "vtt":
                 return track
@@ -156,33 +211,234 @@ def _select_track(info: dict) -> Optional[dict]:
     return None
 
 
-def fetch_transcript(url: str, max_chars: int = MAX_TRANSCRIPT_CHARS) -> str:
-    """Download and flatten the transcript for a YouTube ``url``.
+def _video_id(url: str) -> Optional[str]:
+    match = re.search(r"(?:v=|youtu\.be/|/embed/|/shorts/)([A-Za-z0-9_-]{11})", url or "")
+    return match.group(1) if match else None
 
-    Returns the plain text (capped at ``max_chars``) or ``""`` on ANY failure
-    (never raises).
+
+def _cache_file(video_id: str) -> Path:
+    return _TRANSCRIPT_CACHE_DIR / f"{video_id}.vtt"
+
+
+def _text_cache_file(video_id: str) -> Path:
+    return _TRANSCRIPT_CACHE_DIR / f"{video_id}.txt"
+
+
+def _read_cache(video_id: str) -> str:
+    try:
+        text_path = _text_cache_file(video_id)
+        if text_path.is_file() and text_path.stat().st_size > 0:
+            return text_path.read_text(encoding="utf-8")
+        path = _cache_file(video_id)
+        if path.is_file() and path.stat().st_size > 0:
+            return parse_vtt_transcript(path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.debug("Transcript cache read failed for %s", video_id, exc_info=True)
+    return ""
+
+
+def _write_cache(video_id: str, vtt: str) -> None:
+    try:
+        _TRANSCRIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _cache_file(video_id).write_text(vtt, encoding="utf-8")
+    except Exception:
+        logger.debug("Transcript cache write failed for %s", video_id, exc_info=True)
+
+
+def _write_text_cache(video_id: str, text: str) -> None:
+    try:
+        _TRANSCRIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _text_cache_file(video_id).write_text(text, encoding="utf-8")
+    except Exception:
+        logger.debug("Transcript text cache write failed for %s", video_id, exc_info=True)
+
+
+def _throttle() -> None:
+    now = time.monotonic()
+    delay = _TRANSCRIPT_MIN_INTERVAL - (now - _TRANSCRIPT_LAST[0])
+    if delay > 0:
+        time.sleep(delay)
+    _TRANSCRIPT_LAST[0] = time.monotonic()
+
+
+def _transcribe_audio(url: str, video_id: str) -> str:
+    """Full-speech fallback without cookies: audio download + faster-whisper."""
+    if not _ASR_ENABLED:
+        return ""
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            options = {
+                "quiet": True,
+                "no_warnings": True,
+                "format": "bestaudio/best",
+                "outtmpl": str(Path(tmp) / "%(id)s.%(ext)s"),
+                "noplaylist": True,
+                "retries": 6,
+                "sleep_requests": 1.0,
+                "sleep_interval": 1.5,
+                "extractor_args": {"youtube": {"player_client": list(_TRANSCRIPT_CLIENTS)}},
+                **_COOKIE_OPTS,
+                "postprocessors": [
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "wav", "preferredquality": "192"}
+                ],
+            }
+            with yt_dlp.YoutubeDL(options) as ydl:
+                ydl.download([url])
+            audio_files = sorted(Path(tmp).glob("*.wav")) or sorted(Path(tmp).glob("*"))
+            audio_files = [path for path in audio_files if path.is_file() and path.suffix.lower() in {".wav", ".m4a", ".webm", ".mp3", ".opus"}]
+            if not audio_files:
+                return ""
+            ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+            wav_path = Path(tmp) / "audio16k.wav"
+            subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    str(audio_files[0]),
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    str(wav_path),
+                ],
+                capture_output=True,
+                timeout=900,
+            )
+            if not wav_path.is_file():
+                return ""
+            import numpy as np
+
+            with wave.open(str(wav_path), "rb") as wav_file:
+                raw = wav_file.readframes(wav_file.getnframes())
+            audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            global _ASR_MODEL
+            with _ASR_LOCK:
+                if _ASR_MODEL is None:
+                    from faster_whisper import WhisperModel
+
+                    _ASR_MODEL = WhisperModel(
+                        _ASR_MODEL_NAME, device="cpu", compute_type="int8", cpu_threads=_ASR_CPU_THREADS
+                    )
+                segments, _info = _ASR_MODEL.transcribe(
+                    audio, vad_filter=True, beam_size=1
+                )
+                text = " ".join(
+                    segment.text.strip() for segment in segments if segment.text.strip()
+                )
+            if text.strip() and video_id:
+                _write_text_cache(video_id, text)
+            return text
+    except Exception:
+        logger.warning("ASR fallback failed for %s", url, exc_info=True)
+        return ""
+
+
+def _asr_fallback(url: str, video_id: Optional[str], max_chars: int) -> str:
+    if not video_id:
+        return ""
+    return _transcribe_audio(url, video_id)[:max_chars]
+
+
+def _fetch_subtitles_ytdlp(url: str, video_id: str) -> str:
+    """Download subtitles through yt-dlp, trying several player clients."""
+    for client in _TRANSCRIPT_CLIENTS:
+        with tempfile.TemporaryDirectory() as tmp:
+            options = {
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["en.*", "ru.*", "en", "ru"],
+                "subtitlesformat": "vtt",
+                "outtmpl": str(Path(tmp) / "%(id)s.%(ext)s"),
+                "noplaylist": True,
+                "retries": 6,
+                "fragment_retries": 6,
+                "sleep_requests": 1.0,
+                "sleep_interval": 1.5,
+                "max_sleep_interval": 3,
+                "extractor_args": {"youtube": {"player_client": [client]}},
+                **_COOKIE_OPTS,
+            }
+            try:
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    ydl.download([url])
+            except Exception:
+                logger.debug("yt-dlp subtitle client %s failed for %s", client, url, exc_info=True)
+            candidates = sorted(
+                Path(tmp).glob("*.vtt"),
+                key=lambda path: (
+                    0 if ".en" in path.name.lower() else 1 if ".ru" in path.name.lower() else 2,
+                    path.name,
+                ),
+            )
+            for path in candidates:
+                try:
+                    vtt = path.read_text(encoding="utf-8")
+                    text = parse_vtt_transcript(vtt)
+                    if text.strip():
+                        _write_cache(video_id, vtt)
+                        return text
+                except Exception:
+                    logger.debug("Subtitle parse failed for %s", path, exc_info=True)
+        _throttle()
+    return ""
+
+
+def fetch_transcript(url: str, max_chars: int = MAX_TRANSCRIPT_CHARS) -> str:
+    """Download and flatten the full transcript for a YouTube ``url``.
+
+    Captions are fetched through yt-dlp first (cached on disk), then through
+    the timedtext endpoint, and the video description is the final fallback.
+    Network access is serialized and throttled to avoid per-IP 429s.
     """
     try:
-        with yt_dlp.YoutubeDL(_FETCH_OPTS) as ydl:
-            info = ydl.extract_info(url, download=False)
-        track = _select_track(info or {})
-        if not track:
-            return ""
-        vtt_url = track.get("url")
-        if not vtt_url:
-            return ""
-        for attempt in range(3):
-            try:
-                response = httpx.get(vtt_url, timeout=30.0, follow_redirects=True)
-                response.raise_for_status()
-                return parse_vtt_transcript(response.text)[:max_chars]
-            except httpx.HTTPStatusError as exc:
-                status = exc.response.status_code
-                if (status == 429 or 500 <= status < 600) and attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                raise
-        return ""
+        with _TRANSCRIPT_RATE:
+            video_id = _video_id(url)
+            if video_id:
+                cached = _read_cache(video_id)
+                if cached:
+                    return cached[:max_chars]
+            _throttle()
+            if video_id and not _SKIP_CAPTIONS:
+                subtitles = _fetch_subtitles_ytdlp(url, video_id)
+                if subtitles:
+                    return subtitles[:max_chars]
+            _throttle()
+            info = None
+            if not _SKIP_CAPTIONS:
+                for opts in (_FETCH_OPTS, _FETCH_OPTS_WEB):
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            info = ydl.extract_info(url, download=False)
+                        if info:
+                            break
+                    except Exception:
+                        logger.debug("yt-dlp client failed for %s; trying fallback", url, exc_info=True)
+            track = _select_track(info or {}) if not _SKIP_CAPTIONS else None
+            description = str((info or {}).get("description") or "").strip()
+            if not track:
+                return _asr_fallback(url, video_id, max_chars) or description[:max_chars]
+            vtt_url = track.get("url")
+            if not vtt_url:
+                return _asr_fallback(url, video_id, max_chars) or description[:max_chars]
+            for attempt in range(3):
+                try:
+                    response = httpx.get(vtt_url, timeout=30.0, follow_redirects=True)
+                    response.raise_for_status()
+                    parsed = parse_vtt_transcript(response.text)
+                    if parsed and video_id:
+                        _write_cache(video_id, response.text)
+                    return (parsed or description)[:max_chars]
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if attempt < 2 and (status == 429 or 500 <= status < 600):
+                        time.sleep(5.0 * (attempt + 1))
+                        continue
+                    return _asr_fallback(url, video_id, max_chars) or description[:max_chars]
+            return _asr_fallback(url, video_id, max_chars) or description[:max_chars]
     except Exception:
         logger.warning("YouTube transcript fetch failed for %s", url, exc_info=True)
         return ""

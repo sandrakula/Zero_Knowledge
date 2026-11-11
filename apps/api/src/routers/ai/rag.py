@@ -66,6 +66,7 @@ class RAGChatRequest(BaseModel):
     aichat_uuid: Optional[str] = None
     mode: Literal["course_only", "general"] = "course_only"
     org_slug: Optional[str] = None
+    page_context: Optional[str] = Field(default=None, max_length=4000)
 
 
 RAG_INDEX_MAX_PER_HOUR = 10
@@ -319,6 +320,7 @@ async def api_rag_chat(
         message_history=chat_session["message_history"],
         scope=access_scope,
         mode=chat_request.mode or "course_only",
+        page_context=chat_request.page_context,
     )
 
     return StreamingResponse(

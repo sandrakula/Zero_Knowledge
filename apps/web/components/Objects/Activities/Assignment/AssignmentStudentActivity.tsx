@@ -10,6 +10,7 @@ import TaskCodeObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]
 import TaskShortAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskShortAnswerObject'
 import TaskNumberAnswerObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskNumberAnswerObject'
 import TaskOfflineObject from 'app/orgs/[orgslug]/dash/assignments/[assignmentuuid]/_components/TaskEditor/Subs/TaskTypes/TaskOfflineObject'
+import TaskExplanation from '@components/Objects/Activities/Assignment/TaskExplanation'
 import toast from 'react-hot-toast';
 import { AlarmClock, AlarmClockOff, Backpack, BookOpenCheck, Calendar, CheckCircle2, ClipboardCheck, Download, EllipsisVertical, Info, Lock, MessageSquare, RotateCcw, XCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -420,6 +421,7 @@ function AssignmentStudentActivity() {
               {task.assignment_type === 'FILE_SUBMISSION' && <TaskFileObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {task.assignment_type === 'FORM' && <TaskFormObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {task.assignment_type === 'CODE' && <TaskCodeObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
+              {task.assignment_type === 'CODE' && <TaskExplanation key={`explanation-${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} assignmentUUID={assignments?.assignment_object?.assignment_uuid} />}
               {task.assignment_type === 'SHORT_ANSWER' && <TaskShortAnswerObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {task.assignment_type === 'NUMBER_ANSWER' && <TaskNumberAnswerObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}
               {(task.assignment_type === 'CUSTOM' || task.assignment_type === 'OTHER') && <TaskOfflineObject key={`${task.assignment_task_uuid}-${currentAttempt}`} view='student' assignmentTaskUUID={task.assignment_task_uuid} />}

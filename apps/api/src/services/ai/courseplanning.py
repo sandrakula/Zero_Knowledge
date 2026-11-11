@@ -136,8 +136,9 @@ def save_course_planning_session(session: CoursePlanningSessionData) -> bool:
 # token window, but a course should not be swamped by one book; the cap keeps
 # prompts predictable and the Redis session small.
 MAX_MATERIAL_DOC_CHARS = 20_000
-MAX_MATERIAL_CONTEXT_CHARS = 600_000
+MAX_MATERIAL_CONTEXT_CHARS = 1_500_000
 MAX_ACTIVITY_MATERIAL_CHARS = 30_000
+MAX_SOURCE_SUMMARY_CHUNK_CHARS = 60_000
 MAX_VISION_IMAGES = 7
 MAX_PDF_IMAGES = 4
 MAX_VISION_DESCRIPTION_CHARS = 6_000
@@ -436,6 +437,41 @@ async def summarize_source(
     to the raw text.
     """
     language_name = get_language_name(language)
+    if not (text or "").strip():
+        return ""
+    model_name = model_name or model_for_tier("standard")
+    source_text = text
+    if len(source_text) > MAX_SOURCE_SUMMARY_CHUNK_CHARS:
+        chunks = [
+            source_text[i:i + MAX_SOURCE_SUMMARY_CHUNK_CHARS]
+            for i in range(0, len(source_text), MAX_SOURCE_SUMMARY_CHUNK_CHARS)
+        ]
+        part_notes: list[str] = []
+        for index, chunk in enumerate(chunks, start=1):
+            try:
+                part = await generate(
+                    model_name=model_name,
+                    system_prompt=(
+                        f"Summarize part {index}/{len(chunks)} of ONE lecture in {language_name}. "
+                        "Preserve definitions, code, worked examples and pitfalls; compact bullets."
+                    ),
+                    user_prompt=chunk,
+                    max_tokens=900,
+                    temperature=0.2,
+                    timeout=180,
+                )
+                if part and part.strip():
+                    part_notes.append(part.strip())
+            except Exception:
+                logger.warning(
+                    "Source chunk summary failed for %s part %s/%s",
+                    title or url or "(untitled)",
+                    index,
+                    len(chunks),
+                    exc_info=True,
+                )
+        if part_notes:
+            source_text = "\n\n".join(part_notes)
     system_prompt = (
         f"Distill ONE lecture/article into concise study notes in {language_name}: "
         "key ideas, definitions/formulas, worked examples, exercises, common pitfalls. "
@@ -443,24 +479,30 @@ async def summarize_source(
         "formulas and code shown in the video frames), incorporate that on-screen "
         "content into the notes. Plain compact text, no preamble."
     )
-    try:
-        result = await generate(
-            model_name=model_name,
-            system_prompt=system_prompt,
-            user_prompt=f"KIND: {kind}\nTITLE: {title}\nURL: {url}\n\nTEXT:\n{text}",
-            max_tokens=1500,
-            temperature=0.2,
-            timeout=180,
-        )
-        return (result or "").strip()[:2500]
-    except Exception:
-        logger.warning(
-            "Source summarization failed for %s (%s)",
-            title or url or "(untitled)",
-            kind,
-            exc_info=True,
-        )
-        return ""
+    for attempt in range(2):
+        try:
+            result = await generate(
+                model_name=model_name,
+                system_prompt=system_prompt,
+                user_prompt=f"KIND: {kind}\nTITLE: {title}\nURL: {url}\n\nTEXT:\n{source_text}",
+                max_tokens=1500,
+                temperature=0.2,
+                timeout=180,
+            )
+            summary = (result or "").strip()[:2500]
+            if summary:
+                return summary
+        except Exception:
+            if attempt == 0:
+                await asyncio.sleep(1.0)
+                continue
+            logger.warning(
+                "Source summarization failed for %s (%s)",
+                title or url or "(untitled)",
+                kind,
+                exc_info=True,
+            )
+    return (source_text or text or "").strip()[:2500]
 
 
 async def build_sources_context(
@@ -589,7 +631,7 @@ async def _fetch_youtube_transcripts(
     if not videos:
         return []
     total = len(videos)
-    semaphore = asyncio.Semaphore(4)
+    semaphore = asyncio.Semaphore(1)
 
     async def fetch_one(index: int, video: dict) -> tuple[int, str]:
         async with semaphore:
@@ -611,11 +653,12 @@ async def _fetch_youtube_transcripts(
     return [
         {
             "kind": "youtube",
-            "title": video.get("title") or "",
+            "title": video.get("title") or video.get("name") or "",
             "url": video.get("url") or "",
             "text": text,
         }
         for video, text in zip(videos, results)
+        if text.strip()
     ]
 
 
@@ -667,7 +710,7 @@ async def build_attachment_context(
             )
             sources.extend(await _fetch_youtube_transcripts(videos, on_progress))
         elif attachment.type == "youtube" and attachment.url:
-            videos = [{"title": "", "url": attachment.url}]
+            videos = [{"title": attachment.name or "", "url": attachment.url}]
             _emit_progress(on_progress, "youtube", 1, 1, attachment.url)
             sources.extend(await _fetch_youtube_transcripts(videos, on_progress))
         elif attachment.type == "article" and attachment.url:
@@ -852,12 +895,10 @@ The user may provide documents, images, notebooks, YouTube links, or web article
 - Do not contradict the materials and do not silently replace them with unrelated topics.
 
 SOURCE ATTRIBUTION (MANDATORY):
-Every activity MUST include these two fields:
-- "source": one of "materials", "ai", "mixed"
-  * "materials": the activity's substance is taken from the uploaded materials.
-  * "mixed": it combines uploaded materials with your own explanations/examples.
-  * "ai": it is generated from general knowledge and does not rely on the materials.
-- "source_refs": a JSON array of the exact material file names used (for "materials" or "mixed"). Use [] for "ai".
+Every activity MUST include these two fields. When the DISTILLED SOURCE NOTES block is present, "ai" and an empty source_refs list are FORBIDDEN.
+- "source": "materials" when the activity's substance is taken from the notes, or "mixed" when it combines the notes with your own explanations. Use "ai" only when there are no reference materials at all.
+- "source_refs": a NON-EMPTY JSON array of exact source titles or URLs from the notes (e.g. ["Python Tutorial: Generators", "https://www.youtube.com/watch?v=..."]). Every activity that uses the notes must cite at least one.
+- Spread citations across the course: different chapters and activities should reference different videos/articles, not one source for everything. If a topic is covered by several sources, cite all that support it.
 Rules:
 - If reference materials were provided, prefer "materials" for topics present in them; use "mixed" when you add your own explanations; use "ai" only for content absent from the materials.
 - If NO reference materials were provided, every activity MUST be source="ai" with source_refs=[].
@@ -937,7 +978,7 @@ def build_activity_content_system_prompt(
 CONTENT ORIGIN: {source}
 SOURCE REFERENCES: {refs or "(none)"}
 {origin_rules}
-Do NOT add a source/provenance callout yourself: the platform adds a visible source note.
+Start the document with a short calloutInfo block whose text begins with "Источник: " (or "Source: " in the content language) and lists SOURCE REFERENCES. Then generate the lesson. Do not add any other provenance callout.
 If the activity is a test/quiz, include a blockQuiz with 3-5 real questions and correct answers.
 """
     return f"""You are an expert content creator for online courses. Generate educational content for the following context:
@@ -1276,6 +1317,42 @@ IMPORTANT: You MUST incorporate the materials provided above into the course pla
         raise RuntimeError(f"Course planning error: {str(e)}")
 
 
+def _normalize_ref(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _activity_material_block(
+    session: CoursePlanningSessionData,
+    source_refs: Optional[List[str]],
+    limit: int = MAX_ACTIVITY_MATERIAL_CHARS,
+) -> str:
+    """Notes for the sources an activity cites, not the whole 100-video block."""
+    refs = [_normalize_ref(ref) for ref in (source_refs or []) if ref]
+    selected = []
+    if refs and session.sources:
+        for source in session.sources:
+            title = _normalize_ref(source.title)
+            url = _normalize_ref(source.url)
+            if any(
+                ref and (
+                    ref == title or ref == url
+                    or ref in title or ref in url
+                    or title in ref or url in ref
+                )
+                for ref in refs
+            ):
+                selected.append(source)
+    if selected:
+        parts = [
+            f"--- {source.kind} | {source.title} | {source.url} ---\n{source.summary}"
+            for source in selected
+        ]
+        return "\n\n".join(parts)[:limit]
+    if session.material_context:
+        return session.material_context[:limit]
+    return ""
+
+
 async def generate_activity_content_stream(
     session: CoursePlanningSessionData,
     activity_uuid: str,
@@ -1312,14 +1389,11 @@ async def generate_activity_content_stream(
         )
 
         # Materials are only relevant when the plan says the activity is
-        # grounded in them. They live in the session because the attachments
-        # were uploaded during planning, not during this later generation call.
+        # grounded in them. Pick the notes for the sources this activity cites
+        # instead of blindly taking the first N characters of a 100-video block.
         material_block = ""
-        if session.material_context and source in ("materials", "mixed"):
-            material_block = (
-                "\n\nREFERENCE MATERIALS (use as the primary source; do not contradict):\n"
-                + session.material_context[:MAX_ACTIVITY_MATERIAL_CHARS]
-            )
+        if source in ("materials", "mixed"):
+            material_block = _activity_material_block(session, source_refs)
 
         # Get iteration count for this activity
         iteration_count = session.activity_iteration_counts.get(activity_uuid, 0)

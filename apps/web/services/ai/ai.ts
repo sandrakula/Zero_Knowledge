@@ -557,7 +557,8 @@ export async function startRAGChatStream(
   callbacks: StreamCallbacks,
   courseUuid?: string,
   mode?: string,
-  orgSlug?: string
+  orgSlug?: string,
+  pageContext?: string
 ): Promise<void> {
   const data: Record<string, string> = { message, mode: mode || 'course_only' }
   if (courseUuid) {
@@ -565,6 +566,9 @@ export async function startRAGChatStream(
   }
   if (orgSlug) {
     data.org_slug = orgSlug
+  }
+  if (pageContext) {
+    data.page_context = pageContext.slice(0, 4000)
   }
 
   try {
@@ -602,7 +606,8 @@ export async function sendRAGChatStream(
   callbacks: StreamCallbacks,
   courseUuid?: string,
   mode?: string,
-  orgSlug?: string
+  orgSlug?: string,
+  pageContext?: string
 ): Promise<void> {
   const data: Record<string, string> = { message, aichat_uuid: aichatUuid, mode: mode || 'course_only' }
   if (courseUuid) {
@@ -610,6 +615,9 @@ export async function sendRAGChatStream(
   }
   if (orgSlug) {
     data.org_slug = orgSlug
+  }
+  if (pageContext) {
+    data.page_context = pageContext.slice(0, 4000)
   }
 
   try {

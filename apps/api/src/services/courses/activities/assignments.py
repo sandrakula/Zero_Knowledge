@@ -66,6 +66,10 @@ from src.security.rbac import (
 )
 from src.services.ai.rag.queue import index_activity
 from src.services.courses.activities.access import verify_activity_reader_access
+from src.services.courses.activities.explanations_grade import (
+    combine_with_explanation,
+    latest_graded_explanation,
+)
 from src.services.courses.activities.uploads.sub_file import upload_submission_file
 from src.services.courses.activities.uploads.tasks_ref_files import (
     upload_reference_file,
@@ -4551,9 +4555,17 @@ async def _apply_grade_and_finalize(
         if ts is not None and ts.manually_graded:
             continue
         code_details = None
+        explanation_note = ""
         if task.assignment_type == AssignmentTaskTypeEnum.CODE:
             code_details = await _evaluate_code_task(task, ts)
             verified = code_details["grade"] if code_details is not None else None
+            if verified is not None and ts is not None and task.id is not None:
+                explanation = await latest_graded_explanation(
+                    db_session, int(task.id), int(user_id)
+                )
+                verified, explanation_note = combine_with_explanation(
+                    task, int(verified), explanation
+                )
         else:
             verified = await _server_verified_task_grade(task, ts)
         if (
@@ -4576,11 +4588,17 @@ async def _apply_grade_and_finalize(
             )
         if int(ts.grade or 0) != verified:
             ts.grade = verified
-            ts.task_submission_grade_feedback = (
-                "Server-verified: correct"
-                if verified > 0
-                else "Server-verified: incorrect"
-            )
+            if explanation_note:
+                ts.task_submission_grade_feedback = (
+                    f"Server-verified: {verified}/{int(task.max_grade_value or 0)}"
+                    f"{explanation_note}"
+                )
+            else:
+                ts.task_submission_grade_feedback = (
+                    "Server-verified: correct"
+                    if verified > 0
+                    else "Server-verified: incorrect"
+                )
             db_session.add(ts)
 
     # Auto-grade + an unverifiable CODE task → don't finalize. Persist any
@@ -5111,6 +5129,16 @@ async def submit_and_grade_assignment_task(
             f"{verdict or 'Evaluated'}: "
             f"{details.get('passed_tests', 0)}/{details.get('total_tests', 0)} tests passed"
         )
+        if task.id is not None:
+            explanation = await latest_graded_explanation(
+                db_session, int(task.id), int(current_user.id or 0)
+            )
+            grade, explanation_note = combine_with_explanation(
+                task, grade, explanation
+            )
+            if explanation_note:
+                feedback = f"{feedback}{explanation_note}"
+                passed = grade >= int(task.max_grade_value or 0)
     else:
         grade = await _server_verified_task_grade(task, task_submission)
         if grade is None:

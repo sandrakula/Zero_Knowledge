@@ -460,7 +460,7 @@ const CopilotMenuButton = ({
             <DropdownMenuTrigger asChild>
               <button
                 className="relative p-2 rounded-lg transition-colors hover:bg-violet-500/10"
-                aria-label="Copilot"
+                aria-label="Тьютор"
               >
                 <ChatCircle size={20} weight="fill" className="text-violet-500" />
                 {/* Active indicator dot */}
@@ -471,7 +471,7 @@ const CopilotMenuButton = ({
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            Copilot
+            Тьютор
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -479,7 +479,7 @@ const CopilotMenuButton = ({
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex items-center gap-2">
           <ChatCircle size={16} weight="fill" className="text-violet-500" />
-          <span>Copilot</span>
+          <span>Тьютор</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 

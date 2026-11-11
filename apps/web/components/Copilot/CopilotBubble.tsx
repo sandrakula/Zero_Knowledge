@@ -40,6 +40,7 @@ import {
   groupSessionsByDate,
 } from '@/app/orgs/[orgslug]/(withmenu)/copilot/copilot'
 import AuthenticatedClientElement from '@components/Security/AuthenticatedClientElement'
+import { buildTutorPageContext } from '@/lib/tutor/task-context'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
 
 type ChatMessage = {
@@ -260,12 +261,13 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
       },
     }
 
+    const pageContext = buildTutorPageContext(pathname)
     if (aichatUuid) {
-      await sendRAGChatStream(message, aichatUuid, accessToken, callbacks, selectedCourse || undefined, chatMode, orgslug)
+      await sendRAGChatStream(message, aichatUuid, accessToken, callbacks, selectedCourse || undefined, chatMode, orgslug, pageContext)
     } else {
-      await startRAGChatStream(message, accessToken, callbacks, selectedCourse || undefined, chatMode, orgslug)
+      await startRAGChatStream(message, accessToken, callbacks, selectedCourse || undefined, chatMode, orgslug, pageContext)
     }
-  }, [accessToken, aichatUuid, selectedCourse, chatMode, mutateSessions, orgslug, track])
+  }, [accessToken, aichatUuid, selectedCourse, chatMode, mutateSessions, orgslug, pathname, track])
 
   const isInputDisabled = isWaiting || isLoadingSession
 
@@ -314,7 +316,7 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                 <List size={14} />
               </button>
               <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                Course Copilot
+                Тьютор
               </span>
             </div>
             <div className="flex items-center gap-0.5">
@@ -396,9 +398,9 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                       </svg>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Course Copilot</p>
+                      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">Тьютор</p>
                       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1 leading-relaxed max-w-[230px]">
-                        Ask questions about your courses.
+                        Я вижу текущую задачу и код. Спроси о решении, ошибке или теории.
                       </p>
                     </div>
                   </div>
@@ -492,8 +494,8 @@ function BubbleInner({ orgslug, open, onOpenChange, sessionToLoad }: CopilotBubb
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input) }
                   }}
-                  aria-label="Ask about your courses"
-                  placeholder={isLoadingSession ? 'Loading...' : isWaiting ? 'Thinking...' : 'Ask about your courses...'}
+                  aria-label="Спроси тьютора"
+                  placeholder={isLoadingSession ? 'Загрузка...' : isWaiting ? 'Думаю...' : 'Спроси о задаче или коде...'}
                   disabled={isInputDisabled}
                   className="flex-1 min-w-0 bg-transparent outline-none text-xs text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 disabled:opacity-40"
                 />

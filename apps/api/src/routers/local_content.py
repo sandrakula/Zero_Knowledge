@@ -42,6 +42,15 @@ router = APIRouter()
 CONTENT_DIR = Path("content")
 
 
+def _extended_length_path(path: str) -> str:
+    if os.name != "nt" or path.startswith("\\\\?\\"):
+        return path
+    absolute = os.path.abspath(path)
+    if len(absolute) < 240:
+        return path
+    return "\\\\?\\" + absolute
+
+
 def _normalize_content_relpath(file_path: str) -> str | None:
     """Decode and vet the request path, returning a safe CONTENT_DIR-relative
     string, or None if it is unsafe.
@@ -299,6 +308,8 @@ async def serve_local_content(
     # which the string checks above cannot see) is refused before any sink.
     base_real = os.path.realpath(str(CONTENT_DIR))
     safe_real = os.path.realpath(os.path.join(base_real, rel_path))
+    if safe_real.startswith("\\\\?\\") and not base_real.startswith("\\\\?\\"):
+        base_real = "\\\\?\\" + base_real
     if not (safe_real == base_real or safe_real.startswith(base_real + os.sep)):
         raise HTTPException(status_code=400, detail="Invalid path")
 
@@ -313,14 +324,15 @@ async def serve_local_content(
     canonical_rel = os.path.relpath(safe_real, base_real).replace(os.sep, '/')
     is_public = await _check_content_access(canonical_rel, current_user, db_session, request=request)
 
-    if not os.path.isfile(safe_real):
+    file_sys_path = _extended_length_path(safe_real)
+    if not os.path.isfile(file_sys_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    ext = os.path.splitext(safe_real)[1].lower()
+    ext = os.path.splitext(file_sys_path)[1].lower()
     media_type = _MIME_TYPES.get(ext, 'application/octet-stream')
 
     return FileResponse(
-        path=safe_real,
+        path=file_sys_path,
         media_type=media_type,
         headers={
             "Cache-Control": content_cache_control(is_public),
@@ -356,6 +368,8 @@ async def head_local_content(
     # serve_local_content for the rationale). Sinks operate on ``safe_real``.
     base_real = os.path.realpath(str(CONTENT_DIR))
     safe_real = os.path.realpath(os.path.join(base_real, rel_path))
+    if safe_real.startswith("\\\\?\\") and not base_real.startswith("\\\\?\\"):
+        base_real = "\\\\?\\" + base_real
     if not (safe_real == base_real or safe_real.startswith(base_real + os.sep)):
         raise HTTPException(status_code=400, detail="Invalid path")
 
@@ -365,12 +379,13 @@ async def head_local_content(
     canonical_rel = os.path.relpath(safe_real, base_real).replace(os.sep, '/')
     is_public = await _check_content_access(canonical_rel, current_user, db_session, request=request)
 
-    if not os.path.isfile(safe_real):
+    file_sys_path = _extended_length_path(safe_real)
+    if not os.path.isfile(file_sys_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    ext = os.path.splitext(safe_real)[1].lower()
+    ext = os.path.splitext(file_sys_path)[1].lower()
     media_type = _MIME_TYPES.get(ext, 'application/octet-stream')
-    file_size = os.path.getsize(safe_real)
+    file_size = os.path.getsize(file_sys_path)
 
     from fastapi.responses import Response
     return Response(

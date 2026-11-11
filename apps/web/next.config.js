@@ -85,6 +85,17 @@ const nextConfig = {
         ],
       },
       {
+        // The final Decision Trees lab is a static notebook runner embedded in
+        // the course activity player. The global DENY/frame-ancestors 'none'
+        // blocks even same-origin iframes, so allow this page to be framed by
+        // its own origin.
+        source: '/lab5-decision-trees.html',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+        ],
+      },
+      {
         source: '/embed/:orgslug/course/:courseuuid/activity/:path*',
         headers: [
           {

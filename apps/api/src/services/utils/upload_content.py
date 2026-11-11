@@ -17,6 +17,15 @@ logger = logging.getLogger(__name__)
 _CONTENT_ROOT = "content"
 
 
+def _extended_length_path(path: str) -> str:
+    if os.name != "nt" or path.startswith("\\\\?\\"):
+        return path
+    absolute = os.path.abspath(path)
+    if len(absolute) < 240:
+        return path
+    return "\\\\?\\" + absolute
+
+
 def _safe_content_path(*parts: str) -> str:
     """Build a path under the content root and confirm (via realpath +
     commonpath) that user-supplied parts can't escape it. Returns the
@@ -26,13 +35,15 @@ def _safe_content_path(*parts: str) -> str:
             raise HTTPException(status_code=400, detail="Invalid file path")
     base_real = os.path.realpath(_CONTENT_ROOT)
     full_real = os.path.realpath(os.path.join(_CONTENT_ROOT, *parts))
+    if full_real.startswith("\\\\?\\") and not base_real.startswith("\\\\?\\"):
+        base_real = "\\\\?\\" + base_real
     try:
         contained = full_real == base_real or os.path.commonpath([base_real, full_real]) == base_real
     except ValueError:
         contained = False
     if not contained:
         raise HTTPException(status_code=400, detail="Invalid file path")
-    return full_real
+    return _extended_length_path(full_real)
 
 
 def _write_body(dest: BinaryIO, body: Union[bytes, BinaryIO]) -> None:
