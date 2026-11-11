@@ -47,6 +47,39 @@ function collectLineClasses(issues: CodeIssue[]): Record<number, string> {
   return classes
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// A function is recursive only when it calls itself from inside its own body.
+// Counting every occurrence of the name also counts the definition and calls
+// made by the surrounding program, which falsely labels ordinary generators
+// such as `def countdown(n): ...` + `print(list(countdown(5)))` as recursive.
+function hasPythonRecursiveCall(lines: string[]): boolean {
+  const functions: Array<{ name: string; indent: number }> = []
+  for (const raw of lines) {
+    const line = raw.replace(/#.*$/, '')
+    if (!line.trim()) continue
+    const indent = lineIndent(raw)
+    while (functions.length && indent <= functions[functions.length - 1].indent) {
+      functions.pop()
+    }
+    const definition = line.trim().match(/^def\s+([A-Za-z_]\w*)\s*\(/)
+    if (definition) {
+      functions.push({ name: definition[1], indent })
+      continue
+    }
+    if (
+      functions.some(({ name }) =>
+        new RegExp(`\\b${escapeRegExp(name)}\\s*\\(`).test(line)
+      )
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 function estimateComplexity(lines: string[], languageId: number): { complexity: string; reason: string; nesting: number; loops: number; functions: number } {
   const isPython = languageId === 71
   let loops = 0
@@ -93,10 +126,12 @@ function estimateComplexity(lines: string[], languageId: number): { complexity: 
   const hasSort = /\b(sort|sorted|qsort)\s*\(/.test(text)
   const hasBinarySearch = /\b(mid|low|high|left|right)\b/.test(text) && /\b(while|for)\b/.test(text) && /\/\s*2|\b>>\s*1\b/.test(text)
   const functionNames = [...text.matchAll(/\b(?:def|void|int|double|float|long|bool|string|auto)\s+([A-Za-z_]\w*)\s*\(/g)].map((m) => m[1])
-  const recursive = functionNames.some((name) => {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return (text.match(new RegExp(`\\b${escaped}\\s*\\(`, 'g')) || []).length > 1
-  })
+  const recursive = isPython
+    ? hasPythonRecursiveCall(lines)
+    : functionNames.some((name) => {
+        const escaped = escapeRegExp(name)
+        return (text.match(new RegExp(`\\b${escaped}\\s*\\(`, 'g')) || []).length > 1
+      })
 
   if (recursive) return { complexity: 'O(2^n)?', reason: 'обнаружена рекурсия', nesting, loops, functions }
   if (hasSort) return { complexity: 'O(n log n)', reason: 'используется сортировка', nesting, loops, functions }

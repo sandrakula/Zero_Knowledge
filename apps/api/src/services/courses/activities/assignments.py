@@ -5138,7 +5138,9 @@ async def submit_and_grade_assignment_task(
             )
             if explanation_note:
                 feedback = f"{feedback}{explanation_note}"
-                passed = grade >= int(task.max_grade_value or 0)
+                # A graded explanation adjusts the numeric score; it must not
+                # turn an already accepted (all tests passed) submission into
+                # a failed one.
     else:
         grade = await _server_verified_task_grade(task, task_submission)
         if grade is None:
