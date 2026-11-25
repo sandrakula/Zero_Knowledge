@@ -1,0 +1,54 @@
+---
+title: Custom OIDC
+description: Connect LearnHouse SSO directly to any OpenID Connect provider such as Entra ID, Okta, Google Workspace, Keycloak or Auth0 with a client ID and secret.
+---
+
+import { Callout } from '@/components/mdx'
+
+# Custom OIDC
+
+The Custom OIDC provider lets you connect LearnHouse directly to any OpenID Connect 1.0 compatible identity provider. Use it if you want to connect your existing IdP without going through a third-party broker.
+
+## Compatible Providers
+
+Any OIDC-compliant provider works, including:
+
+- **Azure AD / Microsoft Entra ID**
+- **Okta**
+- **Google Workspace**
+- **Keycloak**
+- **Auth0**
+- **OneLogin**
+- **Ping Identity**
+
+## Configuration
+
+| Field | Required | Description |
+|---|---|---|
+| **Issuer URL** | Yes | The OIDC issuer URL. LearnHouse auto-discovers the endpoints from `/.well-known/openid-configuration`. It must resolve to a public address. |
+| **Client ID** | Yes | The OAuth 2.0 client ID from your identity provider. |
+| **Client Secret** | Yes | The OAuth 2.0 client secret. After saving, it is shown masked; leave it unchanged to keep the stored value. |
+| **Scopes** | No | Space-separated OAuth scopes. Defaults to `openid email profile`. |
+
+## Issuer URL Examples
+
+| Provider | Issuer URL Format |
+|---|---|
+| Azure AD | `https://login.microsoftonline.com/{tenant-id}/v2.0` |
+| Okta | `https://{your-domain}.okta.com` |
+| Google Workspace | `https://accounts.google.com` |
+| Keycloak | `https://{host}/realms/{realm}` |
+| Auth0 | `https://{your-domain}.auth0.com` |
+
+## Setup Steps
+
+1. Register LearnHouse as an application in your identity provider and get a client ID and client secret.
+2. Set the redirect URI in your identity provider to LearnHouse's [callback URL](/enterprise/sso#callback-url), which ends in `/api/v1/auth/sso/callback`.
+3. In LearnHouse, go to **Developers** → **SSO** and choose **Custom OIDC** as the **SSO Provider**.
+4. Enter the **Issuer URL**, **Client ID** and **Client Secret**, and adjust **Scopes** if needed.
+5. Set **Enable SSO**, **Allowed Email Domains** and **Auto-provision Users** (see [SSO options](/enterprise/sso#setting-up-sso)) and click **Save Configuration**.
+6. Members can now use **Sign in with SSO** on your login page.
+
+<Callout type="info">
+LearnHouse uses OIDC Discovery to find the authorization, token and userinfo endpoints from the issuer URL. Make sure your identity provider exposes a `/.well-known/openid-configuration` document.
+</Callout>

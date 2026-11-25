@@ -1,0 +1,88 @@
+---
+title: "Custom Features with the API"
+description: "Drive LearnHouse from your own scripts with an API token: create courses and chapters, search content and find every endpoint in the API Reference."
+---
+
+import { Callout } from '@/components/mdx'
+
+# Custom Features with the API
+
+The [build guide](/guides/build-learning-platform) showed how to *read* the API as a frontend. This guide is about going further: driving LearnHouse **programmatically**. You'll create and manage content from your own scripts and services. To react to what happens inside LearnHouse, pair it with [webhooks](/platform/automations/webhooks).
+
+## Authenticate with an API token
+
+For everything in this guide, use an **API token** (`lh_…`). Create one in the dashboard under **Developers** → **API Access**, give it only the rights your script needs, and send it as a bearer token on every request:
+
+```bash
+curl "http://localhost:1338/api/v1/courses/org_slug/{org_slug}/page/1/limit/10" \
+  -H "Authorization: Bearer lh_your_api_token_here"
+```
+
+[Authentication](/reference/guides/authentication) covers the rest: token rights, how long tokens last, and which endpoint groups are session-only and refuse tokens with `403`. On LearnHouse Cloud, API tokens need the Pro plan or higher.
+
+## Request conventions
+
+A few things that are true across the whole API:
+
+- **Base path**: every endpoint is under `/api/v1/`.
+- **Reads are JSON**: `GET` returns JSON; lists are plain arrays unless documented otherwise.
+- **Writes are often multipart**: create/update endpoints that can take a file (courses, activities, avatars) accept `multipart/form-data`, not JSON. Endpoints without files (chapters, folders, trails) take JSON.
+- **Errors**: non-2xx responses carry a `detail` field. See [Errors](/reference/guides/errors).
+- **UUIDs vs ids**: resources expose a stable `{resource}_uuid` (e.g. `course_…`, `activity_…`); numeric `id`s are used by a few routes (notably `org_id`).
+
+## Recipe: create a course programmatically
+
+Courses are created with multipart form data (so a thumbnail can ride along). `org_id` is a query parameter:
+
+```bash
+curl -X POST "http://localhost:1338/api/v1/courses/?org_id=1" \
+  -H "Authorization: Bearer lh_your_api_token" \
+  -F 'name=Introduction to Python' \
+  -F 'description=A beginner-friendly Python course' \
+  -F 'about=Learn Python from scratch.' \
+  -F 'public=true'
+```
+
+<Callout type="info">
+`name`, `description`, `about` and `public` are all required on course creation. Omitting one returns `422`. Creating courses, chapters, and activities requires a role with create permission (Admin / Maintainer / Instructor), not a plain member account.
+</Callout>
+
+Then add structure: a chapter (JSON), then activities inside it:
+
+```bash
+# Create a chapter
+curl -X POST "http://localhost:1338/api/v1/chapters/" \
+  -H "Authorization: Bearer lh_your_api_token" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Getting started", "org_id": 1, "course_id": 42 }'
+```
+
+<Callout type="info">
+For bulk or AI-assisted course creation from existing media, see the [Migration](/developers/migration) guides. They describe a three-call flow that builds an entire course tree in one transaction.
+</Callout>
+
+## Recipe: search and list content
+
+```bash
+# Paginated list of courses
+curl "http://localhost:1338/api/v1/courses/org_slug/{org_slug}/page/1/limit/20" \
+  -H "Authorization: Bearer lh_your_api_token"
+
+# Full-text search (max 50 per page)
+curl "http://localhost:1338/api/v1/courses/org_slug/{org_slug}/search?query=python&page=1&limit=10" \
+  -H "Authorization: Bearer lh_your_api_token"
+```
+
+## Find every endpoint
+
+The [API Reference](/reference) lists every endpoint with its schema, the token right it needs and examples. If you write JavaScript or TypeScript, the [SDK](/developers/sdk) gives you typed calls for the same endpoints.
+
+<Callout type="info">
+On your own instance, the raw OpenAPI document (`/openapi.json`), Swagger UI (`/docs`) and ReDoc (`/redoc`) are served only in development mode (`LEARNHOUSE_DEVELOPMENT_MODE=true`). Production instances do not expose them.
+</Callout>
+
+## Next: react to events
+
+Polling the API to find out "did anyone finish a course?" is wasteful. **Webhooks** push those events to you the moment they happen: enrollment, completion, signups, and [dozens more](/platform/automations/events).
+
+See **[Webhooks](/platform/automations/webhooks)** to set one up and verify its signatures.

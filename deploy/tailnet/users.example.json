@@ -1,0 +1,6 @@
+[
+  { "email": "admin@example.com", "username": "admin", "password": "change-me-admin", "role_id": 1, "superadmin": true },
+  { "email": "teacher@example.com", "username": "teacher", "password": "change-me-teacher", "role_id": 3 },
+  { "email": "student1@example.com", "username": "student1", "password": "change-me-student1", "role_id": 4 },
+  { "email": "student2@example.com", "username": "student2", "password": "change-me-student2", "role_id": 4 }
+]

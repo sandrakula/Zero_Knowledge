@@ -1,0 +1,61 @@
+---
+description: Check the system requirements for self-hosting LearnHouse, including Docker with Compose v2, Node.js 22+, at least 2 GB of RAM and free ports.
+---
+
+# System Requirements
+
+Before installing LearnHouse, make sure your server meets the following requirements.
+
+## Software Requirements
+
+| Software | Minimum Version | Notes |
+|---|---|---|
+| Docker Engine | A current release | The daemon must be running and your user must be able to reach it |
+| Docker Compose | v2 (`docker compose` plugin) | Included with Docker Desktop; install `docker-compose-plugin` separately on Linux |
+| Node.js | 22+ | Required to run the LearnHouse CLI. The one-line installers install Node.js 24 when it is missing or too old. |
+| npm / npx | Comes with Node.js | Used to run `npx learnhouse` |
+
+The setup wizard checks for Docker, a running Docker daemon and the Compose v2 plugin before it does anything else.
+
+## Hardware Requirements
+
+| Resource | Minimum | Recommended |
+|---|---|---|
+| RAM | 2 GB | 4 GB |
+| Disk Space | 10 GB | 20 GB+ |
+| CPU | 1 core | 2+ cores |
+
+Disk usage grows over time with the amount of uploaded content (videos, documents, images) and backups. Plan storage capacity accordingly if you expect heavy usage. You can cap the memory each container uses with `npx learnhouse scale`.
+
+## Operating System
+
+The CLI runs on:
+
+- **Linux** (any distribution with Docker support). The one-line installer supports Debian/Ubuntu, Fedora/RHEL and Alpine package managers.
+- **macOS** (with Docker Desktop)
+- **Windows** (with Docker Desktop). A PowerShell installer is available.
+
+Linux is recommended for production deployments.
+
+## Network Requirements
+
+- Port **80** (HTTP) must be free, or another port you pick during setup. With automatic SSL, ports **80** and **443** must both be free and reachable from the internet, and your domain's DNS must point at the server.
+- Outbound internet access is required during installation and updates to pull Docker images from `ghcr.io` and Docker Hub.
+- A domain name is recommended for production use but not required for local testing.
+
+## Verifying Prerequisites
+
+Run the following commands to verify your system is ready:
+
+```bash
+# Check Docker
+docker --version
+
+# Check Docker Compose
+docker compose version
+
+# Check Node.js
+node --version
+```
+
+`node --version` should print `v22` or newer.

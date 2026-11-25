@@ -1,0 +1,14 @@
+# Line endings that matter.
+#
+# Nothing here is cosmetic: these files are executed inside Linux images. On a
+# Windows checkout without `core.autocrlf=false`, git hands the build context a
+# CRLF copy, and busybox `sh` fails on the carriage return:
+#
+#   /app/start.sh: line 2: : not found
+#   /app/start.sh: line 31: syntax error: unexpected end of file
+#
+# The image then restarts forever and the stack comes up "unhealthy".
+*.sh text eol=lf
+
+# Python/CLI shims with a shebang, executed on Linux.
+apps/api/bin/* text eol=lf

@@ -1,0 +1,1603 @@
+"""
+Course Import Service
+Handles importing courses from ZIP packages
+Supports both local filesystem and S3/R2 cloud storage
+"""
+
+import json
+import os
+import re
+import secrets
+import shutil
+import stat
+import time
+import zipfile
+from datetime import datetime
+from typing import Optional
+from uuid import uuid4
+
+from fastapi import HTTPException, Request, UploadFile
+from sqlmodel import func, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.db.courses.activities import Activity, ActivityLockType, ActivityTypeEnum, ActivitySubTypeEnum
+from src.db.courses.assignments import (
+    Assignment,
+    AssignmentTask,
+    AssignmentTaskTypeEnum,
+    GradingTypeEnum,
+    SolutionRevealEnum,
+)
+from src.db.courses.blocks import Block, BlockTypeEnum
+from src.db.courses.chapter_activities import ChapterActivity
+from src.db.courses.chapters import Chapter
+from src.db.courses.course_chapters import CourseChapter
+from src.db.courses.courses import Course, ThumbnailType
+from src.db.folders.folder_content import FolderContent
+from src.db.media.media import Media, MediaTypeEnum
+from src.db.organizations import Organization
+from src.db.resource_authors import (
+    ResourceAuthor,
+    ResourceAuthorshipEnum,
+    ResourceAuthorshipStatusEnum,
+)
+from src.db.users import PublicUser, AnonymousUser, APITokenUser
+from src.security.file_validation import EXT_TO_CANONICAL_MIME, FILE_TYPES, MIME_TO_SAFE_EXT
+from src.security.org_auth import require_org_create_permission
+from src.security.rbac import check_resource_access, AccessAction
+from src.security.features_utils.plan_check import get_org_plan
+from src.security.features_utils.plans import is_feature_enabled_for_plan
+from src.security.features_utils.usage import check_limits_with_usage, increase_feature_usage
+from src.services.ai.rag.queue import enqueue_course
+from src.security.auth import resolve_acting_user_id
+from src.services.analytics import events as analytics_events
+from src.services.analytics.analytics import track
+
+from .models import (
+    ImportAnalysisResponse,
+    ImportCourseInfo,
+    ImportOptions,
+    ImportResult,
+    ImportCourseResult,
+)
+from .library_media import (
+    LIBRARY_EXTENSIONS,
+    SNAPSHOT_FIELDS,
+    library_max_size,
+    package_library_dir,
+    rewrite_library_refs,
+)
+from .storage_utils import (
+    upload_directory_to_s3,
+    upload_file_to_s3,
+    is_s3_enabled,
+    delete_storage_file,
+    delete_storage_directory,
+    rewrite_sqlite_db_paths,
+)
+
+
+# Temp storage for analyzed packages
+TEMP_IMPORT_DIR = "content/temp/imports"
+
+# Max package size: 500MB
+MAX_PACKAGE_SIZE = 500 * 1024 * 1024
+
+# Max compression ratio to prevent zip bombs
+MAX_COMPRESSION_RATIO = 20
+
+# Max individual entry size inside the archive (250MB).
+MAX_ENTRY_SIZE = 250 * 1024 * 1024
+
+# Max entry count inside the archive. Prevents inode exhaustion / "zip of zero-
+# byte files" attacks even when the compression ratio looks innocent.
+MAX_ENTRY_COUNT = 20000
+
+# temp_id is always a uuid4 minted by analyze_import_package, but it comes back
+# from the client on the import call, where it is joined into filesystem paths.
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+
+# Extensions a package may persist under `content/`. Package entry names are
+# attacker-controlled and `content/` is served from the API origin, so an
+# imported ".html"/".svg"/".js" would be stored XSS. Media types come from the
+# canonical MIME map; the rest are server-generated streaming/caption sidecars
+# and media containers that map has no entry for.
+IMPORTABLE_EXTENSIONS = frozenset(MIME_TO_SAFE_EXT.values()) | {
+    'jpeg', 'ico', 'mov', 'avi', 'mkv', 'aac', 'flac',
+    'm3u8', 'ts', 'vtt', 'srt', 'txt', 'json',
+}
+
+
+def _require_temp_id(temp_id: str) -> None:
+    """Reject a temp_id that is not the UUID it was generated as.
+
+    Mirrors migration_service's `_require_uuid`: without this, a value like
+    "../../orgs" would steer every os.path.join below out of the temp tree.
+    """
+    if not isinstance(temp_id, str) or not _UUID_RE.match(temp_id):
+        raise HTTPException(status_code=400, detail="Invalid temp_id")
+
+
+def _resolve_within(base_real: str, *parts: str) -> str:
+    """Join parts under base_real, resolve, and verify containment.
+
+    Mirrors migration_service's helper of the same name; returns the resolved
+    path so callers only ever touch the sanitized value.
+    """
+    resolved = os.path.realpath(os.path.join(base_real, *parts))
+    if resolved != base_real and not resolved.startswith(base_real + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return resolved
+
+
+def safe_stored_extension(filename: str) -> Optional[str]:
+    """Extension an imported package file may be stored under, or None to skip.
+
+    Known media extensions are canonicalized through the MIME maps (so ".JPEG"
+    is stored as "jpg") rather than copied verbatim; anything off
+    IMPORTABLE_EXTENSIONS is refused so the package cannot choose an extension
+    that makes the file renderable when served back.
+    """
+    ext = os.path.splitext(filename)[1].lower().lstrip('.')
+    if ext not in IMPORTABLE_EXTENSIONS:
+        return None
+    canonical_mime = EXT_TO_CANONICAL_MIME.get(f'.{ext}')
+    if canonical_mime:
+        return MIME_TO_SAFE_EXT.get(canonical_mime, ext)
+    return ext
+
+
+# Magic-byte validators only look at a header; zip types read the stream.
+_CONTENT_SNIFF_BYTES = 64 * 1024
+
+
+def file_content_matches_extension(path: str) -> bool:
+    """Apply the upload validator (FILE_TYPES) for ``path``'s extension.
+
+    A package or migration file named like an uploadable media type must carry
+    that type's content, as it would through ``upload_file``: stored media is
+    later handed to ffmpeg and served back by its extension. Extensions with no
+    upload type (subtitles, HLS output, other containers) are not checked here.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    spec = next((t for t in FILE_TYPES.values() if ext in t["extensions"]), None)
+    if spec is None:
+        return True
+    try:
+        with open(path, "rb") as f:
+            stream_validator = spec.get("stream_validator")
+            if stream_validator is not None:
+                return bool(stream_validator(f))
+            return bool(spec["validator"](f.read(_CONTENT_SNIFF_BYTES)))
+    except OSError:
+        return False
+
+
+# A SCORM package *is* a web app: its manifest, entry HTML, JS and CSS are the
+# activity. Those live under the activity's `scorm/` folder, are served by the
+# EE SCORM route rather than the content router, and dropping them would
+# silently import a broken activity. That HTML runs on the org's own site, so
+# the folder is only kept whole for a SCORM activity in an org entitled to
+# SCORM; everything else keeps the allowlist.
+def _is_scorm_subtree(files_root: str, src_dir: str) -> bool:
+    """Whether ``src_dir`` is the ``scorm/`` folder at the top of an activity's
+    files, or inside it."""
+    rel = os.path.relpath(src_dir, files_root)
+    return rel.split(os.sep)[0] == "scorm"
+
+
+def _ignore_unsafe_package_files(src_dir: str, names: list[str]) -> set[str]:
+    """copytree filter dropping package files with a non-importable extension
+    or content that doesn't match it."""
+    return {
+        name for name in names
+        if not os.path.isdir(os.path.join(src_dir, name))
+        and (
+            safe_stored_extension(name) is None
+            or not file_content_matches_extension(os.path.join(src_dir, name))
+        )
+    }
+
+
+def _package_files_filter(files_root: str, keep_scorm: bool):
+    """copytree filter for an activity's files rooted at ``files_root``.
+    ``keep_scorm`` leaves its ``scorm/`` folder whole."""
+    if not keep_scorm:
+        return _ignore_unsafe_package_files
+
+    def ignore(src_dir: str, names: list[str]) -> set[str]:
+        if _is_scorm_subtree(files_root, src_dir):
+            return set()
+        return _ignore_unsafe_package_files(src_dir, names)
+
+    return ignore
+
+
+async def _org_may_host_scorm(org_id: int, db_session: AsyncSession) -> bool:
+    """Same entitlement as the EE SCORM routes: every org in EE mode, none in
+    OSS, enterprise-plan orgs on SaaS."""
+    try:
+        plan = await get_org_plan(org_id, db_session)
+    except HTTPException:
+        plan = "free"
+    return is_feature_enabled_for_plan(plan, "scorm")
+
+
+def validate_zip(content: bytes) -> bool:
+    """Validate that content is a valid ZIP file"""
+    return content[:4] == b'PK\x03\x04' or content[:4] == b'PK\x05\x06'
+
+
+def sanitize_path(path: str) -> str:
+    """Sanitize file path to prevent directory traversal attacks"""
+    from urllib.parse import unquote
+    from pathlib import PurePosixPath
+    # Decode URL-encoded characters to catch %2e%2e etc.
+    path = unquote(unquote(path))
+    # Strip null bytes
+    path = path.replace('\x00', '')
+    # Remove leading slashes and normalize
+    path = path.lstrip('/\\')
+    # Remove any .. components
+    parts = path.replace('\\', '/').split('/')
+    safe_parts = [p for p in parts if p and p != '..']
+    sanitized = '/'.join(safe_parts)
+    # Final check: resolve and verify no traversal remains
+    resolved = PurePosixPath(sanitized)
+    if '..' in resolved.parts:
+        return ''
+    return sanitized
+
+
+def _safe_manifest_join(extract_dir: str, manifest_path: Optional[str]) -> Optional[str]:
+    """Safely resolve a manifest-supplied relative path under extract_dir.
+
+    manifest.json ``path`` values are attacker-controlled (they come from the
+    uploaded package), so they must be sanitized exactly like zip entry names
+    and re-verified to stay inside extract_dir (S13). Returns the joined path
+    on success, or None if the path is empty, missing, or escapes extract_dir.
+    """
+    if not manifest_path or not isinstance(manifest_path, str):
+        return None
+    safe = sanitize_path(manifest_path)
+    if not safe:
+        return None
+    target = os.path.join(extract_dir, safe)
+    base_real = os.path.realpath(extract_dir)
+    target_real = os.path.realpath(target)
+    try:
+        if os.path.commonpath([base_real, target_real]) != base_real:
+            return None
+    except ValueError:
+        return None
+    return target
+
+
+def lms_principal(user) -> str:
+    """Who started an LMS conversion: only they can poll and import it."""
+    return f"{type(user).__name__}:{getattr(user, 'user_uuid', '')}:{getattr(user, 'id', '')}"
+
+
+def summarize_extracted_package(extract_dir: str, temp_id: str) -> ImportAnalysisResponse:
+    """Read the manifest of an extracted package and list its courses.
+
+    Raises HTTPException(400) when the folder is not a LearnHouse package.
+    Shared by the ZIP upload and the LMS conversion, which writes its package
+    straight into the temp import folder.
+    """
+    # Find and parse manifest.json
+    manifest_path = os.path.join(extract_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid package: manifest.json not found"
+        )
+
+    with open(manifest_path, 'r', encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    # Validate manifest format
+    if manifest.get("format") != "learnhouse-course-export":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid package: Not a LearnHouse course export"
+        )
+
+    version = manifest.get("version", "1.0.0")
+
+    # Analyze courses in the package
+    courses_info = []
+    for course_entry in manifest.get("courses", []):
+        course_path = _safe_manifest_join(extract_dir, course_entry.get("path", ""))
+        if not course_path:
+            continue
+        course_json_path = os.path.join(course_path, "course.json")
+
+        if not os.path.exists(course_json_path):
+            continue
+
+        with open(course_json_path, 'r', encoding="utf-8") as f:
+            course_data = json.load(f)
+
+        # Count chapters and activities
+        chapters_count = 0
+        activities_count = 0
+
+        chapters_dir = os.path.join(course_path, "chapters")
+        if os.path.exists(chapters_dir):
+            for chapter_uuid in os.listdir(chapters_dir):
+                chapter_dir = os.path.join(chapters_dir, chapter_uuid)
+                if os.path.isdir(chapter_dir):
+                    chapters_count += 1
+                    activities_dir = os.path.join(chapter_dir, "activities")
+                    if os.path.exists(activities_dir):
+                        activities_count += len([
+                            d for d in os.listdir(activities_dir)
+                            if os.path.isdir(os.path.join(activities_dir, d))
+                        ])
+
+        # Check for thumbnail
+        has_thumbnail = bool(course_data.get("thumbnail_image") or course_data.get("thumbnail_video"))
+
+        courses_info.append(ImportCourseInfo(
+            course_uuid=course_data.get("course_uuid"),
+            name=course_data.get("name", "Untitled Course"),
+            description=course_data.get("description"),
+            chapters_count=chapters_count,
+            activities_count=activities_count,
+            has_thumbnail=has_thumbnail,
+        ))
+
+    if not courses_info:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid package: No valid courses found"
+        )
+
+    return ImportAnalysisResponse(
+        temp_id=temp_id,
+        version=version,
+        courses=courses_info,
+    )
+
+
+async def analyze_import_package(
+    request: Request,
+    zip_file: UploadFile,
+    org_id: int,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+) -> ImportAnalysisResponse:
+    """
+    Analyze a LearnHouse course export package.
+    Returns list of courses and stores package temporarily.
+    """
+    # Verify organization exists
+    statement = select(Organization).where(Organization.id == org_id)
+    organization = (await db_session.execute(statement)).scalars().first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # RBAC check - user needs create permission for courses, in this org
+    await check_resource_access(request, db_session, current_user, "course_x", AccessAction.CREATE)
+    await require_org_create_permission(current_user, org_id, db_session, "courses")
+
+    # Create temp directory for extraction
+    temp_id = str(uuid4())
+    temp_dir = os.path.join(TEMP_IMPORT_DIR, temp_id)
+
+    try:
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Stream uploaded file to disk instead of reading it all into memory
+        zip_path = os.path.join(temp_dir, "package.zip")
+        total_size = 0
+        header_bytes = b""
+
+        with open(zip_path, 'wb') as f:
+            while True:
+                chunk = await zip_file.read(64 * 1024)  # 64KB chunks
+                if not chunk:
+                    break
+                if not header_bytes:
+                    header_bytes = chunk[:4]
+                total_size += len(chunk)
+                if total_size > MAX_PACKAGE_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Package too large. Maximum size is {MAX_PACKAGE_SIZE / 1024 / 1024:.0f}MB"
+                    )
+                f.write(chunk)
+
+        # Validate ZIP format from the bytes we already have
+        if not validate_zip(header_bytes):
+            raise HTTPException(
+                status_code=415,
+                detail="Invalid file format. Package must be a ZIP file."
+            )
+
+        # Extract ZIP with security checks
+        extract_dir = os.path.join(temp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            infolist = zip_ref.infolist()
+
+            # SECURITY: cap the number of entries so an archive with millions
+            # of tiny files cannot exhaust inodes even when the aggregate
+            # compression ratio looks reasonable.
+            if len(infolist) > MAX_ENTRY_COUNT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid package: too many entries (max {MAX_ENTRY_COUNT})"
+                )
+
+            # SECURITY: enforce per-entry size and aggregate-size caps before
+            # touching disk.
+            compressed_size = os.path.getsize(zip_path)
+            uncompressed_size = 0
+            for info in infolist:
+                if info.file_size > MAX_ENTRY_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Invalid package: entry '{info.filename}' exceeds the "
+                            f"per-file size limit"
+                        ),
+                    )
+                uncompressed_size += info.file_size
+
+            if uncompressed_size > MAX_PACKAGE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid package: uncompressed size exceeds limit"
+                )
+            if uncompressed_size > compressed_size * MAX_COMPRESSION_RATIO:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid package: Suspicious compression ratio"
+                )
+
+            # Extract with path sanitization
+            abs_extract = os.path.realpath(extract_dir)
+            for info in infolist:
+                # SECURITY: reject symlink entries outright. Even a contained
+                # symlink can be followed by later entries to write outside
+                # the extract directory.
+                #
+                # Zip keeps the entry's Unix mode in the upper 16 bits of
+                # external_attr. The file-type nibble there has to be compared
+                # against S_IFLNK exactly: S_IFLNK (0o120000) and S_IFREG
+                # (0o100000) share a bit, so a plain `& S_IFLNK` test also
+                # matches every ordinary file that carries a real mode, which
+                # is every file any Unix zip tool writes.
+                if stat.S_ISLNK(info.external_attr >> 16):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Invalid package: symlink entry '{info.filename}' is not allowed"
+                        ),
+                    )
+
+                safe_path = sanitize_path(info.filename)
+                if not safe_path:
+                    continue
+
+                target_path = os.path.join(extract_dir, safe_path)
+
+                # SECURITY: use realpath so any symlink already sitting inside
+                # extract_dir (shouldn't happen with a fresh uuid4 tempdir but
+                # defense in depth) cannot redirect the write.
+                resolved = os.path.realpath(target_path)
+                try:
+                    contained = os.path.commonpath([abs_extract, resolved]) == abs_extract
+                except ValueError:
+                    contained = False
+                if not contained:
+                    continue
+
+                if info.is_dir():
+                    os.makedirs(target_path, exist_ok=True)
+                else:
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    with zip_ref.open(info) as source, open(target_path, 'wb') as target:
+                        shutil.copyfileobj(source, target)
+
+        # Delete the original ZIP now that extraction is done to free disk space
+        os.unlink(zip_path)
+
+        return summarize_extracted_package(extract_dir, temp_id)
+
+    except HTTPException:
+        # Clean up on error
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    except json.JSONDecodeError as e:
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid package: Could not parse JSON - {str(e)}"
+        )
+    except Exception as e:
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing package: {str(e)}"
+        )
+
+
+async def import_courses(
+    request: Request,
+    temp_id: str,
+    org_id: int,
+    options: ImportOptions,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+) -> ImportResult:
+    """
+    Import courses from an analyzed package.
+    """
+    # Verify organization exists
+    statement = select(Organization).where(Organization.id == org_id)
+    organization = (await db_session.execute(statement)).scalars().first()
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    # Snapshot the fields we need across commits: db_session.commit() expires
+    # the ORM instance, which would otherwise trigger a lazy reload mid-loop.
+    organization_id = organization.id
+    organization_uuid = organization.org_uuid
+
+    # RBAC check - user needs create permission for courses, in this org
+    await check_resource_access(request, db_session, current_user, "course_x", AccessAction.CREATE)
+    await require_org_create_permission(current_user, org_id, db_session, "courses")
+
+    # temp_id is client-supplied here: validate it as the UUID analyze minted
+    # and resolve every derived path back into TEMP_IMPORT_DIR before it reaches
+    # os.rename/open/rmtree. A value like "../../orgs" would otherwise rename
+    # the whole multi-tenant content tree out from under every org.
+    _require_temp_id(temp_id)
+    temp_base_real = os.path.realpath(TEMP_IMPORT_DIR)
+
+    # Atomically claim the temp package by renaming it. This prevents a race if
+    # two requests try to import the same temp_id simultaneously
+    temp_dir = _resolve_within(temp_base_real, temp_id)
+    work_dir = _resolve_within(temp_base_real, f"{temp_id}-importing")
+    # Packages converted from another LMS are built in the background
+    # (lms_import_service); refuse to claim one that is not finished
+    lms_status_path = os.path.join(temp_dir, "lms_status.json")
+    converted_from_lms = os.path.isfile(lms_status_path)
+    if converted_from_lms:
+        try:
+            with open(lms_status_path, "r", encoding="utf-8") as f:
+                lms_status = json.load(f)
+        except (OSError, ValueError):
+            lms_status = None
+        if not isinstance(lms_status, dict) or lms_status.get("owner") != lms_principal(current_user):
+            raise HTTPException(status_code=404, detail="Package not found. Please upload and analyze again.")
+        if lms_status.get("status") != "ready":
+            raise HTTPException(status_code=409, detail="This package is not ready to be imported.")
+    try:
+        os.rename(temp_dir, work_dir)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Package not found. Please upload and analyze again."
+        )
+    except OSError:
+        raise HTTPException(
+            status_code=409,
+            detail="This package is already being imported."
+        )
+
+    extract_dir = _resolve_within(work_dir, "extracted")
+    manifest_path = _resolve_within(extract_dir, "manifest.json")
+
+    with open(manifest_path, 'r', encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    # Build a map of course_uuid to path
+    course_paths = {}
+    for entry in manifest.get("courses", []):
+        cid = entry.get("course_uuid")
+        cpath = entry.get("path")
+        if cid and cpath:
+            safe_course_path = _safe_manifest_join(extract_dir, cpath)
+            if safe_course_path:
+                course_paths[cid] = safe_course_path
+
+    results = []
+    successful = 0
+    failed = 0
+
+    for course_uuid in options.course_uuids:
+        if course_uuid not in course_paths:
+            results.append(ImportCourseResult(
+                original_uuid=course_uuid,
+                new_uuid="",
+                name="",
+                success=False,
+                error=f"Course not found in package: {course_uuid}",
+            ))
+            failed += 1
+            continue
+
+        try:
+            # Check usage limits
+            await check_limits_with_usage("courses", org_id, db_session)
+
+            # Pre-generate the course UUID so we can clean up files on failure
+            new_course_uuid = f"course_{uuid4()}"
+            content_base = "content/orgs"
+            new_course_content_path = f"{content_base}/{organization_uuid}/courses/{new_course_uuid}"
+
+            # Use a savepoint so we can rollback just this course on failure
+            # without losing previously imported courses in the batch
+            nested = await db_session.begin_nested()
+            library_dirs: list[str] = []  # Library files live outside the course folder
+            try:
+                new_course = await _import_single_course(
+                    course_path=course_paths[course_uuid],
+                    organization=organization,
+                    current_user=current_user,
+                    options=options,
+                    db_session=db_session,
+                    new_course_uuid=new_course_uuid,
+                    library_dirs=library_dirs,
+                )
+                new_course_id = new_course.id
+                await nested.commit()
+            except Exception:
+                await nested.rollback()
+                # Clean up any files/S3 objects written for the failed course
+                delete_storage_directory(new_course_content_path)
+                for library_dir in library_dirs:
+                    delete_storage_directory(library_dir)
+                raise
+
+            # Commit the outer transaction so the course is persisted
+            await db_session.commit()
+            await enqueue_course(new_course.id, db_session)
+            await track(
+                event_name=analytics_events.COURSE_CREATED,
+                org_id=organization_id,
+                user_id=resolve_acting_user_id(current_user),
+                properties={
+                    "course_uuid": new_course.course_uuid,
+                    "source": "lms_import" if converted_from_lms else "import",
+                },
+            )
+
+            # Track usage AFTER commit: increase_feature_usage calls commit()
+            # internally, so it must not run inside the savepoint
+            await increase_feature_usage("courses", organization_id, db_session)
+            imported_assignments = (await db_session.execute(
+                select(func.count(Assignment.id)).where(Assignment.course_id == new_course_id)
+            )).scalar_one()
+            for _ in range(imported_assignments):
+                await increase_feature_usage("assignments", organization_id, db_session)
+
+            results.append(ImportCourseResult(
+                original_uuid=course_uuid,
+                new_uuid=new_course.course_uuid,
+                name=new_course.name,
+                success=True,
+            ))
+            successful += 1
+
+        except Exception as e:
+            # Reset session to a clean state so the next iteration can work
+            await db_session.rollback()
+            results.append(ImportCourseResult(
+                original_uuid=course_uuid,
+                new_uuid="",
+                name="",
+                success=False,
+                error=str(e),
+            ))
+            failed += 1
+
+    # Clean up working directory after import
+    shutil.rmtree(work_dir, ignore_errors=True)
+
+    return ImportResult(
+        total_courses=len(options.course_uuids),
+        successful=successful,
+        failed=failed,
+        courses=results,
+    )
+
+
+async def _import_single_course(
+    course_path: str,
+    organization: Organization,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    options: ImportOptions,
+    db_session: AsyncSession,
+    new_course_uuid: str,
+    library_dirs: Optional[list[str]] = None,
+) -> Course:
+    """
+    Import a single course from the extracted package.
+
+    ``library_dirs`` collects the storage folders of the Library files written,
+    so a failed import can remove them.
+    """
+    if not course_path or ".." in str(course_path).replace("\\", "/").split("/"):
+        raise HTTPException(status_code=400, detail="Invalid course path in package")
+
+    # Load course data
+    with open(os.path.join(course_path, "course.json"), 'r', encoding="utf-8") as f:
+        course_data = json.load(f)
+
+    # Apply name prefix if specified
+    course_name = course_data.get("name", "Untitled Course")
+    if options.name_prefix:
+        course_name = f"{options.name_prefix} {course_name}"
+
+    # Parse thumbnail type
+    thumbnail_type = ThumbnailType.IMAGE
+    if course_data.get("thumbnail_type"):
+        try:
+            thumbnail_type = ThumbnailType(course_data["thumbnail_type"])
+        except ValueError:
+            pass
+
+    # Create new course
+    new_course = Course(
+        org_id=organization.id,
+        name=course_name,
+        description=course_data.get("description", ""),
+        about=course_data.get("about", ""),
+        learnings=course_data.get("learnings", ""),
+        tags=course_data.get("tags", ""),
+        thumbnail_type=thumbnail_type,
+        thumbnail_image="",
+        thumbnail_video="",
+        public=not options.set_private,
+        published=not options.set_unpublished,
+        open_to_contributors=False,
+        course_uuid=new_course_uuid,
+        seo=course_data.get("seo"),
+        extra_metadata=course_data.get("extra_metadata"),
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+
+    # Content paths
+    content_base = "content/orgs"
+    new_course_path = f"{content_base}/{organization.org_uuid}/courses/{new_course_uuid}"
+
+    # Create course directory
+    os.makedirs(f"{new_course_path}/thumbnails", exist_ok=True)
+
+    # Copy thumbnail files
+    source_thumbnails = os.path.join(course_path, "thumbnails")
+    if os.path.exists(source_thumbnails):
+        for filename in os.listdir(source_thumbnails):
+            source_file = os.path.join(source_thumbnails, filename)
+            if os.path.isfile(source_file):
+                # Generate new filename. The stored extension is derived from
+                # the media allowlist, never carried over from the package.
+                ext = safe_stored_extension(filename)
+                if not ext or not file_content_matches_extension(source_file):
+                    continue
+                new_filename = f"{new_course_uuid}_thumbnail_{uuid4()}.{ext}"
+                dest_file = os.path.join(f"{new_course_path}/thumbnails", new_filename)
+                shutil.copy2(source_file, dest_file)
+
+                # Upload to S3 if configured
+                if is_s3_enabled():
+                    if not upload_file_to_s3(f"{new_course_path}/thumbnails/{new_filename}", dest_file):
+                        raise HTTPException(status_code=500, detail="Failed to upload thumbnail to storage")
+
+                # Update course reference
+                if course_data.get("thumbnail_image") and filename == course_data["thumbnail_image"]:
+                    new_course.thumbnail_image = new_filename
+                if course_data.get("thumbnail_video") and filename == course_data["thumbnail_video"]:
+                    new_course.thumbnail_video = new_filename
+
+    # Use flush (not commit) for intermediate entities; the caller manages the transaction
+    db_session.add(new_course)
+    await db_session.flush()
+
+    # Create resource author
+    if isinstance(current_user, APITokenUser):
+        author_user_id = current_user.created_by_user_id
+    else:
+        author_user_id = current_user.id
+
+    resource_author = ResourceAuthor(
+        resource_uuid=new_course.course_uuid,
+        user_id=author_user_id,
+        authorship=ResourceAuthorshipEnum.CREATOR,
+        authorship_status=ResourceAuthorshipStatusEnum.ACTIVE,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+    db_session.add(resource_author)
+    await db_session.flush()
+
+    # Library files the pages download (Office documents, zips...): new
+    # Library items of this organization, referenced by the pages below
+    media_map = await _import_library_media(course_path, organization, author_user_id, db_session,
+                                            written=library_dirs)
+
+    # Import chapters
+    chapters_dir = os.path.join(course_path, "chapters")
+    if os.path.exists(chapters_dir):
+        # Get chapter order from JSON files
+        chapter_items = []
+        for chapter_uuid_dir in os.listdir(chapters_dir):
+            chapter_dir_path = os.path.join(chapters_dir, chapter_uuid_dir)
+            chapter_json_path = os.path.join(chapter_dir_path, "chapter.json")
+            if os.path.isdir(chapter_dir_path) and os.path.exists(chapter_json_path):
+                with open(chapter_json_path, 'r', encoding="utf-8") as f:
+                    chapter_data = json.load(f)
+                chapter_items.append((chapter_uuid_dir, chapter_data))
+
+        # Sort by order
+        chapter_items.sort(key=lambda x: x[1].get("order", 0))
+
+        for original_chapter_uuid, chapter_data in chapter_items:
+            await _import_chapter(
+                chapter_path=os.path.join(chapters_dir, original_chapter_uuid),
+                chapter_data=chapter_data,
+                new_course=new_course,
+                new_course_path=new_course_path,
+                organization=organization,
+                db_session=db_session,
+                media_map=media_map,
+            )
+
+    return new_course
+
+
+async def _import_library_media(
+    course_path: str,
+    organization: Organization,
+    author_user_id: Optional[int],
+    db_session: AsyncSession,
+    written: Optional[list[str]] = None,
+) -> dict[str, tuple[str, dict]]:
+    """Create a Library item for each file under the course's ``library/`` folder.
+
+    Returns ``old media uuid -> (new media uuid, block snapshot)``. Files whose
+    name or content is not an accepted Library upload are left out, exactly as
+    the upload endpoint would refuse them.
+    """
+    mapping: dict[str, tuple[str, dict]] = {}
+    library_dir = package_library_dir(course_path)
+    if not os.path.isdir(library_dir):
+        return mapping
+    for entry in sorted(os.listdir(library_dir)):
+        folder = os.path.join(library_dir, entry)
+        meta_path = os.path.join(folder, "media.json")
+        if not os.path.isfile(meta_path):
+            continue
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        old_uuid = data.get("media_uuid")
+        file_name = data.get("file_name")
+        if not (isinstance(old_uuid, str) and old_uuid.startswith("media_") and isinstance(file_name, str)):
+            continue
+        if os.path.basename(file_name) != file_name or not file_name:
+            continue
+        source = os.path.join(folder, file_name)
+        ext = os.path.splitext(file_name)[1].lower().lstrip(".")
+        if ext not in LIBRARY_EXTENSIONS or not os.path.isfile(source):
+            continue
+        if not 0 < os.path.getsize(source) <= library_max_size(ext):
+            continue
+        canonical = EXT_TO_CANONICAL_MIME.get(f".{ext}")
+        stored_ext = MIME_TO_SAFE_EXT.get(canonical, ext) if canonical else ext
+        if not file_content_matches_extension(source):
+            continue
+
+        # Randomized directory and name, as the upload endpoint does: the
+        # storage path is never derivable from the media uuid
+        new_uuid = f"media_{uuid4()}"
+        stored_name = f"{uuid4()}_media.{stored_ext}"
+        rel_dir = f"orgs/{organization.org_uuid}/media/{secrets.token_urlsafe(16)}"
+        dest_dir = f"content/{rel_dir}"
+        os.makedirs(dest_dir, exist_ok=True)
+        if written is not None:
+            written.append(dest_dir)
+        dest = os.path.join(dest_dir, stored_name)
+        shutil.copy2(source, dest)
+        if is_s3_enabled():
+            if not upload_file_to_s3(dest, dest):
+                raise HTTPException(status_code=500, detail="Failed to upload a library file to storage")
+
+        name = str(data.get("name") or os.path.splitext(file_name)[0])[:255]
+        media = Media(
+            name=name,
+            description=str(data.get("description") or "")[:2000],
+            media_type=MediaTypeEnum.UPLOAD,
+            url="",
+            thumbnail_image="",
+            # Files converted from another LMS carry no flag: course material, public
+            public=bool(data.get("public", True)),
+            org_id=organization.id,
+            media_uuid=new_uuid,
+            file_id=stored_name,
+            storage_key=f"{rel_dir}/{stored_name}",
+            file_format=stored_ext,
+            file_size=os.path.getsize(dest),
+            file_mime=EXT_TO_CANONICAL_MIME.get(f".{stored_ext}", ""),
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        )
+        db_session.add(media)
+        await db_session.flush()
+        if author_user_id:
+            db_session.add(ResourceAuthor(
+                resource_uuid=new_uuid,
+                user_id=author_user_id,
+                authorship=ResourceAuthorshipEnum.CREATOR,
+                authorship_status=ResourceAuthorshipStatusEnum.ACTIVE,
+                creation_date=str(datetime.now()),
+                update_date=str(datetime.now()),
+            ))
+        # At the Library root, where uploads land, so the file is findable
+        db_session.add(FolderContent(
+            folder_id=None,
+            resource_uuid=new_uuid,
+            org_id=organization.id,
+            position=0,
+            creation_date=str(datetime.now()),
+            update_date=str(datetime.now()),
+        ))
+        await db_session.flush()
+        snapshot = {field: getattr(media, field) for field in SNAPSHOT_FIELDS}
+        snapshot["media_type"] = media.media_type.value
+        mapping[old_uuid] = (new_uuid, snapshot)
+    return mapping
+
+
+async def _import_chapter(
+    chapter_path: str,
+    chapter_data: dict,
+    new_course: Course,
+    new_course_path: str,
+    organization: Organization,
+    db_session: AsyncSession,
+    media_map: Optional[dict[str, tuple[str, dict]]] = None,
+) -> Chapter:
+    """
+    Import a chapter and its activities.
+    """
+    new_chapter_uuid = f"chapter_{uuid4()}"
+
+    new_chapter = Chapter(
+        name=chapter_data.get("name", "Untitled Chapter"),
+        description=chapter_data.get("description", ""),
+        thumbnail_image=chapter_data.get("thumbnail_image", ""),
+        chapter_uuid=new_chapter_uuid,
+        org_id=organization.id,
+        course_id=new_course.id,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+        extra_metadata=chapter_data.get("extra_metadata"),
+    )
+
+    db_session.add(new_chapter)
+    await db_session.flush()
+
+    # Create CourseChapter link
+    new_course_chapter = CourseChapter(
+        course_id=new_course.id,
+        chapter_id=new_chapter.id,
+        org_id=organization.id,
+        order=chapter_data.get("order", 0),
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+    db_session.add(new_course_chapter)
+    await db_session.flush()
+
+    # Import activities
+    activities_dir = os.path.join(chapter_path, "activities")
+    if os.path.exists(activities_dir):
+        activity_items = []
+        for activity_uuid_dir in os.listdir(activities_dir):
+            activity_dir_path = os.path.join(activities_dir, activity_uuid_dir)
+            activity_json_path = os.path.join(activity_dir_path, "activity.json")
+            if os.path.isdir(activity_dir_path) and os.path.exists(activity_json_path):
+                with open(activity_json_path, 'r', encoding="utf-8") as f:
+                    activity_data = json.load(f)
+                activity_items.append((activity_uuid_dir, activity_data))
+
+        # Sort by order
+        activity_items.sort(key=lambda x: x[1].get("order", 0))
+
+        for original_activity_uuid, activity_data in activity_items:
+            await _import_activity(
+                activity_path=os.path.join(activities_dir, original_activity_uuid),
+                activity_data=activity_data,
+                new_course=new_course,
+                new_chapter=new_chapter,
+                new_course_path=new_course_path,
+                organization=organization,
+                db_session=db_session,
+                media_map=media_map,
+            )
+
+    return new_chapter
+
+
+async def _import_activity(
+    activity_path: str,
+    activity_data: dict,
+    new_course: Course,
+    new_chapter: Chapter,
+    new_course_path: str,
+    organization: Organization,
+    db_session: AsyncSession,
+    media_map: Optional[dict[str, tuple[str, dict]]] = None,
+) -> Activity:
+    """
+    Import an activity and its blocks/files.
+    """
+    new_activity_uuid = f"activity_{uuid4()}"
+
+    # Parse activity type
+    activity_type = ActivityTypeEnum.TYPE_DYNAMIC
+    if activity_data.get("activity_type"):
+        try:
+            activity_type = ActivityTypeEnum(activity_data["activity_type"])
+        except ValueError:
+            pass
+
+    # Parse activity sub type
+    activity_sub_type = None
+    if activity_data.get("activity_sub_type"):
+        try:
+            activity_sub_type = ActivitySubTypeEnum(activity_data["activity_sub_type"])
+        except ValueError:
+            pass
+
+    # Preserve the visibility rule. Older packages have no lock_type and
+    # default to PUBLIC, matching the previous importer behaviour.
+    lock_type = ActivityLockType.PUBLIC
+    if activity_data.get("lock_type"):
+        try:
+            lock_type = ActivityLockType(activity_data["lock_type"])
+        except ValueError:
+            pass
+
+    # Clone content (will update block references)
+    new_content = dict(activity_data.get("content", {})) if activity_data.get("content") else {}
+    _drop_foreign_file_refs(new_content, new_course_path)
+    # Code blocks keep their SQLite database's full storage key; the package's
+    # files land under the new activity, so re-root keys under the old one.
+    new_content = rewrite_sqlite_db_paths(
+        new_content,
+        os.path.basename(os.path.normpath(activity_path)),
+        f"{new_course_path.removeprefix('content/')}/activities/{new_activity_uuid}",
+    )
+    # Video and PDF activities carry their own uuid in the content
+    if isinstance(new_content.get("activity_uuid"), str):
+        new_content["activity_uuid"] = new_activity_uuid
+    # Library blocks point at the items created from the package's library/
+    rewrite_library_refs(new_content, media_map or {})
+    new_details = dict(activity_data.get("details", {})) if activity_data.get("details") else {}
+
+    new_activity = Activity(
+        name=activity_data.get("name", "Untitled Activity"),
+        activity_type=activity_type,
+        activity_sub_type=activity_sub_type,
+        content=new_content,
+        details=new_details,
+        published=activity_data.get("published", True),
+        lock_type=lock_type,
+        org_id=organization.id,
+        course_id=new_course.id,
+        activity_uuid=new_activity_uuid,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+        extra_metadata=activity_data.get("extra_metadata"),
+    )
+
+    db_session.add(new_activity)
+    await db_session.flush()
+
+    # Create ChapterActivity link
+    new_chapter_activity = ChapterActivity(
+        chapter_id=new_chapter.id,
+        activity_id=new_activity.id,
+        course_id=new_course.id,
+        org_id=organization.id,
+        order=activity_data.get("order", 0),
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+    db_session.add(new_chapter_activity)
+    await db_session.flush()
+
+    assignment_plan = None
+    if activity_type == ActivityTypeEnum.TYPE_ASSIGNMENT:
+        assignment_plan = _load_assignment_plan(activity_path)
+
+    # Copy entire activity files directory (videos, documents, SCORM, dynamic blocks, etc.)
+    new_activity_path = f"{new_course_path}/activities/{new_activity_uuid}"
+    source_files_dir = os.path.join(activity_path, "files")
+
+    if os.path.exists(source_files_dir):
+        # Entry names come from the uploaded package: files whose extension is
+        # not an importable media type are dropped instead of being written
+        # into content/, where they would be served from the API origin.
+        keep_scorm = (
+            activity_type == ActivityTypeEnum.TYPE_SCORM
+            and await _org_may_host_scorm(organization.id, db_session)
+        )
+        shutil.copytree(
+            source_files_dir,
+            new_activity_path,
+            dirs_exist_ok=True,
+            ignore=_package_files_filter(source_files_dir, keep_scorm),
+        )
+        # Assignment task files live under the assignment and task uuids,
+        # which are new as well: move them before anything is uploaded
+        if assignment_plan is not None:
+            _rename_assignment_dirs(new_activity_path, assignment_plan)
+        # Upload to S3 if configured
+        if is_s3_enabled():
+            if not upload_directory_to_s3(new_activity_path, new_activity_path):
+                raise HTTPException(status_code=500, detail="Failed to upload activity files to storage")
+    else:
+        os.makedirs(new_activity_path, exist_ok=True)
+
+    if assignment_plan is not None:
+        await _import_assignment(
+            assignment_plan,
+            new_activity=new_activity,
+            new_course=new_course,
+            new_chapter=new_chapter,
+            new_activity_path=new_activity_path,
+            organization=organization,
+            db_session=db_session,
+        )
+
+    # Import blocks for dynamic activities
+    block_uuid_map = {}
+    all_content_updates = []
+    blocks_dir = os.path.join(activity_path, "blocks")
+
+    if activity_type == ActivityTypeEnum.TYPE_DYNAMIC and os.path.exists(blocks_dir):
+        for original_block_uuid in os.listdir(blocks_dir):
+            block_dir_path = os.path.join(blocks_dir, original_block_uuid)
+            block_json_path = os.path.join(block_dir_path, "block.json")
+
+            if os.path.isdir(block_dir_path) and os.path.exists(block_json_path):
+                with open(block_json_path, 'r', encoding="utf-8") as f:
+                    block_data = json.load(f)
+
+                new_block_uuid, content_updates = await _import_block(
+                    block_data=block_data,
+                    original_block_uuid=original_block_uuid,
+                    new_activity=new_activity,
+                    new_activity_path=new_activity_path,
+                    new_course=new_course,
+                    new_chapter=new_chapter,
+                    organization=organization,
+                    db_session=db_session,
+                )
+
+                block_uuid_map[original_block_uuid] = new_block_uuid
+                all_content_updates.append(content_updates)
+
+        # Update activity content to reference new block UUIDs, file_ids, and activity_uuids
+        if new_content and (block_uuid_map or all_content_updates):
+            content_str = json.dumps(new_content)
+
+            # Replace block UUIDs
+            for old_uuid, new_uuid in block_uuid_map.items():
+                content_str = content_str.replace(f'"{old_uuid}"', f'"{new_uuid}"')
+
+            # Replace file_ids and activity_uuids from content_updates
+            for updates in all_content_updates:
+                if updates.get('file_id'):
+                    old_file_id, new_file_id = updates['file_id']
+                    if old_file_id:
+                        content_str = content_str.replace(f'"{old_file_id}"', f'"{new_file_id}"')
+
+                if updates.get('activity_uuid'):
+                    old_activity_uuid, new_activity_uuid = updates['activity_uuid']
+                    if old_activity_uuid:
+                        content_str = content_str.replace(f'"{old_activity_uuid}"', f'"{new_activity_uuid}"')
+
+            try:
+                new_activity.content = json.loads(content_str)
+                db_session.add(new_activity)
+                await db_session.flush()
+            except json.JSONDecodeError:
+                pass  # Keep original content if parsing fails
+
+    return new_activity
+
+
+async def _import_block(
+    block_data: dict,
+    original_block_uuid: str,
+    new_activity: Activity,
+    new_activity_path: str,
+    new_course: Course,
+    new_chapter: Chapter,
+    organization: Organization,
+    db_session: AsyncSession,
+) -> tuple[str, dict]:
+    """
+    Import a block and rename its files.
+    Returns tuple of (new_block_uuid, content_updates) where content_updates contains
+    the old and new values for updating activity content.
+    """
+    new_block_uuid = f"block_{uuid4()}"
+
+    # Parse block type
+    block_type = BlockTypeEnum.BLOCK_CUSTOM
+    if block_data.get("block_type"):
+        try:
+            block_type = BlockTypeEnum(block_data["block_type"])
+        except ValueError:
+            pass
+
+    # Clone block content
+    new_block_content = dict(block_data.get("content", {})) if block_data.get("content") else {}
+    _drop_foreign_file_refs(new_block_content, new_activity_path.split("/activities/", 1)[0])
+
+    # Track what needs to be updated in activity content
+    content_updates = {
+        'block_uuid': (original_block_uuid, new_block_uuid),
+        'activity_uuid': None,
+        'file_id': None,
+    }
+
+    # Get old activity_uuid before updating
+    old_activity_uuid = new_block_content.get('activity_uuid')
+
+    # Update activity_uuid reference
+    if 'activity_uuid' in new_block_content:
+        content_updates['activity_uuid'] = (old_activity_uuid, new_activity.activity_uuid)
+        new_block_content['activity_uuid'] = new_activity.activity_uuid
+
+    # Determine block type folder and rename copied folder from old UUID to new UUID
+    block_type_folder = _get_block_type_folder(block_type.value)
+
+    if block_type_folder:
+        # The copytree already copied files with old UUIDs, we need to rename folders
+        old_copied_block_path = f"{new_activity_path}/dynamic/blocks/{block_type_folder}/{original_block_uuid}"
+        new_block_path = f"{new_activity_path}/dynamic/blocks/{block_type_folder}/{new_block_uuid}"
+
+        if os.path.exists(old_copied_block_path):
+            # Rename the folder to use new block UUID
+            os.rename(old_copied_block_path, new_block_path)
+
+            # Rename files inside the folder and update file references
+            if os.path.exists(new_block_path):
+                for filename in os.listdir(new_block_path):
+                    old_file_path = f"{new_block_path}/{filename}"
+                    if os.path.isfile(old_file_path):
+                        # Get old file_id before renaming
+                        old_file_id = new_block_content.get('file_id')
+
+                        # Drop anything the package named with a non-media
+                        # extension rather than republishing it under content/.
+                        file_ext = safe_stored_extension(filename)
+                        if not file_ext:
+                            os.remove(old_file_path)
+                            continue
+
+                        # Generate new file ID (UUID without prefix, matching URL structure)
+                        new_file_id = str(uuid4())
+                        new_filename = f"{new_file_id}.{file_ext}"
+                        new_file_path = f"{new_block_path}/{new_filename}"
+                        os.rename(old_file_path, new_file_path)
+
+                        # Upload renamed file to S3 and clean up old key
+                        if is_s3_enabled():
+                            if not upload_file_to_s3(new_file_path, new_file_path):
+                                raise HTTPException(status_code=500, detail="Failed to upload block file to storage")
+                            # Delete the old S3 key (uploaded with old UUID before rename)
+                            old_s3_key = f"{new_activity_path}/dynamic/blocks/{block_type_folder}/{original_block_uuid}/{filename}"
+                            delete_storage_file(old_s3_key)
+
+                        # Update file reference in block content
+                        if 'file_id' in new_block_content:
+                            content_updates['file_id'] = (old_file_id, new_file_id)
+                            new_block_content['file_id'] = new_file_id
+                        # The stored extension is canonicalized (a .jpeg lands
+                        # as .jpg), and the frontend builds its URL as
+                        # file_id + "." + file_format, so a stale format here
+                        # requests a filename that does not exist.
+                        if new_block_content.get('file_format') != file_ext:
+                            new_block_content['file_format'] = file_ext
+
+    new_block = Block(
+        block_type=block_type,
+        content=new_block_content,
+        org_id=organization.id,
+        course_id=new_course.id,
+        chapter_id=new_chapter.id,
+        activity_id=new_activity.id,
+        block_uuid=new_block_uuid,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+
+    db_session.add(new_block)
+    await db_session.flush()
+
+    return new_block_uuid, content_updates
+
+
+# ---------------------------------------------------------------------------
+# Assignments
+#
+# A package may ship ``assignment.json`` next to an assignment activity: the
+# assignment settings and its tasks, answer keys included (packages produced by
+# the LMS converter do; plain course exports don't carry assignments). Task
+# reference files sit under files/assignments/<assignment>/tasks/<task>/.
+# ---------------------------------------------------------------------------
+
+# Hard cap so a package cannot create an unbounded number of rows per activity
+MAX_TASKS_PER_ASSIGNMENT = 500
+
+_ASSIGNMENT_BOOL_FIELDS = (
+    "published", "auto_grading", "anti_copy_paste", "show_correct_answers", "allow_retries", "ungraded",
+)
+_PACKAGE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
+
+
+class _AssignmentPlan:
+    """assignment.json, validated, with the uuids the import will use."""
+
+    def __init__(self, old_uuid: str, data: dict, tasks: list[tuple[str, str, dict]]):
+        self.old_uuid = old_uuid
+        self.new_uuid = f"assignment_{uuid4()}"
+        self.data = data
+        # (old task key, new task uuid, task dict)
+        self.tasks = tasks
+
+
+def _load_assignment_plan(activity_path: str) -> Optional[_AssignmentPlan]:
+    path = os.path.join(activity_path, "assignment.json")
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, dict) or not isinstance(raw.get("assignment"), dict):
+        return None
+    old_uuid = raw.get("assignment_uuid")
+    if not isinstance(old_uuid, str) or not _PACKAGE_KEY_RE.match(old_uuid):
+        old_uuid = raw["assignment"].get("assignment_uuid")
+    if not isinstance(old_uuid, str) or not _PACKAGE_KEY_RE.match(old_uuid):
+        old_uuid = ""
+    tasks = []
+    for task in (raw.get("tasks") or [])[:MAX_TASKS_PER_ASSIGNMENT]:
+        if not isinstance(task, dict):
+            continue
+        old_key = task.get("assignment_task_uuid")
+        if not isinstance(old_key, str) or not _PACKAGE_KEY_RE.match(old_key):
+            old_key = ""
+        tasks.append((old_key, f"assignmenttask_{uuid4()}", task))
+    return _AssignmentPlan(old_uuid, raw["assignment"], tasks)
+
+
+def _rename_assignment_dirs(new_activity_path: str, plan: _AssignmentPlan) -> None:
+    """Move copied task files from the package keys to the new uuids."""
+    base = os.path.join(new_activity_path, "assignments")
+    if not plan.old_uuid or not os.path.isdir(os.path.join(base, plan.old_uuid)):
+        return
+    old_assignment_dir = os.path.join(base, plan.old_uuid)
+    new_assignment_dir = os.path.join(base, plan.new_uuid)
+    os.rename(old_assignment_dir, new_assignment_dir)
+    tasks_dir = os.path.join(new_assignment_dir, "tasks")
+    for old_key, new_key, _task in plan.tasks:
+        if old_key and os.path.isdir(os.path.join(tasks_dir, old_key)):
+            os.rename(os.path.join(tasks_dir, old_key), os.path.join(tasks_dir, new_key))
+    # Anything else that is neither the tasks nor the model answer is not
+    # referenced by any row. Solution documents are course content and stay.
+    for entry in os.listdir(new_assignment_dir):
+        if entry not in ("tasks", "solution"):
+            shutil.rmtree(os.path.join(new_assignment_dir, entry), ignore_errors=True)
+    if os.path.isdir(tasks_dir):
+        kept = {new_key for _old, new_key, _t in plan.tasks}
+        for entry in os.listdir(tasks_dir):
+            entry_path = os.path.join(tasks_dir, entry)
+            if entry not in kept:
+                shutil.rmtree(entry_path, ignore_errors=True)
+            else:
+                # Learner submissions never come from a package
+                shutil.rmtree(os.path.join(entry_path, "subs"), ignore_errors=True)
+
+
+def _str_field(value, default: str = "", limit: int = 100_000) -> str:
+    return value[:limit] if isinstance(value, str) else default
+
+
+def _assignment_fields(data: dict) -> dict:
+    fields: dict = {
+        "title": _str_field(data.get("title"), "Assignment", 500) or "Assignment",
+        "description": _str_field(data.get("description")),
+        "due_date": data.get("due_date") if isinstance(data.get("due_date"), str) and data.get("due_date") else None,
+        "solution": _str_field(data.get("solution")) or None,
+    }
+    for key in _ASSIGNMENT_BOOL_FIELDS:
+        fields[key] = bool(data.get(key, False))
+    try:
+        fields["grading_type"] = GradingTypeEnum(data.get("grading_type"))
+    except ValueError:
+        fields["grading_type"] = GradingTypeEnum.PERCENTAGE
+    try:
+        fields["solution_reveal"] = SolutionRevealEnum(data.get("solution_reveal") or "NEVER")
+    except ValueError:
+        fields["solution_reveal"] = SolutionRevealEnum.NEVER
+    retries = data.get("max_retries")
+    fields["max_retries"] = retries if isinstance(retries, int) and 0 <= retries <= 1000 else 0
+    threshold = data.get("pass_threshold_percentage")
+    fields["pass_threshold_percentage"] = (
+        float(threshold) if isinstance(threshold, (int, float)) and 0 <= threshold <= 100 else None
+    )
+    if fields["ungraded"]:
+        fields["auto_grading"] = False
+    return fields
+
+
+async def _import_assignment(
+    plan: _AssignmentPlan,
+    new_activity: Activity,
+    new_course: Course,
+    new_chapter: Chapter,
+    new_activity_path: str,
+    organization: Organization,
+    db_session: AsyncSession,
+) -> Assignment:
+    try:
+        await check_limits_with_usage("assignments", organization.id, db_session)
+    except HTTPException as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=f"Cannot import assignment '{new_activity.name}': {e.detail}",
+        )
+    now = str(datetime.now())
+    assignment = Assignment(
+        **_assignment_fields(plan.data),
+        assignment_uuid=plan.new_uuid,
+        org_id=organization.id,
+        course_id=new_course.id,
+        chapter_id=new_chapter.id,
+        activity_id=new_activity.id,
+        creation_date=now,
+        update_date=now,
+    )
+    solution_file = plan.data.get("solution_file")
+    if not (
+        isinstance(solution_file, str)
+        and solution_file
+        and "/" not in solution_file
+        and "\\" not in solution_file
+        and solution_file not in (".", "..")
+        and safe_stored_extension(solution_file)
+        and os.path.isfile(os.path.join(
+            new_activity_path, "assignments", plan.new_uuid, "solution", solution_file,
+        ))
+    ):
+        solution_file = None
+    if solution_file:
+        assignment.solution_file = solution_file
+    db_session.add(assignment)
+    await db_session.flush()
+
+    tasks_dir = os.path.join(
+        f"{new_course.course_uuid}", "activities", new_activity.activity_uuid,
+        "assignments", plan.new_uuid, "tasks",
+    )
+    order = 0
+    for _old_key, new_key, task in plan.tasks:
+        try:
+            task_type = AssignmentTaskTypeEnum(task.get("assignment_type"))
+        except ValueError:
+            continue
+        contents = task.get("contents") if isinstance(task.get("contents"), dict) else {}
+        max_grade = task.get("max_grade_value", 100)
+        if not isinstance(max_grade, int) or max_grade < 0:
+            max_grade = 100
+        reference_file = task.get("reference_file")
+        if not (
+            isinstance(reference_file, str)
+            and reference_file
+            and "/" not in reference_file
+            and "\\" not in reference_file
+            and reference_file not in (".", "..")
+            and safe_stored_extension(reference_file)
+            and os.path.isfile(os.path.join(
+                f"content/orgs/{organization.org_uuid}/courses", tasks_dir, new_key, reference_file,
+            ))
+        ):
+            reference_file = None
+        db_session.add(AssignmentTask(
+            title=_str_field(task.get("title"), "Task", 500) or "Task",
+            description=_str_field(task.get("description")),
+            hint=_str_field(task.get("hint")),
+            reference_file=reference_file,
+            assignment_type=task_type,
+            contents=contents,
+            max_grade_value=max_grade,
+            assignment_task_uuid=new_key,
+            order=order,
+            assignment_id=assignment.id,
+            org_id=organization.id,
+            course_id=new_course.id,
+            chapter_id=new_chapter.id,
+            activity_id=new_activity.id,
+            creation_date=now,
+            update_date=now,
+        ))
+        order += 1
+    await db_session.flush()
+    return assignment
+
+
+# Content keys that may carry a full storage key instead of a bare file name.
+_FILE_REF_KEYS = ("file_id", "uri", "file_path")
+
+
+def _drop_foreign_file_refs(content: dict, new_course_path: str) -> dict:
+    """Drop storage-key references that point outside the imported course.
+
+    Packaged files are re-rooted under ``new_course_path``, so a path-like
+    reference anywhere else can't be backed by the package: it names some
+    other course's (or org's) file, which indexing or later copies would then
+    read on the importer's behalf. Bare file names (no slash) are left alone.
+    """
+    own = (f"{new_course_path}/", f"{new_course_path.removeprefix('content/')}/")
+    for key in _FILE_REF_KEYS:
+        value = content.get(key)
+        # An external video's ``uri`` is the YouTube/Vimeo page, not a storage key
+        if key == "uri" and isinstance(value, str) and value.lower().startswith(("https://", "http://")):
+            continue
+        if isinstance(value, str) and ("/" in value or "\\" in value):
+            if ".." in value or not value.startswith(own):
+                content.pop(key)
+    return content
+
+
+def _get_block_type_folder(block_type: str) -> Optional[str]:
+    """
+    Get the folder name for a block type.
+    """
+    block_type_folders = {
+        "BLOCK_VIDEO": "videoBlock",
+        "BLOCK_IMAGE": "imageBlock",
+        "BLOCK_DOCUMENT_PDF": "pdfBlock",
+        "BLOCK_AUDIO": "audioBlock",
+    }
+    return block_type_folders.get(block_type)
+
+
+def cleanup_old_temp_imports(max_age_minutes: int = 30):
+    """Clean up temporary import packages older than max_age_minutes"""
+    if not os.path.exists(TEMP_IMPORT_DIR):
+        return
+
+    current_time = time.time()
+    max_age_seconds = max_age_minutes * 60
+
+    for package_id in os.listdir(TEMP_IMPORT_DIR):
+        package_dir = os.path.join(TEMP_IMPORT_DIR, package_id)
+        if os.path.isdir(package_dir):
+            # Check modification time
+            mtime = os.path.getmtime(package_dir)
+            if current_time - mtime > max_age_seconds:
+                shutil.rmtree(package_dir, ignore_errors=True)

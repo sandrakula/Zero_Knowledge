@@ -1,0 +1,248 @@
+import React, { useEffect, useState } from 'react'
+import { getUriWithOrg } from '@services/config/config'
+import { useParams } from 'next/navigation'
+import { useTranslation } from 'react-i18next'
+import { getUserAvatarMediaDirectory } from '@services/media/media'
+import { useLHSession } from '@components/Contexts/LHSessionContext'
+import UserProfilePopup from './UserProfilePopup'
+import { getUserByUsername, getUser } from '@services/users/users'
+import {
+  AVATAR_FRAMES,
+  usePersonalization,
+  type AvatarFrameId,
+  type AvatarShapeId,
+} from '@/lib/theme'
+
+type UserAvatarProps = {
+  width?: number
+  avatar_url?: string
+  use_with_session?: boolean
+  rounded?: 'rounded-md' | 'rounded-xl' | 'rounded-lg' | 'rounded-full' | 'rounded'
+  border?: 'border-2' | 'border-4' | 'border-8'
+  borderColor?: string
+  predefined_avatar?: 'ai' | 'empty'
+  backgroundColor?: 'bg-white' | 'bg-gray-100'
+  showProfilePopup?: boolean
+  userId?: string
+  username?: string
+  shadow?: string
+  frameOverride?: AvatarFrameId
+  shapeOverride?: AvatarShapeId
+  emojiOverride?: string
+  showStatusEmoji?: boolean
+}
+
+function UserAvatar(props: UserAvatarProps) {
+  const { t } = useTranslation()
+  const session = useLHSession() as any
+  const access_token = session?.data?.tokens?.access_token
+  const params = useParams() as any
+  const [userData, setUserData] = useState<any>(null)
+  const [erroredUrl, setErroredUrl] = useState<string | null>(null)
+  const { mounted, personalization } = usePersonalization()
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      // Skip fetching if no access token (user not authenticated)
+      if (!access_token) return
+      // Skip fetching if avatar is already determined; the popup will fetch its own data
+      if (props.avatar_url || props.predefined_avatar) return
+
+      if (props.username) {
+        try {
+          const data = await getUserByUsername(props.username, access_token)
+          setUserData(data)
+        } catch (error) {
+          console.error('Error fetching user by username:', error)
+        }
+      } else if (props.userId) {
+        try {
+          const data = await getUser(props.userId, access_token)
+          setUserData(data)
+        } catch (error) {
+          console.error('Error fetching user by ID:', error)
+        }
+      }
+    }
+
+    fetchUserData()
+  }, [props.username, props.userId, access_token, props.avatar_url, props.predefined_avatar])
+
+  const isExternalUrl = (url: string): boolean => {
+    return url.startsWith('http://') || url.startsWith('https://')
+  }
+
+  const extractExternalUrl = (url: string): string | null => {
+    // Check if the URL contains an embedded external URL
+    const matches = url.match(/avatars\/(https?:\/\/[^/]+.*$)/)
+    if (matches && matches[1]) {
+      return matches[1]
+    }
+    return null
+  }
+
+  const getAvatarUrl = (): string => {
+    // If predefined avatar is specified
+    if (props.predefined_avatar) {
+      const avatarType = props.predefined_avatar === 'ai' ? 'ai_avatar.png' : 'empty_avatar.png'
+      return getUriWithOrg(params.orgslug, `/${avatarType}`)
+    }
+
+    // If avatar_url prop is provided
+    if (props.avatar_url) {
+      // Check if it's a malformed URL (external URL processed through getUserAvatarMediaDirectory)
+      const extractedUrl = extractExternalUrl(props.avatar_url)
+      if (extractedUrl) {
+        return extractedUrl
+      }
+      // If it's a direct external URL
+      if (isExternalUrl(props.avatar_url)) {
+        return props.avatar_url
+      }
+      // Otherwise use as is
+      return props.avatar_url
+    }
+
+    // If we have user data from userId/username fetch
+    if (userData?.avatar_image) {
+      const avatarUrl = userData.avatar_image
+      // If it's an external URL (e.g., from Google, Facebook, etc.), use it directly
+      if (isExternalUrl(avatarUrl)) {
+        return avatarUrl
+      }
+      // Otherwise, get the local avatar URL
+      return getUserAvatarMediaDirectory(userData.user_uuid, avatarUrl)
+    }
+
+    // If a specific userId or username was requested but user has no avatar,
+    // don't fall back to session avatar - use empty avatar instead
+    if (props.userId || props.username) {
+      return getUriWithOrg(params.orgslug, '/empty_avatar.png')
+    }
+
+    // Only use session avatar when no specific user is requested
+    if (session?.data?.user?.avatar_image) {
+      const avatarUrl = session.data.user.avatar_image
+      // If it's an external URL (e.g., from Google, Facebook, etc.), use it directly
+      if (isExternalUrl(avatarUrl)) {
+        return avatarUrl
+      }
+      // Otherwise, get the local avatar URL
+      return getUserAvatarMediaDirectory(session.data.user.user_uuid, avatarUrl)
+    }
+
+    // Fallback to empty avatar
+    return getUriWithOrg(params.orgslug, '/empty_avatar.png')
+  }
+
+  const emptyAvatarUrl = getUriWithOrg(params.orgslug, '/empty_avatar.png')
+  const resolvedAvatarUrl = getAvatarUrl()
+  // Tracking the failed URL (rather than a boolean) resets automatically when
+  // the resolved source changes, avoiding a setState-in-effect.
+  const hasError = erroredUrl === resolvedAvatarUrl
+
+  const size = props.width ?? 50
+  const sessionUser = session?.data?.user
+  const isCurrentUser =
+    !props.predefined_avatar &&
+    ((!props.userId && !props.username) ||
+      (sessionUser &&
+        ((props.userId && String(props.userId) === String(sessionUser.id)) ||
+          (props.username && props.username === sessionUser.username))))
+
+  const activeFrameId =
+    props.frameOverride ?? (mounted && isCurrentUser ? personalization.avatarFrame : 'none')
+  const activeShapeId =
+    props.shapeOverride ?? (mounted && isCurrentUser ? personalization.avatarShape : undefined)
+  const activeEmoji =
+    props.emojiOverride ?? (mounted && isCurrentUser ? personalization.statusEmoji : '')
+
+  const frameOption = AVATAR_FRAMES.find((f) => f.id === activeFrameId)
+  const hasFrame = Boolean(frameOption && frameOption.id !== 'none' && frameOption.gradient)
+
+  const shapeClass =
+    activeShapeId === 'circle'
+      ? 'rounded-full'
+      : activeShapeId === 'squircle'
+        ? 'rounded-[30%]'
+        : activeShapeId === 'rounded'
+          ? 'rounded-xl'
+          : (props.rounded ?? 'rounded-xl')
+
+  const rawImage = (
+    <img
+      alt={t('user.avatar_alt')}
+      width={size}
+      height={size}
+      // Inline size: Tailwind can't compile w-[${size}px] built at runtime
+      style={{ width: size, height: size }}
+      src={hasError ? emptyAvatarUrl : resolvedAvatarUrl}
+      onError={() => {
+        // Fall back to the empty avatar placeholder when the image fails to load
+        if (resolvedAvatarUrl !== emptyAvatarUrl) {
+          setErroredUrl(resolvedAvatarUrl)
+        }
+      }}
+      className={`
+        ${props.avatar_url && session?.data?.user?.avatar_image ? '' : 'bg-gray-700'}
+        ${!hasFrame && props.border ? `border ${props.border}` : ''}
+        ${!hasFrame ? (props.borderColor ?? 'border-white') : ''}
+        ${props.backgroundColor ?? 'bg-gray-100'}
+        ${!hasFrame ? (props.shadow ?? 'shadow-md shadow-gray-300/45') : ''}
+        aspect-square
+        shrink-0
+        object-cover
+        ${shapeClass}
+      `}
+    />
+  )
+
+  const showEmojiBadge = Boolean(activeEmoji && (props.showStatusEmoji || size >= 44))
+  const pad = size >= 72 ? 3.5 : size >= 44 ? 2.5 : 2
+
+  const avatarElement =
+    hasFrame || showEmojiBadge ? (
+      <span
+        className={`relative inline-flex shrink-0 items-center justify-center ${shapeClass}`}
+        style={
+          hasFrame
+            ? {
+                padding: `${pad}px`,
+                background: frameOption?.gradient,
+                boxShadow: frameOption?.glow,
+              }
+            : undefined
+        }
+      >
+        {rawImage}
+        {showEmojiBadge && (
+          <span
+            className="pointer-events-none absolute -bottom-1 -end-1 flex items-center justify-center rounded-full border border-neutral-200 bg-white shadow-sm"
+            style={{
+              width: size >= 72 ? 26 : 20,
+              height: size >= 72 ? 26 : 20,
+              fontSize: size >= 72 ? 14 : 11,
+              lineHeight: 1,
+            }}
+            title={mounted && isCurrentUser ? personalization.statusText || activeEmoji : activeEmoji}
+          >
+            {activeEmoji}
+          </span>
+        )}
+      </span>
+    ) : (
+      rawImage
+    )
+
+  if (props.showProfilePopup && (props.userId || userData?.id)) {
+    return (
+      <UserProfilePopup userId={props.userId || userData?.id}>
+        {avatarElement}
+      </UserProfilePopup>
+    )
+  }
+
+  return avatarElement
+}
+
+export default UserAvatar

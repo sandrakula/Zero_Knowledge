@@ -1,0 +1,75 @@
+---
+description: "Build a Zapier integration on the LearnHouse REST Hook endpoints: API token auth, trigger catalogue, dropdown sources and event subscriptions."
+---
+
+import { Callout } from '@/components/mdx'
+
+# Zapier
+
+LearnHouse ships the API that a Zapier integration needs: an auth test, a trigger catalogue, dropdown sources and REST Hook subscriptions. A Zap subscribes to one LearnHouse event, and LearnHouse pushes that event to Zapier through the same pipeline as [Webhooks](/platform/automations/webhooks).
+
+<Callout type="info">
+The Zapier endpoints need the **Pro plan** or higher. The LearnHouse app in Zapier's directory is not live yet, so the dashboard does not show a Zapier card or list Zapier subscriptions. This page documents the endpoints for integrators.
+</Callout>
+
+## Authentication
+
+Every Zapier endpoint takes an API token, never a browser session:
+
+```http
+Authorization: Bearer lh_your_api_token
+```
+
+Create the token under **Developers → API Access** with **Create Token**. The token is shown once, so copy it right away. See [API Authentication](/developers/api/authentication).
+
+The token decides what the integration can see:
+
+| To use | The token needs |
+| --- | --- |
+| `/courses` dropdown | **Courses** read |
+| `/users` dropdown | **Users (Admin API)** read |
+| `/usergroups` dropdown | **User Groups** read |
+| Subscriptions (create and list) | **Users (Admin API)** read, read on the event's resource, and a creator who is an organization admin |
+
+For subscriptions, the event's resource is: courses for `course_*` and `activity_*` events, assignments for `assignment_*`, certifications for `certificate_*`, folders for `folder_*` and user groups for `usergroup_*`.
+
+## How subscriptions work
+
+Zapier uses the **REST Hooks** pattern:
+
+1. When a Zap is turned on, Zapier calls `POST /api/v1/integrations/zapier/subscriptions` with its callback URL (`target_url`), one `event` name and, optionally, `zap_id` and `zap_name`.
+2. LearnHouse stores the subscription as a webhook endpoint tagged `source = "zapier"` and starts delivering that event to the callback URL.
+3. When the Zap is turned off or deleted, Zapier calls `DELETE /api/v1/integrations/zapier/subscriptions/{id}`.
+
+Deliveries use the same envelope, retries, SSRF guard and delivery logging as manual webhooks. The signing secret is never returned to Zapier.
+
+Zapier subscriptions count toward the limit of **20 webhook endpoints per organization**, and creating one shares the webhook creation rate limit (20 per hour per organization).
+
+## Endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/integrations/zapier/me` | Auth test. Returns the organization (id, name, slug) and the token (id, name). |
+| `GET` | `/api/v1/integrations/zapier/events` | The full [event registry](/platform/automations/events) with schemas |
+| `GET` | `/api/v1/integrations/zapier/courses` | Courses for dynamic dropdowns |
+| `GET` | `/api/v1/integrations/zapier/users` | Users for dynamic dropdowns |
+| `GET` | `/api/v1/integrations/zapier/usergroups` | User groups for dynamic dropdowns |
+| `POST` | `/api/v1/integrations/zapier/subscriptions` | Subscribe a callback URL to one event |
+| `GET` | `/api/v1/integrations/zapier/subscriptions` | List the organization's Zapier subscriptions, active or not |
+| `DELETE` | `/api/v1/integrations/zapier/subscriptions/{id}` | Remove a subscription. The token's creator must be an organization admin. |
+
+The list endpoints take a `limit` parameter (default 100, maximum 500). The organization comes from the token, so no `org_id` appears in the URL.
+
+## Running LearnHouse actions from Zapier
+
+To act on LearnHouse from another app (enroll a user, mark an activity or course complete, look someone up), call the headless Admin API at `/api/v1/admin/{org_slug}/...` with an API token. See the [API Reference](/reference).
+
+## Troubleshooting
+
+| Error | Cause |
+| --- | --- |
+| `401` "Zapier endpoints require an API token (Authorization: Bearer lh_...)" | The request used a session cookie or no token. Send an `lh_` token. |
+| `403` "Zapier integration requires a Pro plan or higher" | Upgrade the organization's plan. |
+| `403` "API token does not have 'read' permission for ..." | Add the missing read permission to the token. |
+| `400` "Unknown event: ..." | The event name is not in the registry. Check `/events`. |
+| `400` on subscribe, mentioning the target URL | The callback URL resolves to a private or internal address (SSRF guard). |

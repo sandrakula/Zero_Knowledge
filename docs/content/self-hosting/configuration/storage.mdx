@@ -1,0 +1,78 @@
+---
+description: Choose where a self-hosted LearnHouse instance stores uploaded content, either a local Docker volume or S3-compatible storage such as AWS S3, R2 or MinIO.
+---
+
+import { Callout } from '@/components/mdx'
+
+# Content Storage
+
+LearnHouse supports two storage backends for uploaded content such as images, videos, and documents.
+
+<CloudCta variant="selfhost">LearnHouse Cloud stores your media for you.</CloudCta>
+
+## Storage Options
+
+### Filesystem (Default)
+
+By default, uploaded content is stored on the local filesystem using a Docker volume. This is the simplest option and works well for small to medium deployments.
+
+```env
+LEARNHOUSE_CONTENT_DELIVERY_TYPE=filesystem
+```
+
+Content is persisted in a named Docker volume (`learnhouse_content_<id>` in `docker-compose.yml`, mounted at `/app/api/content` in the app container), so it survives container restarts and recreation. The `learnhouse backup` command includes filesystem content in its backups.
+
+### S3-Compatible Storage
+
+For production deployments or when you need scalable storage, you can use any S3-compatible storage service:
+
+- **AWS S3**
+- **CloudFlare R2**
+- **MinIO** (self-hosted)
+- Any other S3-compatible provider
+
+```env
+LEARNHOUSE_CONTENT_DELIVERY_TYPE=s3api
+LEARNHOUSE_S3_API_BUCKET_NAME=learnhouse-content
+LEARNHOUSE_S3_API_ENDPOINT_URL=https://s3.amazonaws.com
+```
+
+For providers that check the region (AWS S3, MinIO), also set it. The default, `auto`, suits Cloudflare R2:
+
+```env
+LEARNHOUSE_S3_API_REGION=eu-west-1
+```
+
+After updating your storage configuration, apply it (this recreates the containers whose configuration changed):
+
+```bash
+npx learnhouse start
+```
+
+<Callout type="info">
+Make sure the bucket exists and the credentials have read/write permissions. The API uses the standard AWS credential chain, so set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`, or use an instance role.
+</Callout>
+
+## Choosing a Storage Backend
+
+| Consideration | Filesystem | S3-Compatible |
+|---|---|---|
+| Setup complexity | Simple, works out of the box | Requires external service or additional container |
+| Scalability | Limited by server disk | Virtually unlimited |
+| Backup | Included in `learnhouse backup` | Managed separately by your storage provider |
+| Cost | Included with your server | Varies by provider |
+| Redundancy | Single disk, no redundancy | Built-in redundancy (provider-dependent) |
+
+For most self-hosted installations starting out, filesystem storage is a good default. You can migrate to S3-compatible storage later as your needs grow.
+
+## Using MinIO for Self-Hosted S3
+
+If you want S3-compatible storage without relying on a cloud provider, you can run MinIO alongside LearnHouse. MinIO provides an S3-compatible API on your own infrastructure.
+
+Configure the endpoint URL to point to your MinIO instance:
+
+```env
+LEARNHOUSE_CONTENT_DELIVERY_TYPE=s3api
+LEARNHOUSE_S3_API_BUCKET_NAME=learnhouse-content
+LEARNHOUSE_S3_API_ENDPOINT_URL=http://minio:9000
+```

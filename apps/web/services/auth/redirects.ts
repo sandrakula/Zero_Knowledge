@@ -1,0 +1,75 @@
+'use client'
+import { getConfig } from '@services/config/config'
+import { safeHref, safeInternalPath } from '@services/security/url'
+import { homePathForSession } from '@/lib/auth/home'
+
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m = document.cookie.match(new RegExp('(?:^|; )' + escaped + '=([^;]*)'))
+  try {
+    return m ? decodeURIComponent(m[1]) : null
+  } catch {
+    return null
+  }
+}
+
+// The configured org top-domain (e.g. "learnhouse.io"), so we can allow safe
+// redirects to org subdomains while still blocking external origins.
+function topDomain(): string | null {
+  const t =
+    getConfig('NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN') ||
+    getConfig('NEXT_PUBLIC_LEARNHOUSE_DOMAIN') ||
+    readCookie('LH_top_domain') ||
+    ''
+  return t ? t.replace(/^\./, '').split(':')[0] : null
+}
+
+/**
+ * Returns `target` only when it is SAFE to navigate to, otherwise `fallback`.
+ * Safe = a relative path, or an http(s) URL on the same host or a subdomain of
+ * the configured org top-domain (e.g. *.learnhouse.io). Blocks external origins,
+ * protocol-relative `//evil.com`, and `javascript:`/`data:` schemes, closing
+ * the open-redirect holes on attacker-supplied callbackUrl / returnOrigin.
+ */
+export function safeRedirectUrl(target: string | null | undefined, fallback = '/'): string {
+  if (!target || typeof target !== 'string') return fallback
+  const t = target.trim()
+  if (safeHref(target) === '#') return fallback
+  if (t.startsWith('/')) return safeInternalPath(target, fallback)
+  if (typeof window === 'undefined') return fallback
+  try {
+    const u = new URL(t, window.location.origin)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return fallback
+    if (u.username || u.password) return fallback
+    if (u.origin === window.location.origin) return t
+    if (window.location.protocol === 'https:' && u.protocol !== 'https:') return fallback
+    const top = topDomain()
+    const host = u.hostname.toLowerCase()
+    if (top && u.port === window.location.port && (host === top || host.endsWith('.' + top))) return t
+  } catch {
+    return fallback
+  }
+  return fallback
+}
+
+/**
+ * Where an auth flow (login, signup, email verification) lands when nothing
+ * asked for a specific page. On a school's own host (subdomain, custom domain,
+ * single tenancy) the page has an org and the user belongs to that school, so
+ * they land on its home page. Only the org-less apex goes to the platform hub.
+ */
+export function defaultPostAuthPath(org: unknown): string {
+  return org ? '/' : '/home'
+}
+
+/**
+ * Landing page after a successful sign-in, by role.
+ *
+ * Admin and Instructor both work from the dashboard; a learner gets the
+ * lightweight cabinet. The role list comes from GET /users/session, whose
+ * entries look like `{ role: { role_uuid, ... } }`.
+ */
+export function postAuthPathForSession(session: any): string {
+  return homePathForSession(session)
+}

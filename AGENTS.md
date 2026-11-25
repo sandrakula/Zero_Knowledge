@@ -1,0 +1,10 @@
+# Repository guidance
+
+- This repo has independent app/package workspaces, not a root JS workspace. Use the Bun version in `.bun-version` and run `bun install --frozen-lockfile` from the workspace you are changing.
+- Main boundaries: `apps/web` is the Next.js UI, `apps/api` is the FastAPI backend, `apps/collab` is the Yjs/Hocuspocus server, `apps/cli` is the self-hosting/development CLI, and `packages` holds the SDK, React, and Vue packages.
+- Before changing web code, read [`apps/web/AGENTS.md`](apps/web/AGENTS.md); it contains generated Next.js guidance. Run `bunx next typegen` before `bunx tsc --noEmit` in `apps/web`. `bun run lint` masks ESLint failures; use `bun run lint:strict -- <files>` for a strict focused check.
+- In `apps/api`, use `uv` with Python `>=3.14.7,<3.14.8`. Run a focused test with `uv run pytest <test-file-or-node>`; CI's full test command is `uv run pytest src/tests/ -n auto --dist worksteal -q --tb=short --durations=25 --cov=src --cov-report=html --cov-report=term-missing:skip-covered --cov-report=xml:coverage.xml`. Full video coverage requires `ffmpeg`. Ruff: `pipx run ruff==0.15.9 check ./apps/api`.
+- API schema changes must include and verify Alembic migrations: SQLite unit tests do not exercise PostgreSQL-specific schema behavior, so CI also tests migrations against PostgreSQL.
+- In `apps/cli`, `bun run test` builds before running unit tests; `bun run test:integration` needs Docker. `apps/e2e` boots a self-hosted instance and drives it with Playwright, so its acceptance suite also needs Docker and Chromium.
+- `packages` builds React components from `apps/web` source. For package CI-equivalent checks, install in `apps/web` first, then in `packages`; run `bun run build`, `bun run test`, then `bun run --cwd sdk typecheck && bun run --cwd react typecheck && bun run --cwd vue typecheck`.
+- After changing any `package.json`, `apps/api/pyproject.toml`, or version, run `scripts/lockfiles.sh` and commit the lockfile changes; `scripts/lockfiles.sh --check` is the CI verification.

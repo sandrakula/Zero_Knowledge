@@ -1,0 +1,107 @@
+import net from 'node:net'
+import { isTcpPortListening } from '../services/docker.js'
+
+/** Best-effort public IPv4 of this host (for printing DNS records). */
+export async function getPublicIp(): Promise<string | null> {
+  const sources = [
+    'http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address', // DO/cloud metadata
+    'https://api.ipify.org',
+    'https://ifconfig.co/ip',
+  ]
+  for (const url of sources) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
+      if (!res.ok) continue
+      const txt = (await res.text()).trim()
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(txt)) return txt
+    } catch {
+      // try next source
+    }
+  }
+  return null
+}
+
+function tryBind(port: number, host: string): Promise<'free' | 'in-use' | 'denied'> {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EACCES') resolve('denied')
+      // No IPv6 on this host: nothing can be listening there
+      else if (err.code === 'EADDRNOTAVAIL' || err.code === 'EAFNOSUPPORT') resolve('free')
+      else resolve('in-use')
+    })
+    server.once('listening', () => {
+      server.close(() => resolve('free'))
+    })
+    server.listen(port, host)
+  })
+}
+
+/**
+ * True if Docker could publish `port`. A bind attempt alone is not enough: a
+ * non-root user can never bind ports below 1024 (EACCES, not "in use"), and on
+ * macOS a wildcard bind succeeds next to a listener on 127.0.0.1. Both cases
+ * defer to lsof/ss/netstat for whether something is actually listening.
+ * Docker publishes on both 0.0.0.0 and ::, and Windows keeps the two apart, so
+ * both are probed.
+ */
+export async function checkPort(port: number): Promise<boolean> {
+  for (const host of ['0.0.0.0', '::']) {
+    if ((await tryBind(port, host)) === 'in-use') return false
+  }
+  return !isTcpPortListening(port)
+}
+
+/**
+ * Find the first available port starting from `preferred`, walking up the
+ * provided candidate list. Used to pick a working default when 80 is taken
+ * (a common case on macOS / dev machines running another local stack).
+ */
+export async function findAvailablePort(
+  preferred: number,
+  candidates: number[] = [8080, 8000, 9090, 3030, 5050],
+): Promise<number | null> {
+  if (await checkPort(preferred)) return preferred
+  for (const port of candidates) {
+    if (port === preferred) continue
+    if (await checkPort(port)) return port
+  }
+  return null
+}
+
+export function checkTcpConnection(host: string, port: number, timeoutMs = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port })
+    const timer = setTimeout(() => {
+      socket.destroy()
+      resolve(false)
+    }, timeoutMs)
+    socket.once('connect', () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+  })
+}
+
+export function parsePostgresUrl(connString: string): { host: string; port: number } | null {
+  try {
+    const url = new URL(connString)
+    return { host: url.hostname, port: url.port ? parseInt(url.port, 10) : 5432 }
+  } catch {
+    return null
+  }
+}
+
+export function parseRedisUrl(connString: string): { host: string; port: number } | null {
+  try {
+    const url = new URL(connString)
+    return { host: url.hostname, port: url.port ? parseInt(url.port, 10) : 6379 }
+  } catch {
+    return null
+  }
+}

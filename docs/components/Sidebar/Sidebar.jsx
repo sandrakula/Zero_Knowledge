@@ -1,0 +1,483 @@
+'use client'
+
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
+import { Fragment, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { activeTab } from '../site/sections'
+import {
+  House,
+  RocketLaunch,
+  Lightning,
+  Cloud,
+  AppWindow,
+  BookOpen,
+  PencilSimple,
+  Brain,
+  Users,
+  Buildings,
+  GraduationCap,
+  ChalkboardTeacher,
+  Stack,
+  Path,
+  Cube,
+  UsersThree,
+  DownloadSimple,
+  Gear,
+  Wrench,
+  ListChecks,
+  Terminal,
+  TreeStructure,
+  GitBranch,
+  Plug,
+  Browser,
+  Database,
+  HardDrives,
+  Key,
+  Envelope,
+  Folder,
+  Lock,
+  ArrowsClockwise,
+  ClockCountdown,
+  ChartBar,
+  Lifebuoy,
+  ShieldCheck,
+  Code,
+  BookBookmark,
+  SlidersHorizontal,
+  ClipboardText,
+  Trophy,
+  CheckCircle,
+  GameController,
+  ChatCircle,
+  ChatDots,
+  ThumbsUp,
+  Kanban,
+  ChalkboardSimple,
+  Microphone,
+  MagnifyingGlass,
+  Certificate,
+  Briefcase,
+  CreditCard,
+  Storefront,
+  ShoppingCart,
+  Receipt,
+  Ticket,
+  Plugs,
+  IdentificationBadge,
+  Package,
+  Scroll,
+  Robot,
+  PlugsConnected,
+  Keyboard,
+  Sparkle,
+  UploadSimple,
+  Student,
+  ListBullets,
+  ChartLine,
+  ChartPieSlice,
+  UserPlus,
+  Fingerprint,
+  UserCircle,
+  Globe,
+  GlobeHemisphereWest,
+  Layout,
+  Tag,
+  Crown,
+  Books,
+  CalendarDots,
+  Steps,
+  BracketsCurly,
+  Drop,
+  FrameCorners,
+  SquaresFour,
+  FileVue,
+  Atom,
+  FileTs,
+  Palette,
+  Broadcast,
+  Translate,
+  Cpu,
+  DeviceMobile,
+  ChatsCircle,
+  VideoCamera,
+  ArrowSquareIn,
+} from '@phosphor-icons/react/dist/ssr'
+
+const ICON_SIZE = 15
+
+const iconMap = {
+  // Root level
+  '/': House,
+  '/getting-started': RocketLaunch,
+  '/platform': AppWindow,
+  '/enterprise': Briefcase,
+  '/self-hosting': Cloud,
+  '/developers': Code,
+  '/guides': GraduationCap,
+
+  // Getting Started
+  '/getting-started/quickstart': Lightning,
+  '/getting-started/cloud-vs-self-hosting': Cloud,
+  '/getting-started/key-concepts': BookOpen,
+
+  // Platform
+  '/platform/courses': BookBookmark,
+  '/platform/editor': PencilSimple,
+  '/platform/ai': Brain,
+  '/platform/users': Users,
+  '/platform/organizations': Buildings,
+
+  // Platform > Courses
+  '/platform/courses/chapters-and-activities': Stack,
+  '/platform/courses/settings': SlidersHorizontal,
+  '/platform/courses/library': Books,
+  '/platform/courses/ai-course-creator': Sparkle,
+  '/platform/courses/import-export': UploadSimple,
+  '/platform/courses/taking-a-course': Student,
+  '/platform/courses/trails': Path,
+  '/platform/courses/drip-content': Drop,
+
+  // Platform > Editor
+  '/platform/editor/blocks': Cube,
+  '/platform/editor/dynamic-content': BracketsCurly,
+
+  // Platform > AI
+  '/platform/ai/for-students': GraduationCap,
+  '/platform/ai/for-teachers': ChalkboardTeacher,
+
+  // Platform > Users
+  '/platform/users/roles-and-permissions': ShieldCheck,
+  '/platform/users/authentication': Key,
+  '/platform/users/members-and-invites': UserPlus,
+  '/platform/users/user-groups': UsersThree,
+  '/platform/users/two-factor': Fingerprint,
+  '/platform/users/learner-analytics': UserCircle,
+  '/platform/users/emails': Envelope,
+
+  // Platform > Assignments
+  '/platform/assignments': ClipboardText,
+  '/platform/assignments/grading': CheckCircle,
+  '/platform/assignments/task-types': ListBullets,
+  '/platform/assignments/analytics': ChartLine,
+
+  // Platform > Code Execution
+  '/platform/code-execution': Terminal,
+
+  // Platform > Playgrounds
+  '/platform/playgrounds': GameController,
+
+  // Platform > Discussions
+  '/platform/discussions': ChatCircle,
+  '/platform/discussions/comments': ChatDots,
+  '/platform/discussions/managing': ShieldCheck,
+
+  // Platform > Boards
+  '/platform/boards': ChalkboardSimple,
+  '/platform/messages': ChatsCircle,
+
+  // Platform > Podcasts
+  '/platform/podcasts': Microphone,
+  '/platform/calendar': CalendarDots,
+  '/platform/paths': Steps,
+
+  // Platform > Certifications
+  '/platform/certifications': Certificate,
+
+  // Platform > Analytics
+  '/platform/analytics': ChartBar,
+  '/platform/analytics/dashboard': ChartPieSlice,
+  '/platform/analytics/course-analytics': ChartLine,
+
+  // Platform > Search
+  '/platform/search': MagnifyingGlass,
+  '/platform/search/keyboard-shortcuts': Keyboard,
+
+  // Platform > Payments
+  '/platform/payments': CreditCard,
+  '/platform/payments/offers': Storefront,
+  '/platform/payments/groups': ShoppingCart,
+  '/platform/payments/enrollments': Receipt,
+  '/platform/payments/api': Plugs,
+  '/platform/payments/discounts': Ticket,
+
+  // Platform > Organizations
+  '/platform/organizations/multi-tenancy': TreeStructure,
+  '/platform/organizations/settings': SlidersHorizontal,
+  '/platform/organizations/landing-page': Layout,
+  '/platform/organizations/custom-domains': GlobeHemisphereWest,
+  '/platform/organizations/seo': Globe,
+  '/platform/organizations/plans': Tag,
+  '/platform/organizations/admin-dashboard': Crown,
+
+  // Platform > Automations
+  '/platform/automations': Lightning,
+  '/platform/automations/webhooks': Plug,
+  '/platform/automations/zapier': ArrowsClockwise,
+  '/platform/automations/events': ListChecks,
+
+  // Enterprise
+  '/enterprise/sso': IdentificationBadge,
+  '/enterprise/audit-logs': Scroll,
+  '/enterprise/scorm': Package,
+  '/enterprise/lti': ArrowSquareIn,
+  '/enterprise/live-sessions': VideoCamera,
+
+  // Self Hosting
+  '/self-hosting/installation': DownloadSimple,
+  '/self-hosting/configuration': Gear,
+  '/self-hosting/maintenance': Wrench,
+
+  // Self Hosting > Installation
+  '/self-hosting/installation/requirements': ListChecks,
+  '/self-hosting/installation/quick-install': Lightning,
+
+  // Self Hosting > Configuration
+  '/self-hosting/configuration/environment-variables': Code,
+  '/self-hosting/configuration/ai-setup': Brain,
+  '/self-hosting/configuration/email': Envelope,
+  '/self-hosting/configuration/storage': HardDrives,
+  '/self-hosting/configuration/ssl': Lock,
+
+  // Self Hosting > Maintenance
+  '/self-hosting/maintenance/updates': ArrowsClockwise,
+  '/self-hosting/maintenance/backups': ClockCountdown,
+  '/self-hosting/maintenance/monitoring': ChartBar,
+  '/self-hosting/maintenance/troubleshooting': Lifebuoy,
+
+  // CLI
+  '/cli': Terminal,
+  '/cli/commands': ListChecks,
+  '/cli/setup-wizard': Lightning,
+  '/cli/dev-mode': Code,
+  '/cli/environment-variables': Gear,
+
+  // Developers
+  '/developers/embed': FrameCorners,
+  '/developers/react': Atom,
+  '/developers/vue': FileVue,
+  '/developers/sdk': FileTs,
+  '/developers/versioning': Tag,
+  '/developers/architecture': TreeStructure,
+  '/developers/contributing': GitBranch,
+  '/developers/api': Plug,
+  '/developers/migration': ArrowsClockwise,
+
+  // Developers > React component
+  '/developers/react/customization': Palette,
+  '/developers/react/events': Broadcast,
+  '/developers/react/localization': Translate,
+  '/developers/react/frameworks': Stack,
+  '/developers/react/reference': ListBullets,
+  '/developers/react/how-it-works': Cpu,
+
+  // Developers > SDK
+  '/developers/sdk/authentication': Key,
+  '/developers/sdk/resources': Cube,
+  '/developers/sdk/requests': BracketsCurly,
+  '/developers/sdk/react-native': DeviceMobile,
+
+  // Developers > Architecture
+  '/developers/architecture/frontend': Browser,
+  '/developers/architecture/backend': Database,
+  '/developers/architecture/services': HardDrives,
+
+  // Developers > Contributing
+  '/developers/contributing/dev-environment': Terminal,
+  '/developers/contributing/guidelines': BookOpen,
+
+  // Developers > API
+  '/developers/api/authentication': Key,
+
+  // Developers > Migration
+  '/developers/migration/programmatic': Code,
+  '/developers/migration/activity-types': Stack,
+  '/developers/migration/assisted': Brain,
+
+  // Guides
+  '/guides/build-learning-platform': Browser,
+  '/guides/custom-features': PlugsConnected,
+
+  // Guides > Build a Learning Platform
+  '/guides/build-learning-platform/do-it-yourself': Wrench,
+  '/guides/build-learning-platform/with-an-agent': Robot,
+  '/guides/build-learning-platform/agent-spec': ClipboardText,
+
+}
+
+function getIcon(route) {
+  const Icon = iconMap[route]
+  if (!Icon) return null
+  return <Icon size={ICON_SIZE} weight="fill" />
+}
+
+// Explicit sidebar label overrides (the page map auto-titleizes folder names,
+// which drops articles like "a" and can't express "&"). Keyed by route.
+const labelMap = {
+  '/developers/react': 'React Component',
+  '/developers/vue': 'Vue Component',
+  '/developers/sdk': 'JavaScript SDK',
+  '/developers/api': 'REST API',
+  '/guides/build-learning-platform': 'Build a Learning Platform',
+  '/guides/custom-features': 'Custom Features with the API',
+}
+
+// Explicit child ordering for folders whose pages shouldn't be alphabetical.
+const childOrder = {}
+
+function orderedChildren(item) {
+  const order = childOrder[item.route]
+  if (!order) return item.children
+  return [...item.children].sort((a, b) => {
+    const ai = order.indexOf(a.route)
+    const bi = order.indexOf(b.route)
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+  })
+}
+
+function SidebarItem({ item, depth = 0, parentRoute = null, onNavigate }) {
+  const pathname = usePathname()
+  const isActive = pathname === item.route
+  const hasChildren = item.children && item.children.length > 0
+  const isChildActive = hasChildren && item.children.some(
+    child => pathname === child.route || pathname?.startsWith(child.route + '/')
+  )
+  const [open, setOpen] = useState(isChildActive || depth < 1)
+
+  useEffect(() => {
+    if (isChildActive) setOpen(true)
+  }, [isChildActive])
+
+  if (item.type === 'separator') {
+    return (
+      <div className="lh-sidebar-separator">
+        {typeof item.title === 'string' ? item.title : item.name}
+      </div>
+    )
+  }
+
+  if (item.display === 'hidden') return null
+
+  if (item.type === 'link') {
+    return (
+      <Link href={item.route} className="lh-sidebar-link" style={{ paddingLeft: 10 }} onClick={onNavigate}>
+        {item.title}
+      </Link>
+    )
+  }
+
+  // Resolve the display label: explicit override → "Overview" for a folder's
+  // own index child → page map title → name.
+  const isIndexChild = parentRoute && item.route === parentRoute && !hasChildren
+  const title = (isIndexChild ? 'Overview' : null)
+    ?? labelMap[item.route]
+    ?? (typeof item.title === 'string' ? item.title : item.name)
+
+  const icon = depth <= 1 ? getIcon(item.route) : null
+
+  if (hasChildren) {
+    return (
+      <div className="lh-sidebar-folder">
+        <button
+          className={`lh-sidebar-folder-btn ${isChildActive ? 'lh-sidebar-folder-active' : ''}`}
+          onClick={() => setOpen(!open)}
+          style={{ paddingLeft: 10 }}
+        >
+          <span className="lh-sidebar-folder-title">
+            {icon && <span className="lh-sidebar-icon">{icon}</span>}
+            {title}
+          </span>
+          <svg
+            className={`lh-sidebar-chevron ${open ? 'lh-sidebar-chevron-open' : ''}`}
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+        {open && (
+          <div className="lh-sidebar-children">
+            {orderedChildren(item).map((child, i) => (
+              <Fragment key={child.route || i}>
+                <SidebarItem item={child} depth={depth + 1} parentRoute={item.route} onNavigate={onNavigate} />
+              </Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <Link
+      href={item.route || '#'}
+      className={`lh-sidebar-link ${isActive ? 'lh-sidebar-link-active' : ''}`}
+      style={{ paddingLeft: 10 }}
+      onClick={onNavigate}
+    >
+      {icon && <span className="lh-sidebar-icon">{icon}</span>}
+      {title}
+    </Link>
+  )
+}
+
+function SidebarContent({ tree = [], onNavigate }) {
+  const pathname = usePathname()
+  const docsDirectories = tree
+  const tab = activeTab(pathname)
+
+  // Only the active tab's folders, in the tab's own order.
+  const items = tab.folders
+    .map((route) => docsDirectories.find((item) => item.route === route))
+    .filter(Boolean)
+
+  return (
+    <nav className="lh-sidebar-nav" aria-label={`${tab.label} pages`}>
+      {items.map((item) => (
+        <div key={item.route} className="lh-sidebar-group">
+          <div className="lh-sidebar-group-title">
+            {labelMap[item.route] ?? (typeof item.title === 'string' ? item.title : item.name)}
+          </div>
+          {(item.children ? orderedChildren(item) : [item]).map((child, i) => (
+            <Fragment key={child.route || i}>
+              <SidebarItem item={child} depth={1} parentRoute={item.route} onNavigate={onNavigate} />
+            </Fragment>
+          ))}
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+function MobileSidebarPortal({ tree, onNavigate }) {
+  const [mountNode, setMountNode] = useState(null)
+
+  useEffect(() => {
+    const el = document.getElementById('mobile-sidebar-mount')
+    if (el) setMountNode(el)
+  }, [])
+
+  if (!mountNode) return null
+
+  return createPortal(<SidebarContent tree={tree} onNavigate={onNavigate} />, mountNode)
+}
+
+export default function Sidebar({ tree }) {
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="lh-sidebar" data-pagefind-ignore="all">
+        <SidebarContent tree={tree} />
+      </aside>
+
+      {/* Portal into mobile drawer */}
+      <MobileSidebarPortal tree={tree} />
+    </>
+  )
+}

@@ -1,132 +1,141 @@
-# ZeroKnowledge — Learning Intelligence Platform
+<p align="center">
+  <a href="https://learnhouse.app">
+    <img src=".github/images/learnhouse-github.png" alt="LearnHouse" width="600" />
+  </a>
+</p>
 
-An adaptive **learning intelligence** system, not an LMS, not a chatbot, not a course generator.
+<h3 align="center">The next-gen open-source platform for world-class educational content.</h3>
 
-ZeroKnowledge builds a persistent, evidence-based model of each learner (the **Student Learning Twin**),
-maps the domain with a **Knowledge Graph**, and turns a goal into a personalized, evolving roadmap.
-Every learning action produces **evidence**, which updates the learner's competency state — and the
-system uses that state to choose the *next best action*. It works from a goal alone (cold start) or
-alongside your own materials.
+<p align="center">
+  <a href="https://github.com/learnhouse/learnhouse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/learnhouse/learnhouse?style=flat&color=blue" alt="License" /></a>
+  <a href="https://github.com/learnhouse/learnhouse/stargazers"><img src="https://img.shields.io/github/stars/learnhouse/learnhouse?style=flat" alt="Stars" /></a>
+  <a href="https://www.npmjs.com/package/learnhouse"><img src="https://img.shields.io/npm/v/learnhouse?style=flat&label=cli" alt="CLI Version" /></a>
+  <a href="https://app.codecov.io/gh/learnhouse/learnhouse"><img src="https://img.shields.io/codecov/c/github/learnhouse/learnhouse?flag=api&label=api%20coverage" alt="API Coverage" /></a>
+  <a href="https://github.com/learnhouse/learnhouse/commits"><img src="https://img.shields.io/github/last-commit/learnhouse/learnhouse?style=flat&label=last%20commit" alt="Last Commit" /></a>
+  <a href="https://github.com/learnhouse/learnhouse/issues"><img src="https://img.shields.io/github/issues/learnhouse/learnhouse?style=flat" alt="Issues" /></a>
+  <a href="https://github.com/learnhouse/learnhouse/pulls"><img src="https://img.shields.io/github/issues-pr/learnhouse/learnhouse?style=flat&label=PRs" alt="Pull Requests" /></a>
+</p>
 
-The AI layer is an amplifier, not the foundation: the learner's durable state is the source of truth,
-and no AI provider, model, or API key is baked into the core.
+<p align="center">
+📖 <b>Courses</b>: Create and manage courses<br>
+✏️ <b>Editor</b>: Block-based Notion-like content editor<br>
+📦 <b>Collections</b>: Organize courses into curated bundles<br>
+📝 <b>Assignments</b>: Create tasks and track student submissions<br>
+💬 <b>Discussions</b>: Community forums for your learners<br>
+🎙️ <b>Podcasts</b>: Audio content for on-the-go learning<br>
+📊 <b>Analytics</b>: Track engagement and course performance<br>
+🧊 <b>Playgrounds</b>: AI-generated interactive elements, simulations & diagrams<br>
+💻 <b>Code</b>: Real code execution with auto-grading in 30+ languages<br>
+📋 <b>Boards</b>: Real-time collaborative whiteboards<br>
+🧠 <b>AI</b>: Context-aware AI for learning & teaching<br>
+🎓 <b>Certificates</b>: Auto-generate certificates on course completion<br>
+👥 <b>User Groups</b>: Organize learners and control access<br>
+🔍 <b>SEO</b>: Built-in SEO optimization with metadata, sitemaps & open graph<br>
+🎨 <b>Customization</b>: Custom branding, landing pages & theming<br>
+💳 <b>Payments (Enterprise)</b>: Sell courses with no fees and no lock-in<br>
+🔐 <b>SSO (Enterprise)</b>: Single sign-on with OAuth providers<br>
+🏢 <b>Multi-Org (Enterprise)</b>: Run multiple organizations from a single instance<br>
+</p>
 
----
+## 🚀 Get Started
 
-## What it does (MVP)
+LearnHouse has an official CLI for self-hosting, updates, backups, and local development.
 
-- **Accounts** — register / login (email + password, scrypt-hashed, signed session cookie).
-  Every user has a fully isolated learning twin, roadmap, tasks, evidence and materials.
-- **Admin account** — seeded as `admin` / `admin`. The admin dashboard shows a per-student
-  digest (goal, roadmap progress, knowledge level, weekly activity, misconceptions) and can upload
-  **shared materials** that every student's lessons are grounded in.
-- **Russian / English** — the whole UI is switchable (EN ⇄ RU), and AI-generated lessons,
-  tasks, diagnostics, feedback and tutoring follow the selected language.
-- **Material upload** — `.txt`, `.md`, `.pdf`, `.docx` up to 100 MB (RU/EN auto-detected).
-  Files are text-extracted, chunked, and analyzed by AI into knowledge-graph skills + coverage.
-- **Grounded generation** — lessons are grounded in your uploaded materials where possible and
-  cite them inline (`[src: filename]`); anything not covered is generated and clearly marked `(AI)`.
-  Provenance is always explicit: *from your material* vs *AI-generated*.
-- **Cold start** — no materials? No problem: describe a goal and everything is generated.
-- **Goal compiler** — natural language → domain, target level, and target skills + prerequisites.
-- **Adaptive diagnostic** — seeds the learning twin with honest initial evidence (with uncertainty).
-- **Personalized roadmap** — generated as a *hypothesis*, ordered by prerequisites and learner state.
-- **Learning session** — lesson + validated programming task + Monaco editor + isolated execution.
-- **Deterministic verification** — reference solutions are executed against their own tests before
-  a task is ever shown to you; your submissions are graded by real execution, then reviewed by AI.
-- **Evidence engine** — every attempt creates structured, provenance-carrying evidence.
-- **Student Learning Twin** — per-skill competency vectors (Beta-Binomial mastery posterior,
-  evidence sufficiency, depth, independence, application, transfer, retention,
-  misconception states) with deterministic status classification.
-- **Unified Learning hub** — overview and materials in one section;
-  every metric shows «Not assessed» until real evidence exists.
-- **Next-best-action** — a recommendation engine, not a fixed sequence.
-- **Contextual tutor** — intent-aware, grounded in your current task, following the hint ladder.
-
-## Stack
-
-- **Frontend & API**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, Framer Motion, Monaco.
-- **Data**: PostgreSQL-shaped schema on **SQLite** via Prisma (swap `DATABASE_URL` for Postgres; add pgvector later).
-- **AI**: provider-abstracted layer (OpenAI-compatible adapter) → defaults to `llm.azati.ai` / `deepseek-v4-flash`.
-- **Execution**: isolated subprocess runner (swap for a container/gVisor sandbox in production).
-
-## Quick start
+### Self-host
 
 ```bash
-# 1. install
-pnpm install
-
-# 2. configure (copy .env.example → .env.local and set your key)
-#    .env.local is already set up for llm.azati.ai in this workspace
-
-# 3. create + seed the database
-pnpm db:push
-pnpm db:seed
-
-# 4. run
-pnpm dev        # http://localhost:3100
+npx learnhouse@latest setup
 ```
 
-Open http://localhost:3100 → register (or log in) → describe your goal → pass the adaptive
-**skill-level diagnostic** (which builds the personalized roadmap from the resulting evidence) →
-start learning. Upload materials any time to ground your lessons in them.
+The setup wizard walks you through domain, database, admin account, and optional features. Once done, it generates all config files and starts your instance.
 
-> **Admin:** log in as `admin` / `admin` to open the administration dashboard (students overview +
-> shared materials for all students).
->
-> Smoke test: with the server running, `node scripts/smoke.mjs` exercises admin login → shared
-> material upload → register → goal → diagnostic → roadmap → grounded lesson → isolation.
-
-## Configuration
-
-All provider details live in `.env.local` — nothing is hardcoded in business logic:
-
-| Variable | Meaning |
-| --- | --- |
-| `DATABASE_URL` | Prisma datasource (SQLite by default) |
-| `SESSION_SECRET` | HMAC secret for signed session cookies |
-| `LLM_PROVIDER` | adapter id (`openai-compatible`) |
-| `LLM_BASE_URL` | gateway base URL (e.g. `https://llm.azati.ai/v1`) |
-| `LLM_API_KEY` | API key (never committed) |
-| `LLM_MODEL_FAST` / `STRONG` / `CODING` | capability→model mapping |
-
-Switching providers or models changes **nothing** about learner state, competencies, evidence,
-roadmaps, or content.
-
-## Architecture
-
-```
-src/
-  lib/
-    core/          educational core (knowledge graph, learning twin, evidence,
-                   mastery (Beta-Binomial), competency rules/classification,
-                   goal compiler, roadmap (hierarchical + tutor branches),
-                   diagnostic, taskgen, evaluation, tutor (+ structured actions,
-                   conversations), content, materials, learn, code-runner)
-    llm/           provider abstraction (types, adapter, router, structured output)
-    prompts/       versioned prompt catalog
-  app/
-    api/           REST endpoints (onboarding, state, diagnostic, learn, attempt,
-                   run, tutor + conversations, recommend, skills, roadmap + substeps)
-    (app)/         learner shell: home, roadmap, learn, tutor, learning (unified hub)
-    diagnostic/    full-screen adaptive diagnostic
-    page.tsx       onboarding (goal input)
+```bash
+npx learnhouse start       # Start services
+npx learnhouse stop        # Stop services
+npx learnhouse update      # Update to latest version
+npx learnhouse logs        # Stream logs
+npx learnhouse backup      # Backup database
+npx learnhouse doctor      # Diagnose issues
 ```
 
-Read `docs/` for architecture decision records, and `docs/TECHNICAL.md` for the full technical
-reference (data model, AI layer, mastery math, API reference, user journey, limitations).
+### Development
 
-## Key guarantees (non-negotiable tests)
+```bash
+git clone https://github.com/learnhouse/learnhouse.git
+cd learnhouse
+npx learnhouse dev
+```
 
-- Changing provider/model preserves learner state, evidence, curriculum, content.
-- AI outage never destroys learner data or original materials.
-- Mastery is never invented: it changes only through recorded evidence.
-- Generated content carries provenance and never silently overwrites canonical material.
-- Verified (executed) results are always distinguished from AI interpretation.
+This spins up PostgreSQL and Redis, installs dependencies, and starts the API, Web, and Collab servers with hot reload.
 
-## MVP scope vs. the full vision
+> See the full [CLI documentation](apps/cli/README.md) for all commands and options.
 
-This is a deliberately focused **modular monolith** (see `docs/ADR-001`). The full specification
-(§1–295) is the north star; this MVP implements the *golden learning loop* end-to-end and is
-structured so the Phase 2/3 systems (retention scheduling, interleaving, transfer engine,
-teacher dashboards, multi-provider routing, content ingestion/enrichment) slot in without a rewrite.
+## 🛠️ Tech Stack
+
+<p align="center">
+<a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-000?style=flat&logo=nextdotjs&logoColor=white" alt="Next.js" /></a>
+<a href="https://react.dev"><img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black" alt="React" /></a>
+<a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+<a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="TailwindCSS" /></a>
+<a href="https://www.radix-ui.com"><img src="https://img.shields.io/badge/Radix_UI-161618?style=flat&logo=radixui&logoColor=white" alt="Radix UI" /></a>
+<a href="https://tiptap.dev"><img src="https://img.shields.io/badge/Tiptap-1a1a2e?style=flat&logoColor=white" alt="Tiptap" /></a>
+<a href="https://codemirror.net"><img src="https://img.shields.io/badge/CodeMirror-D30707?style=flat&logo=codemirror&logoColor=white" alt="CodeMirror" /></a>
+<a href="https://yjs.dev"><img src="https://img.shields.io/badge/Yjs-6EEB83?style=flat&logoColor=black" alt="Yjs" /></a>
+<a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
+<a href="https://www.python.org"><img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" alt="Python" /></a>
+<a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
+<a href="https://redis.io"><img src="https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white" alt="Redis" /></a>
+<a href="https://www.docker.com"><img src="https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker" /></a>
+<a href="https://stripe.com"><img src="https://img.shields.io/badge/Stripe-635BFF?style=flat&logo=stripe&logoColor=white" alt="Stripe" /></a>
+<a href="https://ai.google.dev"><img src="https://img.shields.io/badge/Gemini-8E75B2?style=flat&logo=googlegemini&logoColor=white" alt="Gemini" /></a>
+<a href="https://www.llamaindex.ai"><img src="https://img.shields.io/badge/LlamaIndex-000?style=flat&logoColor=white" alt="LlamaIndex" /></a>
+<a href="https://aws.amazon.com/s3"><img src="https://img.shields.io/badge/AWS_S3-569A31?style=flat&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDIgN3YxMGwxMCA1IDEwLTVWN0wxMiAyem0wIDIuMThMMTkuMTggNyAxMiA5LjgyIDQuODIgNyAxMiA0LjE4ek00IDguNjRsNyAzLjVWMTkuNWwtNy0zLjVWOC42NHptMTAgMTAuODZWMTIuMTRsNy0zLjV2Ny4zNmwtNyAzLjV6Ii8+PC9zdmc+&logoColor=white" alt="AWS S3" /></a>
+</p>
+
+## 📁 Project Structure
+
+| App | Path | Description | Technology | Used by |
+|-----|------|-------------|------------|---------|
+| **Web** | `apps/web` | Frontend application: dashboard, course player, editor, landing pages | Next.js, React, TailwindCSS, Tiptap | Teachers, Students, Admins |
+| **API** | `apps/api` | Backend REST API: auth, courses, payments, AI, analytics | FastAPI, Python, SQLModel, Alembic | Web, CLI, Collab |
+| **Collab** | `apps/collab` | Real-time collaboration server: live editing sync for courses & boards | Hocuspocus, Yjs, WebSocket | Web (editor, boards) |
+| **CLI** | `apps/cli` | Official CLI: setup wizard, dev environment, instance management | Commander, Node.js | Developers, Self-hosters |
+
+## 💬 Community
+
+- [Discord](https://discord.gg/CMyZjjYZ6x): chat with the team and other users
+- [Documentation](https://docs.learnhouse.app): guides and references
+
+## 🤝 Contributing
+
+```bash
+git clone https://github.com/learnhouse/learnhouse.git
+cd learnhouse
+npx learnhouse dev
+```
+
+- [Contributing Guide](CONTRIBUTING.md)
+- [Submit a bug](https://github.com/learnhouse/learnhouse/issues/new?assignees=&labels=bug%2Ctriage&projects=&template=bug.yml&title=%5BBug%5D%3A+)
+- [Good first issues](https://github.com/learnhouse/learnhouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+
+## 🔒 Security
+
+We take the security of LearnHouse and the data entrusted to us seriously. If you discover a vulnerability, please email **security@learnhouse.app** and do not disclose it publicly until we've had a chance to investigate.
+
+Please include a clear description, steps to reproduce, affected endpoints, and any relevant screenshots or proof-of-concept code. We will acknowledge your report, keep you informed, and credit you once resolved if you wish.
+
+See our full [Security Policy](https://learnhouse.app/security) for details on our practices, scope, and responsible disclosure guidelines.
+
+## ✍️ Author & Maintainer
+
+Sweave (Badr B.), [@swve](https://github.com/swve)
+
+## 💜 A Word
+
+LearnHouse is made with 💜, from the UI to the features it is carefully designed to make students and teachers lives easier and make education software more enjoyable.
+
+Thank you and have fun using/developing/testing LearnHouse !
+
+## 📄 License
+
+[AGPL-3.0](LICENSE). Enterprise features are available under a separate Enterprise License.

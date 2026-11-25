@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="zerok AI">
+  <rect width="64" height="64" rx="14" fill="#0c0d10"/>
+  <path d="M16 20h24v5L24 41h16v5H16v-5l16-16H16z" fill="#ffffff"/>
+  <path d="M49 8l2.2 6.8L58 17l-6.8 2.2L49 26l-2.2-6.8L40 17l6.8-2.2z" fill="#a5b4fc"/>
+  <circle cx="39" cy="49" r="3.6" fill="#6366f1"/>
+</svg>

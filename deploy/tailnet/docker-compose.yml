@@ -1,0 +1,114 @@
+# Стенд "только для своих": приложение + Postgres + Redis на этой машине,
+# наружу ничего не публикуется. Единственный вход — `tailscale serve`,
+# поэтому порт приложения привязан к 127.0.0.1, а не к 0.0.0.0.
+#
+#   cp .env.example .env   # заполнить TAILNET_HOST и секреты
+#   docker compose build
+#   docker compose up -d
+#   ./serve.ps1            # https://<машина>.<tailnet>.ts.net
+name: zerok-tailnet
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: zerok/app:local
+    container_name: zerok-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      # Только loopback: сюда смотрит `tailscale serve`. В LAN и интернет
+      # порт не открыт.
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      # Загрузки, видео, сертификаты и прочий контент переживают рестарт.
+      - content:/app/api/content
+    environment:
+      HOSTNAME: 0.0.0.0
+      LEARNHOUSE_API_URL: http://localhost:9000
+      LEARNHOUSE_PORT: "9000"
+
+      # --- домен и tenancy ---
+      # Single tenancy: одна организация на всё приложение, поэтому не нужен
+      # wildcard-DNS и валидны обычные host-only куки.
+      LEARNHOUSE_TENANCY: single
+      LEARNHOUSE_DOMAIN: ${TAILNET_HOST:?TAILNET_HOST is not set (see .env.example)}
+      LEARNHOUSE_FRONTEND_DOMAIN: ${TAILNET_HOST}
+      LEARNHOUSE_ALLOWED_ORIGINS: https://${TAILNET_HOST}
+      LEARNHOUSE_DEVELOPMENT_MODE: "False"
+
+      # --- инфраструктура ---
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql://learnhouse:${POSTGRES_PASSWORD}@db:5432/learnhouse
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://redis:6379/0
+      LEARNHOUSE_REDIS_URL: redis://redis:6379
+      LEARNHOUSE_CONTENT_DELIVERY_TYPE: filesystem
+
+      # --- секреты ---
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: https://${TAILNET_HOST}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
+
+      # --- первый админ (создаётся один раз, пока в БД нет организаций) ---
+      LEARNHOUSE_INITIAL_ADMIN_EMAIL: ${ADMIN_EMAIL}
+      LEARNHOUSE_INITIAL_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      LEARNHOUSE_INITIAL_ORG_NAME: ${ORG_NAME:-ZeroKnowledge Academy}
+      LEARNHOUSE_INITIAL_ORG_SLUG: ${ORG_SLUG:-default}
+
+      # --- фронтенд: инжектится в рантайме через server-wrapper.js ---
+      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: https://${TAILNET_HOST}/
+      NEXT_PUBLIC_LEARNHOUSE_API_URL: https://${TAILNET_HOST}/api/v1/
+      NEXT_PUBLIC_LEARNHOUSE_DOMAIN: ${TAILNET_HOST}
+      NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN: ${TAILNET_HOST}
+      NEXT_PUBLIC_LEARNHOUSE_MULTI_ORG: "False"
+      NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG: ${ORG_SLUG:-default}
+      NEXT_PUBLIC_LEARNHOUSE_HTTPS: "True"
+      NEXT_PUBLIC_COLLAB_URL: wss://${TAILNET_HOST}/collab
+
+      # --- фичи, выключенные на стенде ---
+      LEARNHOUSE_IS_AI_ENABLED: "False"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: zerok-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: learnhouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set (see .env.example)}
+      POSTGRES_DB: learnhouse
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learnhouse -d learnhouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: zerok-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dbdata:
+  redisdata:
+  content:

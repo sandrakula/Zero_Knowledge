@@ -1,0 +1,95 @@
+from enum import Enum
+from typing import Any, List, Optional
+from pydantic import BaseModel
+from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import Field, SQLModel
+from src.db.courses.activities import ActivityRead
+
+
+class LockType(str, Enum):
+    PUBLIC = "public"                # anyone, including anonymous, can view
+    AUTHENTICATED = "authenticated"  # must be signed in
+    RESTRICTED = "restricted"        # only members of assigned usergroups (via UserGroupResource)
+
+
+class ChapterBase(SQLModel):
+    name: str
+    description: Optional[str] = ""
+    thumbnail_image: Optional[str] = ""
+    lock_type: LockType = LockType.PUBLIC
+    org_id: int = Field(
+        sa_column=Column("org_id", Integer, ForeignKey("organization.id", ondelete="CASCADE"), index=True)
+    )
+    course_id: int = Field(
+        sa_column=Column("course_id", Integer, ForeignKey("course.id", ondelete="CASCADE"), index=True)
+    )
+
+
+class Chapter(ChapterBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chapter_uuid: str = Field(default="", index=True)
+    creation_date: str = ""
+    update_date: str = ""
+    extra_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+    # Release rule when the course has drip content on (see db/courses/drip.py).
+    # Only written through the course drip schedule endpoint.
+    drip_rule: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
+
+
+class ChapterCreate(ChapterBase):
+    # referenced order here will be ignored and just used for validation
+    # used order will be the next available.
+    extra_metadata: Optional[dict] = None
+    pass
+
+
+class ChapterUpdate(SQLModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    thumbnail_image: Optional[str] = None
+    lock_type: Optional[LockType] = None
+    extra_metadata: Optional[dict] = None
+
+
+class ChapterRead(ChapterBase):
+    id: int
+    activities: List[ActivityRead]
+    chapter_uuid: str
+    creation_date: str
+    update_date: str
+    extra_metadata: Optional[dict] = None
+    # Computed per-request: whether current user is denied access to this chapter's
+    # content (and, by cascade, its activities). Metadata (name, thumbnail) is still
+    # returned so TOC navigation still renders a lock placeholder.
+    is_locked: bool = False
+    drip_rule: Optional[dict] = None
+    # Computed per-request when the course drips its content: whether the
+    # chapter is still waiting for its release, when it opens (ISO 8601, None
+    # when it depends on something other than time) and why it is held back.
+    drip_locked: bool = False
+    drip_unlock_at: Optional[str] = None
+    drip_reason: Optional[str] = None
+    # Open chapters that close again after a while: when (ISO 8601).
+    drip_closes_at: Optional[str] = None
+    pass
+
+
+class ActivityOrder(BaseModel):
+    activity_id: int
+
+
+class ChapterOrder(BaseModel):
+    chapter_id: int
+    activities_order_by_ids: List[ActivityOrder]
+
+
+class ChapterUpdateOrder(BaseModel):
+    chapter_order_by_ids: List[ChapterOrder]
+
+
+class DepreceatedChaptersRead(BaseModel):
+    chapterOrder: Any
+    chapters: Any
+    activities: Any
+    pass

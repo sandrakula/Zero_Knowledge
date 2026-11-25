@@ -1,0 +1,553 @@
+from datetime import datetime
+from fastapi import HTTPException, Request
+from sqlmodel import select, and_
+from sqlmodel.ext.asyncio.session import AsyncSession
+from src.db.users import PublicUser, AnonymousUser, APITokenUser, User, UserReadAuthor
+from src.db.courses.courses import Course
+from src.db.user_organizations import UserOrganization
+from src.db.resource_authors import ResourceAuthor, ResourceAuthorshipEnum, ResourceAuthorshipStatusEnum
+from src.security.auth import resolve_acting_user_id
+from src.services.security.rate_limiting import enforce_batch_size_limit
+from src.security.rbac import authorization_verify_if_user_is_anon, check_resource_access, AccessAction
+from src.security.rbac.rbac import authorization_verify_based_on_org_admin_status
+from src.security.rbac.constants import ADMIN_ROLE_IDS
+from src.security.org_auth import get_user_org
+from src.security.superadmin import is_user_superadmin
+from src.services.webhooks.dispatch import dispatch_webhooks
+from typing import List
+
+
+async def _require_contributor_manager(
+    request: Request,
+    course_uuid: str,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+) -> tuple[ResourceAuthorshipEnum | None, bool]:
+    """Raise 403 unless the caller may manage the course's contributors.
+
+    Course UPDATE is also granted to active contributors, who must not be able
+    to promote, add or remove anyone (themselves included). Managing roles takes
+    an active CREATOR/MAINTAINER of the course or an org admin. Returns the
+    caller's active authorship (if any) and whether they are an org admin.
+    """
+    acting_user_id = resolve_acting_user_id(current_user)
+    caller_authorship = (await db_session.execute(
+        select(ResourceAuthor).where(
+            and_(
+                ResourceAuthor.resource_uuid == course_uuid,
+                ResourceAuthor.user_id == acting_user_id
+            )
+        )
+    )).scalars().first()
+    owner_role = (
+        caller_authorship.authorship
+        if caller_authorship
+        and caller_authorship.authorship in (ResourceAuthorshipEnum.CREATOR, ResourceAuthorshipEnum.MAINTAINER)
+        and caller_authorship.authorship_status == ResourceAuthorshipStatusEnum.ACTIVE
+        else None
+    )
+    is_admin = await authorization_verify_based_on_org_admin_status(
+        request, acting_user_id, "update", course_uuid, db_session
+    )
+    if owner_role is None and not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only course owners (CREATOR, MAINTAINER) or admins can manage contributors",
+        )
+    return owner_role, is_admin
+
+
+async def apply_course_contributor(
+    request: Request,
+    course_uuid: str,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+):
+    """
+    Apply to become a course contributor
+
+    SECURITY NOTES:
+    - Any authenticated user can apply to become a contributor
+    - Applications are created with PENDING status
+    - Only course owners (CREATOR, MAINTAINER) or admins can approve applications
+    """
+    acting_user_id = resolve_acting_user_id(current_user)
+
+    # Verify user is not anonymous
+    await authorization_verify_if_user_is_anon(acting_user_id)
+
+    # Check if course exists
+    statement = select(Course).where(Course.course_uuid == course_uuid)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    # SECURITY: Can't apply to a course you can't see (private, other org).
+    # The open_to_contributors gate lives in the router.
+    await check_resource_access(request, db_session, current_user, course_uuid, AccessAction.READ)
+
+    # Check if user already has any authorship role for this course
+    existing_authorship = (await db_session.execute(
+        select(ResourceAuthor).where(
+            and_(
+                ResourceAuthor.resource_uuid == course_uuid,
+                ResourceAuthor.user_id == acting_user_id
+            )
+        )
+    )).scalars().first()
+
+    if existing_authorship:
+        raise HTTPException(
+            status_code=400,
+            detail="You already have an authorship role for this course",
+        )
+
+    # Create pending contributor application
+    resource_author = ResourceAuthor(
+        resource_uuid=course_uuid,
+        user_id=acting_user_id,
+        authorship=ResourceAuthorshipEnum.CONTRIBUTOR,
+        authorship_status=ResourceAuthorshipStatusEnum.PENDING,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+    )
+
+    db_session.add(resource_author)
+    await db_session.commit()
+    await db_session.refresh(resource_author)
+
+    return {
+        "detail": "Contributor application submitted successfully",
+        "status": "pending"
+    }
+
+
+async def update_course_contributor(
+    request: Request,
+    course_uuid: str,
+    contributor_user_id: int,
+    authorship: ResourceAuthorshipEnum,
+    authorship_status: ResourceAuthorshipStatusEnum,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+):
+    """
+    Update a course contributor's role and status
+
+    SECURITY NOTES:
+    - Only course owners (CREATOR, MAINTAINER) or admins can update contributors
+    - Cannot modify the role of the course creator
+    - Requires strict course ownership checks
+    """
+    # Verify user is not anonymous
+    await authorization_verify_if_user_is_anon(resolve_acting_user_id(current_user))
+
+    # SECURITY: Require course ownership or admin role for updating contributors
+    await check_resource_access(request, db_session, current_user, course_uuid, AccessAction.UPDATE)
+
+    # Check if course exists
+    statement = select(Course).where(Course.course_uuid == course_uuid)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    owner_role, is_admin = await _require_contributor_manager(
+        request, course_uuid, current_user, db_session
+    )
+
+    # Making someone CREATOR hands them the course for good (the role can't be
+    # changed or removed afterwards), so it's an org admin decision, not one a
+    # course or org maintainer can make.
+    if authorship == ResourceAuthorshipEnum.CREATOR:
+        acting_user_id = resolve_acting_user_id(current_user)
+        caller_org = await get_user_org(acting_user_id, course.org_id, db_session)
+        if not (
+            (caller_org is not None and caller_org.role_id in ADMIN_ROLE_IDS)
+            or await is_user_superadmin(acting_user_id, db_session)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Only organization admins can assign the CREATOR role",
+            )
+
+    # Check if the contributor exists for this course
+    existing_authorship = (await db_session.execute(
+        select(ResourceAuthor).where(
+            and_(
+                ResourceAuthor.resource_uuid == course_uuid,
+                ResourceAuthor.user_id == contributor_user_id
+            )
+        )
+    )).scalars().first()
+
+    if not existing_authorship:
+        raise HTTPException(
+            status_code=404,
+            detail="Contributor not found for this course",
+        )
+
+    # SECURITY: Don't allow changing the role of the creator
+    if existing_authorship.authorship == ResourceAuthorshipEnum.CREATOR:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify the role of the course creator",
+        )
+
+    # SECURITY: maintainers manage contributors, not each other (same rule as
+    # removal; demoting or deactivating a maintainer is a removal in effect).
+    if (
+        existing_authorship.authorship == ResourceAuthorshipEnum.MAINTAINER
+        and owner_role != ResourceAuthorshipEnum.CREATOR
+        and not is_admin
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the course creator or an admin can change a maintainer",
+        )
+
+    # Update the contributor's role and status
+    existing_authorship.authorship = authorship
+    existing_authorship.authorship_status = authorship_status
+    existing_authorship.update_date = str(datetime.now())
+
+    db_session.add(existing_authorship)
+    await db_session.commit()
+    await db_session.refresh(existing_authorship)
+
+    return {
+        "detail": "Contributor updated successfully",
+        "status": "success"
+    }
+
+
+async def get_course_contributors(
+    request: Request,
+    course_uuid: str,
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+) -> List[dict]:
+    """
+    Get all contributors for a course with their user information
+
+    SECURITY NOTES:
+    - Requires read access to the course
+    - Contributors are visible to anyone with course read access
+    - Full user records (email, etc.) only go to course editors; everyone
+      else gets the author projection
+    """
+    # Check if course exists
+    statement = select(Course).where(Course.course_uuid == course_uuid)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    # SECURITY: Require read access to the course
+    await check_resource_access(request, db_session, current_user, course_uuid, AccessAction.READ)
+    # Emails and account details are for people who manage the course; any
+    # other reader gets the public profile.
+    can_manage = (await check_resource_access(
+        request, db_session, current_user, course_uuid, AccessAction.UPDATE,
+        raise_on_deny=False,
+    )).allowed
+
+    def user_view(user: User) -> dict:
+        # SECURITY: editors get the author chip plus email (the contributors
+        # table shows it), never the full account record: is_superadmin,
+        # extra_metadata, signup/login details are not a course editor's.
+        data = UserReadAuthor.model_validate(user).model_dump()
+        if can_manage:
+            data["email"] = user.email
+        return data
+
+    # Get all contributors for this course with user information
+    statement = (
+        select(ResourceAuthor, User)
+        .join(User)  # SQLModel will automatically join on foreign key
+        .where(ResourceAuthor.resource_uuid == course_uuid)
+    )
+    results = (await db_session.execute(statement)).all()
+
+    return [
+        {
+            "user_id": contributor.user_id,
+            "authorship": contributor.authorship,
+            "authorship_status": contributor.authorship_status,
+            "creation_date": contributor.creation_date,
+            "update_date": contributor.update_date,
+            "user": user_view(user)
+        }
+        for contributor, user in results
+    ]
+
+
+async def add_bulk_course_contributors(
+    request: Request,
+    course_uuid: str,
+    usernames: List[str],
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+):
+    """
+    Add multiple contributors to a course by their usernames
+
+    SECURITY NOTES:
+    - Only course owners (CREATOR, MAINTAINER) or admins can add contributors
+    - Requires strict course ownership checks
+    - Cannot add contributors to courses the user doesn't own
+    """
+    # Verify user is not anonymous
+    await authorization_verify_if_user_is_anon(resolve_acting_user_id(current_user))
+
+    # SECURITY: Require course ownership or admin role for adding contributors
+    await check_resource_access(request, db_session, current_user, course_uuid, AccessAction.UPDATE)
+
+    enforce_batch_size_limit(len(usernames), "contributors")
+
+    # Check if course exists
+    statement = select(Course).where(Course.course_uuid == course_uuid)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+    await _require_contributor_manager(request, course_uuid, current_user, db_session)
+
+    # Process results
+    results = {
+        "successful": [],
+        "failed": []
+    }
+
+    current_time = str(datetime.now())
+
+    # Batch fetch all users and existing authorships to avoid N+1 queries
+    found_users = (await db_session.execute(
+        select(User).where(User.username.in_(usernames))
+    )).scalars().all()
+    user_map = {u.username: u for u in found_users if u.id is not None}
+
+    found_user_ids = [u.id for u in user_map.values()]
+    if found_user_ids:
+        existing_authorships = (await db_session.execute(
+            select(ResourceAuthor).where(
+                and_(
+                    ResourceAuthor.resource_uuid == course_uuid,
+                    ResourceAuthor.user_id.in_(found_user_ids),
+                )
+            )
+        )).scalars().all()
+        authorship_map = {ra.user_id: ra for ra in existing_authorships}
+        # Contributors come from the course's own organization only
+        org_member_ids = set((await db_session.execute(
+            select(UserOrganization.user_id).where(
+                UserOrganization.org_id == course.org_id,
+                UserOrganization.user_id.in_(found_user_ids),
+            )
+        )).scalars().all())
+    else:
+        authorship_map = {}
+        org_member_ids = set()
+
+    for username in usernames:
+        user = user_map.get(username)
+
+        if not user or user.id not in org_member_ids:
+            # Same reason for both, so usernames on other tenants can't be probed
+            results["failed"].append({
+                "username": username,
+                "reason": "User not found or invalid"
+            })
+            continue
+
+        if user.id in authorship_map:
+            results["failed"].append({
+                "username": username,
+                "reason": "User already has an authorship role for this course"
+            })
+            continue
+
+        # Create contributor (add to session, commit after the loop)
+        resource_author = ResourceAuthor(
+            resource_uuid=course_uuid,
+            user_id=user.id,
+            authorship=ResourceAuthorshipEnum.CONTRIBUTOR,
+            authorship_status=ResourceAuthorshipStatusEnum.PENDING,
+            creation_date=current_time,
+            update_date=current_time,
+        )
+
+        db_session.add(resource_author)
+
+        results["successful"].append({
+            "username": username,
+            "user_id": user.id
+        })
+
+    # Single commit for all staged additions; surface DB errors via failed list
+    if results["successful"]:
+        try:
+            await db_session.commit()
+        except Exception as db_err:
+            await db_session.rollback()
+            for item in list(results["successful"]):
+                results["failed"].append({"username": item["username"], "reason": f"Database error: {db_err}"})
+            results["successful"] = []
+
+    if results["successful"]:
+        await dispatch_webhooks(
+            event_name="course_contributor_added",
+            org_id=course.org_id,
+            data={
+                "course_uuid": course_uuid,
+                "contributors": results["successful"],
+            },
+        )
+
+    return results
+
+
+async def remove_bulk_course_contributors(
+    request: Request,
+    course_uuid: str,
+    usernames: List[str],
+    current_user: PublicUser | AnonymousUser | APITokenUser,
+    db_session: AsyncSession,
+):
+    """
+    Remove multiple contributors from a course by their usernames
+
+    SECURITY NOTES:
+    - Only course owners (CREATOR, MAINTAINER) or admins can remove contributors
+    - Requires strict course ownership checks
+    - Cannot remove contributors from courses the user doesn't own
+    - Cannot remove the course creator
+    """
+    # Verify user is not anonymous
+    await authorization_verify_if_user_is_anon(resolve_acting_user_id(current_user))
+
+    # SECURITY: Require course ownership or admin role for removing contributors
+    await check_resource_access(request, db_session, current_user, course_uuid, AccessAction.UPDATE)
+
+    enforce_batch_size_limit(len(usernames), "contributors")
+
+    # Check if course exists
+    statement = select(Course).where(Course.course_uuid == course_uuid)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+    owner_role, is_admin = await _require_contributor_manager(
+        request, course_uuid, current_user, db_session
+    )
+
+    # Process results
+    results = {
+        "successful": [],
+        "failed": []
+    }
+
+    # Batch fetch all users and existing authorships to avoid N+1 queries
+    found_users = (await db_session.execute(
+        select(User).where(User.username.in_(usernames))
+    )).scalars().all()
+    user_map = {u.username: u for u in found_users if u.id is not None}
+
+    found_user_ids = [u.id for u in user_map.values()]
+    if found_user_ids:
+        existing_authorships = (await db_session.execute(
+            select(ResourceAuthor).where(
+                and_(
+                    ResourceAuthor.resource_uuid == course_uuid,
+                    ResourceAuthor.user_id.in_(found_user_ids),
+                )
+            )
+        )).scalars().all()
+        authorship_map = {ra.user_id: ra for ra in existing_authorships}
+    else:
+        authorship_map = {}
+
+    for username in usernames:
+        user = user_map.get(username)
+
+        if not user:
+            results["failed"].append({
+                "username": username,
+                "reason": "User not found or invalid"
+            })
+            continue
+
+        existing_authorship = authorship_map.get(user.id)
+
+        if not existing_authorship:
+            results["failed"].append({
+                "username": username,
+                "reason": "User is not a contributor for this course"
+            })
+            continue
+
+        # SECURITY: Don't allow removing the creator
+        if existing_authorship.authorship == ResourceAuthorshipEnum.CREATOR:
+            results["failed"].append({
+                "username": username,
+                "reason": "Cannot remove the course creator"
+            })
+            continue
+
+        # SECURITY: maintainers manage contributors, not each other
+        if (
+            existing_authorship.authorship == ResourceAuthorshipEnum.MAINTAINER
+            and owner_role != ResourceAuthorshipEnum.CREATOR
+            and not is_admin
+        ):
+            results["failed"].append({
+                "username": username,
+                "reason": "Only the course creator or an admin can remove a maintainer"
+            })
+            continue
+
+        # Mark for removal (commit after the loop)
+        await db_session.delete(existing_authorship)
+
+        results["successful"].append({
+            "username": username,
+            "user_id": user.id
+        })
+
+    # Single commit for all staged removals; surface DB errors via failed list
+    if results["successful"]:
+        try:
+            await db_session.commit()
+        except Exception as db_err:
+            await db_session.rollback()
+            for item in list(results["successful"]):
+                results["failed"].append({"username": item["username"], "reason": f"Database error: {db_err}"})
+            results["successful"] = []
+
+    if results["successful"]:
+        await dispatch_webhooks(
+            event_name="course_contributor_removed",
+            org_id=course.org_id,
+            data={
+                "course_uuid": course_uuid,
+                "contributors": results["successful"],
+            },
+        )
+
+    return results

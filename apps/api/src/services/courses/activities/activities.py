@@ -1,0 +1,634 @@
+from sqlalchemy import func
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from src.core.ee_hooks import notify_ee_course_content_changed
+from src.db.courses.courses import Course
+from src.db.courses.chapters import Chapter
+from src.db.courses.activities import ActivityCreate, Activity, ActivityRead, ActivityUpdate
+from src.db.courses.assignments import Assignment
+from src.db.courses.chapter_activities import ChapterActivity
+from src.db.organizations import Organization, OrganizationRead
+from src.db.organization_config import OrganizationConfig
+from src.db.users import AnonymousUser, PublicUser, User
+from src.db.usergroups import UserGroup
+from src.security.auth import resolve_acting_user_id
+from fastapi import HTTPException, Request
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel
+from uuid import uuid4
+from dataclasses import replace
+from datetime import datetime
+from typing import Optional
+
+import json
+import logging
+
+from src.services.courses.activities.access import (
+    redact_activity_for_reader,
+)
+from src.security.rbac import check_resource_access, AccessAction
+from src.services.ai.rag.queue import index_activity
+from src.services.courses.activities.versioning import create_activity_version
+from src.services.courses.activities.utils import track_activity_created
+from src.services.courses.activities.dynamic_content import (
+    conditional_blocks,
+    conditional_reach,
+    count_conditions,
+    render_document,
+)
+from src.services.courses.activities.dynamic_context import (
+    DynamicLearner,
+    DynamicPreviewRequest,
+    DynamicPreviewResponse,
+    DynamicReachResponse,
+    build_render_context,
+    DynamicOptions,
+    course_dynamic_options,
+    course_learner_contexts,
+    enrolled_learner_context,
+    with_references,
+    persona_context,
+    search_enrolled_learners,
+)
+
+logger = logging.getLogger(__name__)
+
+####################################################
+# CRUD
+####################################################
+
+
+async def create_activity(
+    request: Request,
+    activity_object: ActivityCreate,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+
+    # CHeck if org exists
+    statement = select(Chapter).where(Chapter.id == activity_object.chapter_id)
+    chapter = (await db_session.execute(statement)).scalars().first()
+
+    if not chapter:
+        raise HTTPException(
+            status_code=404,
+            detail="Chapter not found",
+        )
+
+    # RBAC check
+    statement = select(Course).where(Course.id == chapter.course_id)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.CREATE)
+
+    # Create Activity
+    activity = Activity(**activity_object.model_dump())
+
+    activity.activity_uuid = str(f"activity_{uuid4()}")
+    if activity.extra_metadata:
+        activity.extra_metadata = keep_server_owned_metadata(activity.extra_metadata, None)
+    activity.creation_date = str(datetime.now())
+    activity.update_date = str(datetime.now())
+    activity.org_id = chapter.org_id
+    activity.course_id = chapter.course_id
+
+    # Flush to get the DB-assigned ID without committing yet
+    db_session.add(activity)
+    await db_session.flush()
+
+    if activity.id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Activity creation failed: could not retrieve activity ID",
+        )
+
+    # Determine insertion order using MAX to avoid loading all rows
+    max_order = (await db_session.execute(
+        select(func.max(ChapterActivity.order)).where(
+            ChapterActivity.chapter_id == activity_object.chapter_id
+        )
+    )).scalars().first()
+    to_be_used_order = (max_order or 0) + 1
+
+    # Add activity to chapter
+    activity_chapter = ChapterActivity(
+        chapter_id=activity_object.chapter_id,
+        activity_id=activity.id,
+        course_id=chapter.course_id,
+        org_id=chapter.org_id,
+        creation_date=str(datetime.now()),
+        update_date=str(datetime.now()),
+        order=to_be_used_order,
+    )
+
+    # Single atomic commit for both Activity and ChapterActivity
+    db_session.add(activity_chapter)
+    await db_session.commit()
+    await db_session.refresh(activity)
+    index_activity(activity.id)
+    notify_ee_course_content_changed(chapter.course_id)
+    await track_activity_created(activity, course, current_user)
+
+    return ActivityRead.model_validate(activity)
+
+
+async def get_activity(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+):
+    # Activity, course, last modified user and parent chapter (the lock check
+    # needs it) in a single query
+    statement = (
+        select(Activity, Course, User, Chapter)
+        .join(Course, Course.id == Activity.course_id)
+        .outerjoin(User, Activity.last_modified_by_id == User.id)
+        .outerjoin(ChapterActivity, ChapterActivity.activity_id == Activity.id)
+        .outerjoin(Chapter, Chapter.id == ChapterActivity.chapter_id)
+        .where(Activity.activity_uuid == activity_uuid)
+    )
+    result = (await db_session.execute(statement)).first()
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found",
+        )
+
+    activity, course, last_modified_user, parent_chapter = result
+
+    # RBAC check
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.READ)
+
+    activity_read = ActivityRead.model_validate(activity)
+    # Include last modified user info
+    activity_read.last_modified_by_username = last_modified_user.username if last_modified_user else None
+
+    return await redact_activity_for_reader(
+        request, activity_read, activity, course, current_user, db_session,
+        parent_chapter=parent_chapter,
+    )
+
+
+class EditorBootstrapCourse(BaseModel):
+    course_uuid: str
+    name: str
+    description: str | None = None
+    thumbnail_image: str | None = None
+    org_uuid: str
+    org_id: int
+
+
+class EditorBootstrapResponse(BaseModel):
+    activity: ActivityRead
+    course: EditorBootstrapCourse
+    org: OrganizationRead
+
+
+async def get_editor_bootstrap(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> EditorBootstrapResponse:
+    """Single-roundtrip payload for the activity editor.
+
+    Replaces three separate fetches (course meta + activity + org) with one.
+    All needed rows are pulled in a single SQL round-trip via joins, including
+    OrganizationConfig and the parent Chapter (for lock checks) so the lock
+    helper does not need a follow-up query.
+
+    Intentionally not cached: activity content must always reflect the latest
+    saved state for collaborators to avoid editing against stale data.
+    """
+    statement = (
+        select(Activity, Course, Organization, OrganizationConfig, User, Chapter)
+        .join(Course, Course.id == Activity.course_id)  # type: ignore
+        .join(Organization, Organization.id == Course.org_id)  # type: ignore
+        .outerjoin(OrganizationConfig, OrganizationConfig.org_id == Organization.id)  # type: ignore
+        .outerjoin(User, Activity.last_modified_by_id == User.id)  # type: ignore
+        .outerjoin(ChapterActivity, ChapterActivity.activity_id == Activity.id)  # type: ignore
+        .outerjoin(Chapter, Chapter.id == ChapterActivity.chapter_id)  # type: ignore
+        .where(Activity.activity_uuid == activity_uuid)
+    )
+    db_result = (await db_session.execute(statement)).first()
+
+    if not db_result:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity, course, org, org_config, last_modified_user, parent_chapter = db_result
+
+    # Only the editor loads this; learners read the activity via GET /activities/{uuid}.
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
+
+    activity_read = ActivityRead.model_validate(activity)
+    activity_read.last_modified_by_username = (
+        last_modified_user.username if last_modified_user else None
+    )
+    await redact_activity_for_reader(
+        request, activity_read, activity, course, current_user, db_session,
+        parent_chapter=parent_chapter,
+    )
+
+    # Build org with resolved_features (same shape the existing /orgs/uuid/{uuid}
+    # endpoint returns, so the frontend doesn't have to reshape anything).
+    from src.services.orgs.orgs import (
+        _build_org_read_with_resolved,
+        _redact_org_email_unless_manager,
+    )
+    org_read = await _redact_org_email_unless_manager(
+        request, _build_org_read_with_resolved(org, org_config), current_user, db_session
+    )
+
+    return EditorBootstrapResponse(
+        activity=activity_read,
+        course=EditorBootstrapCourse(
+            course_uuid=course.course_uuid,
+            name=course.name,
+            description=course.description,
+            thumbnail_image=course.thumbnail_image,
+            org_uuid=org.org_uuid,
+            org_id=org.id or 0,
+        ),
+        org=org_read,
+    )
+
+
+# A larger body than any real page; stops the preview being used to burn CPU.
+MAX_PREVIEW_CONTENT_BYTES = 5 * 1024 * 1024
+MAX_REACH_BLOCKS = 200
+# Condition checks per reach request; a real page uses a few percent of it.
+MAX_REACH_WORK = 2_000_000
+
+
+async def _load_for_editor(
+    request: Request, activity_uuid: str, current_user: PublicUser, db_session: AsyncSession
+) -> tuple[Activity, Course]:
+    row = (await db_session.execute(
+        select(Activity, Course)
+        .join(Course, Course.id == Activity.course_id)  # type: ignore[arg-type]
+        .where(Activity.activity_uuid == activity_uuid)
+    )).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    activity, course = row
+    await check_resource_access(
+        request, db_session, current_user, course.course_uuid, AccessAction.UPDATE
+    )
+    return activity, course
+
+
+def _editor_content(content: Optional[dict], activity: Activity) -> dict:
+    content = content if content is not None else activity.content
+    if len(json.dumps(content)) > MAX_PREVIEW_CONTENT_BYTES:
+        raise HTTPException(status_code=413, detail="Content too large to preview")
+    return content or {}
+
+
+async def get_dynamic_preview(
+    request: Request,
+    activity_uuid: str,
+    preview: DynamicPreviewRequest,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> DynamicPreviewResponse:
+    """Render the activity as a simulated reader ("view as") would get it.
+
+    Editors only: the persona can claim any group, so this must never become
+    a way for a learner to read blocks hidden from them. ``preview.content``
+    lets the editor preview its unsaved document.
+    """
+    activity, course = await _load_for_editor(request, activity_uuid, current_user, db_session)
+    content = _editor_content(preview.content, activity)
+
+    persona = preview.persona
+    if persona.user_uuid:
+        ctx = await enrolled_learner_context(
+            request, course, persona.user_uuid, db_session,
+            activity_name=activity.name, activity_uuid=activity.activity_uuid,
+        )
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="Learner not enrolled in this course")
+        # Course editors don't otherwise see learners' addresses: keep the
+        # domain (email-domain rules still apply) and hide the rest.
+        ctx = replace(ctx, email=f"***@{ctx.email_domain}" if ctx.email_domain else "")
+        if persona.today:
+            ctx = replace(ctx, today=persona.today)
+    else:
+        base = await build_render_context(
+            request, current_user, course, db_session,
+            activity_name=activity.name, activity_uuid=activity.activity_uuid,
+        )
+        group_names = tuple((await db_session.execute(
+            select(UserGroup.name).where(
+                UserGroup.org_id == course.org_id,
+                UserGroup.usergroup_uuid.in_(persona.usergroup_uuids),  # type: ignore[attr-defined]
+            )
+        )).scalars().all()) if persona.usergroup_uuids else ()
+        ctx = persona_context(base, persona, current_user, group_names=group_names, org_id=course.org_id)
+
+    ctx = await with_references(ctx, course.org_id, content, db_session)
+    rendered, stats = render_document(content, ctx)
+    return DynamicPreviewResponse(
+        content=rendered if isinstance(rendered, dict) else {},
+        shown_blocks=stats.shown_blocks,
+        hidden_blocks=stats.hidden_blocks,
+        variables=stats.variables,
+    )
+
+
+async def get_dynamic_reach(
+    request: Request,
+    activity_uuid: str,
+    content: Optional[dict],
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> DynamicReachResponse:
+    """How many of the course's enrolled learners see each conditional block.
+    Editors only; counts, never who."""
+    activity, course = await _load_for_editor(request, activity_uuid, current_user, db_session)
+    content = _editor_content(content, activity)
+    blocks = conditional_blocks(content)
+    if not blocks:
+        return DynamicReachResponse(learners=0, blocks=[])
+    if len(blocks) > MAX_REACH_BLOCKS:
+        raise HTTPException(status_code=413, detail="Too many conditional blocks to count")
+    contexts, truncated = await course_learner_contexts(
+        request, course, db_session, activity_name=activity.name, activity_uuid=activity.activity_uuid
+    )
+    # Work is (conditions in the document) x learners: cap the product, and
+    # keep the loop off the event loop.
+    conditions = sum(max(1, count_conditions(rules)) for rules, _ in blocks)
+    if conditions * len(contexts) > MAX_REACH_WORK:
+        raise HTTPException(status_code=413, detail="Too many rules to count for this many learners")
+    counts = await run_in_threadpool(conditional_reach, content, contexts)
+    return DynamicReachResponse(learners=len(contexts), blocks=counts, truncated=truncated)
+
+
+async def list_dynamic_learners(
+    request: Request,
+    activity_uuid: str,
+    query: str,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+) -> list[DynamicLearner]:
+    """Enrolled learners an editor can preview the activity as."""
+    _, course = await _load_for_editor(request, activity_uuid, current_user, db_session)
+    return [
+        DynamicLearner(
+            user_uuid=u.user_uuid, username=u.username,
+            first_name=u.first_name or "", last_name=u.last_name or "",
+        )
+        for u in await search_enrolled_learners(course, query, db_session)
+    ]
+
+
+async def get_dynamic_options(
+    request: Request, activity_uuid: str, current_user: PublicUser, db_session: AsyncSession
+) -> DynamicOptions:
+    """The course's assignments, for rules about submissions. Editors only."""
+    _, course = await _load_for_editor(request, activity_uuid, current_user, db_session)
+    return await course_dynamic_options(course, db_session)
+
+
+async def get_activityby_id(
+    request: Request,
+    activity_id: int,
+    current_user: PublicUser,
+    db_session: AsyncSession,
+):
+    # Optimize by joining Activity with Course in a single query
+    statement = (
+        select(Activity, Course)
+        .join(Course)
+        .where(Activity.id == activity_id)
+    )
+    result = (await db_session.execute(statement)).first()
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found",
+        )
+
+    activity, course = result
+
+    # RBAC check
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.READ)
+
+    return await redact_activity_for_reader(
+        request, ActivityRead.model_validate(activity), activity, course, current_user, db_session
+    )
+
+
+_SERVER_OWNED_METADATA_KEYS = ("captions", "chapters", "hls")
+
+
+def keep_server_owned_metadata(incoming: dict | None, current: dict | None) -> dict:
+    """Client-supplied ``extra_metadata`` with the pipeline-owned keys taken
+    from ``current`` (or dropped when it has none), so a write can never
+    forge caption or HLS state."""
+    merged = dict(incoming or {})
+    current = current or {}
+    for key in _SERVER_OWNED_METADATA_KEYS:
+        if key in current:
+            merged[key] = current[key]
+        else:
+            merged.pop(key, None)
+    return merged
+
+
+async def update_activity(
+    request: Request,
+    activity_object: ActivityUpdate,
+    activity_uuid: str,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+    statement = select(Activity).where(Activity.activity_uuid == activity_uuid)
+    activity = (await db_session.execute(statement)).scalars().first()
+
+    if not activity:
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found",
+        )
+
+    # RBAC check
+    statement = select(Course).where(Course.id == activity.course_id)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.UPDATE)
+
+    # Update only the fields that were explicitly set (not default values)
+    # Using model_dump(exclude_unset=True) to get only the fields that were passed in
+    update_data = activity_object.model_dump(exclude_unset=True)
+
+    # Create a version snapshot before updating content
+    # This preserves the current state for version history.
+    # resolve_acting_user_id unwraps APITokenUser → the creating human's id,
+    # because current_user.id on a token is 0 (the token id, not a user id)
+    # and created_by_id is an FK to user.id, so writing 0 triggers a FK
+    # violation and the whole update 500s.
+    if 'content' in update_data and activity.content:
+        user_id = resolve_acting_user_id(current_user)
+        await create_activity_version(activity, user_id, db_session)
+        # Increment version number
+        activity.current_version = (activity.current_version or 1) + 1
+        # Track who made the change
+        activity.last_modified_by_id = user_id
+
+    # Caption and HLS state is written only by their pipelines (configure_captions,
+    # the background jobs); a client-supplied copy would feed forged codes,
+    # statuses or keys back into those jobs and the player.
+    if 'extra_metadata' in update_data:
+        incoming = keep_server_owned_metadata(update_data['extra_metadata'], activity.extra_metadata)
+        # Clearing (null) stays null unless pipeline state has to survive it
+        if update_data['extra_metadata'] is not None or incoming:
+            update_data['extra_metadata'] = incoming
+
+    for field, value in update_data.items():
+        setattr(activity, field, value)
+
+    # An assignment activity and its assignment each carry a published flag;
+    # publishing from the course structure only touches this one, so mirror it
+    # (update_assignment does the reverse) and the two can't drift apart.
+    if 'published' in update_data:
+        for assignment in (await db_session.execute(
+            select(Assignment).where(Assignment.activity_id == activity.id)
+        )).scalars().all():
+            assignment.published = activity.published
+            db_session.add(assignment)
+
+    # Update the update_date timestamp
+    activity.update_date = str(datetime.now())
+
+    # Mark content as modified if it was updated (important for JSON fields)
+    if 'content' in update_data:
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(activity, "content")
+
+    db_session.add(activity)
+    await db_session.commit()
+    await db_session.refresh(activity)
+    if update_data.keys() & {"name", "published"}:
+        notify_ee_course_content_changed(activity.course_id)
+
+    index_activity(activity.id)
+
+    activity = ActivityRead.model_validate(activity)
+
+    return activity
+
+
+async def delete_activity(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+    statement = select(Activity).where(Activity.activity_uuid == activity_uuid)
+    activity = (await db_session.execute(statement)).scalars().first()
+
+    if not activity:
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found",
+        )
+
+    # RBAC check
+    statement = select(Course).where(Course.id == activity.course_id)
+    course = (await db_session.execute(statement)).scalars().first()
+
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.DELETE)
+
+    # Clean up content files from storage
+    from src.db.organizations import Organization
+    org_statement = select(Organization).where(Organization.id == course.org_id)
+    org = (await db_session.execute(org_statement)).scalars().first()
+    if org:
+        from src.services.courses.transfer.storage_utils import delete_storage_directory
+        content_path = f"content/orgs/{org.org_uuid}/courses/{course.course_uuid}/activities/{activity_uuid}"
+        delete_storage_directory(content_path)
+
+    # Delete activity from chapter
+    statement = select(ChapterActivity).where(
+        ChapterActivity.activity_id == activity.id
+    )
+    activity_chapter = (await db_session.execute(statement)).scalars().first()
+
+    if not activity_chapter:
+        raise HTTPException(
+            status_code=404,
+            detail="Activity not found in chapter",
+        )
+
+    await db_session.delete(activity_chapter)
+    await db_session.delete(activity)
+    await db_session.commit()
+    notify_ee_course_content_changed(course.id)
+
+    return {"detail": "Activity deleted"}
+
+
+####################################################
+# Misc
+####################################################
+
+
+async def get_activities(
+    request: Request,
+    coursechapter_id: int,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+) -> list[ActivityRead]:
+    # Single query joining Activity, Chapter, and Course to avoid 3 sequential queries
+    statement = (
+        select(Activity, Chapter, Course)
+        .join(ChapterActivity, Activity.id == ChapterActivity.activity_id)
+        .join(Chapter, ChapterActivity.chapter_id == Chapter.id)
+        .join(Course, Chapter.course_id == Course.id)
+        .where(
+            ChapterActivity.chapter_id == coursechapter_id,
+            Activity.published == True,
+        )
+    )
+    results = (await db_session.execute(statement)).all()
+
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="No published activities found",
+        )
+
+    _, chapter, course = results[0]
+    await check_resource_access(request, db_session, current_user, course.course_uuid, AccessAction.READ)
+
+    return [
+        await redact_activity_for_reader(
+            request, ActivityRead.model_validate(activity), activity, course, current_user, db_session,
+            parent_chapter=chapter,
+        )
+        for activity, _, _ in results
+    ]

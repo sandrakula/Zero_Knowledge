@@ -1,0 +1,335 @@
+// ==UserScript==
+// @name         zerok · Informatics verdict logger
+// @namespace    https://zerok
+// @version      1.0.0
+// @description  Records accepted informatics.msk.ru runs in zerok. Reads the page's own filter-runs response; never submits code and never sends cookies.
+// @match        https://informatics.msk.ru/*
+// @run-at       document-start
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
+// @connect      *
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  var W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+  var LMS_KEY = 'zerok_lms_url';
+  var TOKEN_KEY = 'zerok_ingest_token';
+  var SENT_KEY = 'zerok_sent_runs';
+  var SOLVED = { 0: true, 8: true };
+
+  // The download route replaces this placeholder with the LMS public API base.
+  // A blank value means the script was fetched from somewhere that cannot bake
+  // it in; in that case the setup prompt still asks for the address once.
+  var DEFAULT_API = __ZEROK_API_BASE__;
+  var LMS = String(GM_getValue(LMS_KEY, '') || DEFAULT_API || '').replace(/\/+$/, '');
+  var TOKEN = String(GM_getValue(TOKEN_KEY, '') || '');
+
+  function configure() {
+    // With the baked address the student only has to paste the key. Keep the
+    // address prompt as a fallback for the rare unbaked install.
+    var lms = LMS;
+    if (!lms) {
+      lms = window.prompt(
+        'zerok: адрес API LMS (например, https://learn.example.com/api/v1)',
+        ''
+      );
+      if (!lms) return;
+    }
+    var token = window.prompt('zerok: вставьте ключ из настроек аккаунта', TOKEN || '');
+    if (!token) return;
+    LMS = String(lms).trim().replace(/\/+$/, '');
+    TOKEN = String(token).trim();
+    GM_setValue(LMS_KEY, LMS);
+    GM_setValue(TOKEN_KEY, TOKEN);
+    toast('zerok: готово, скрипт подключён');
+    ping();
+  }
+
+  function ping() {
+    if (!LMS || !TOKEN) return;
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: LMS + '/informatics/ping',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Ingest-Token': TOKEN,
+      },
+      data: '{}',
+      onload: function (response) {
+        if (response.status === 401 && !warnedInvalidKey) {
+          warnedInvalidKey = true;
+          toast('zerok: ключ недействителен — откройте меню скрипта и настройте заново');
+        }
+      },
+    });
+  }
+
+  var warnedInvalidKey = false;
+
+  // The LMS account page can open `informatics.msk.ru/#zerok-key=<token>`.
+  // Reading it here removes the copy/paste step entirely: the student clicks
+  // one button on the LMS and the script configures itself. The key travels in
+  // the URL fragment, which browsers never send to the server, and is erased
+  // from the address bar immediately.
+  function consumeHashKey() {
+    try {
+      var hash = String(window.location.hash || '');
+      var marker = 'zerok-key=';
+      var at = hash.indexOf(marker);
+      if (at === -1) return false;
+
+      var raw = hash.slice(at + marker.length);
+      var amp = raw.indexOf('&');
+      if (amp !== -1) raw = raw.slice(0, amp);
+
+      var token = decodeURIComponent(raw).trim();
+      if (!token) return false;
+      TOKEN = token;
+      GM_setValue(TOKEN_KEY, TOKEN);
+
+      var before = at > 1 ? hash.slice(0, at - 1) : '';
+      var after = amp !== -1 ? hash.slice(at + marker.length + amp) : '';
+      var cleaned = (before + after).replace(/^[#&]+/, '');
+      var url =
+        window.location.pathname +
+        window.location.search +
+        (cleaned ? '#' + cleaned : '');
+      try {
+        window.history.replaceState({}, document.title || '', url);
+      } catch (e) {
+        /* older browsers */
+      }
+
+      toast('zerok: ключ получен, скрипт подключён');
+      ping();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (!consumeHashKey()) {
+    if (!LMS || !TOKEN) configure();
+    else ping();
+  } else if (!LMS) {
+    // Unbaked install: the key arrived but the API address is unknown.
+    configure();
+  }
+  window.addEventListener('load', ping);
+  try {
+    GM_registerMenuCommand('zerok: настроить ключ', configure);
+    GM_registerMenuCommand('zerok: сменить адрес API', function () {
+      var lms = window.prompt('zerok: адрес API LMS', LMS || DEFAULT_API || '');
+      if (!lms) return;
+      LMS = String(lms).trim().replace(/\/+$/, '');
+      GM_setValue(LMS_KEY, LMS);
+      toast('zerok: адрес API сохранён');
+      ping();
+    });
+  } catch (e) {
+    /* older managers */
+  }
+
+  function sentSet() {
+    try {
+      var raw = GM_getValue(SENT_KEY, '[]');
+      var arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  var sent = {};
+  sentSet().forEach(function (id) {
+    sent[String(id)] = true;
+  });
+
+  function remember(id) {
+    sent[String(id)] = true;
+    var ids = Object.keys(sent).slice(-500);
+    sent = {};
+    ids.forEach(function (key) {
+      sent[key] = true;
+    });
+    try {
+      GM_setValue(SENT_KEY, JSON.stringify(ids));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function toast(message) {
+    function show() {
+      var el = document.createElement('div');
+      el.textContent = message;
+      el.style.cssText = [
+        'position:fixed',
+        'z-index:2147483647',
+        'inset-inline-end:16px',
+        'bottom:16px',
+        'max-width:320px',
+        'padding:10px 14px',
+        'border-radius:12px',
+        'background:#0c0d10',
+        'color:#fff',
+        'font:600 13px/1.4 Arial,Helvetica,sans-serif',
+        'box-shadow:0 8px 24px rgba(0,0,0,.35)',
+        'opacity:0',
+        'transition:opacity .2s ease',
+        'pointer-events:none',
+      ].join(';');
+      document.documentElement.appendChild(el);
+      requestAnimationFrame(function () {
+        el.style.opacity = '1';
+      });
+      setTimeout(function () {
+        el.style.opacity = '0';
+        setTimeout(function () {
+          el.remove();
+        }, 250);
+      }, 4500);
+    }
+    if (document.body) show();
+    else document.addEventListener('DOMContentLoaded', show, { once: true });
+  }
+
+  function send(problemId, run) {
+    if (!LMS || !TOKEN) return;
+    var status = Number(run && run.ejudge_status);
+    if (!SOLVED[status]) return;
+    var runId = Number(run && run.id);
+    if (!runId || sent[String(runId)]) return;
+
+    var payload = {
+      problem_id: Number(problemId),
+      run_id: runId,
+      ejudge_status: status,
+      tests: Number(run.ejudge_test_num || 0),
+      score: Number(run.ejudge_score || 0),
+      source: 'userscript',
+    };
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: LMS + '/informatics/ingest',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Ingest-Token': TOKEN,
+      },
+      data: JSON.stringify(payload),
+      onload: function (response) {
+        if (response.status >= 200 && response.status < 300) {
+          remember(runId);
+          toast('zerok: задача №' + payload.problem_id + ' зачтена');
+        } else if (response.status === 401) {
+          toast('zerok: ключ недействителен — откройте меню скрипта и настройте заново');
+        }
+      },
+    });
+  }
+
+  function handleRuns(url, text) {
+    try {
+      var match = String(url || '').match(/\/py\/problem\/(\d+)\/filter-runs/);
+      if (!match) return;
+      var problemId = match[1];
+      var data = JSON.parse(text);
+      var runs = (data && (data.data || data.runs)) || [];
+      if (!Array.isArray(runs)) return;
+      runs.forEach(function (run) {
+        send(problemId, run);
+      });
+    } catch (e) {
+      /* not JSON or unexpected shape */
+    }
+  }
+
+  function problemIdFromPage() {
+    try {
+      var node = document.querySelector('[data-problem-id]');
+      if (node) return node.getAttribute('data-problem-id');
+      var match = location.href.match(/[?&]chapterid=(\d+)/);
+      if (match) return match[1];
+    } catch (e) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  // The page uses jQuery.getJSON, which goes through XMLHttpRequest: hook the
+  // page's own class, not the userscript sandbox copy.
+  try {
+    var XHR = W.XMLHttpRequest;
+    if (XHR && XHR.prototype && !XHR.prototype.__zerokPatched) {
+      var open = XHR.prototype.open;
+      var sendXhr = XHR.prototype.send;
+      XHR.prototype.open = function (method, url) {
+        this.__zerokUrl = typeof url === 'string' ? url : '';
+        return open.apply(this, arguments);
+      };
+      XHR.prototype.send = function () {
+        var xhr = this;
+        xhr.addEventListener('load', function () {
+          try {
+            if (xhr.__zerokUrl && xhr.responseText) {
+              handleRuns(xhr.__zerokUrl, xhr.responseText);
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        });
+        return sendXhr.apply(this, arguments);
+      };
+      XHR.prototype.__zerokPatched = true;
+    }
+  } catch (e) {
+    /* ignore */
+  }
+
+  try {
+    if (W.fetch && !W.fetch.__zerokPatched) {
+      var originalFetch = W.fetch;
+      var patched = function () {
+        var args = arguments;
+        var url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+        return originalFetch.apply(this, args).then(function (response) {
+          try {
+            if (url && url.indexOf('/filter-runs') >= 0) {
+              response.clone().text().then(function (text) {
+                handleRuns(url, text);
+              });
+            }
+          } catch (e) {
+            /* ignore */
+          }
+          return response;
+        });
+      };
+      patched.__zerokPatched = true;
+      W.fetch = patched;
+    }
+  } catch (e) {
+    /* ignore */
+  }
+
+  // The "all runs" page can preload runs into CACHED_RUNS without a request.
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      try {
+        var cached = W.CACHED_RUNS;
+        var pid = problemIdFromPage();
+        if (cached && pid) {
+          handleRuns('/py/problem/' + pid + '/filter-runs', JSON.stringify(cached));
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    }, 2500);
+  });
+})();

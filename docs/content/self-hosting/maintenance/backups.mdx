@@ -1,0 +1,84 @@
+---
+description: Back up and restore a self-hosted LearnHouse instance with the CLI, covering the database, .env file and uploaded content, plus cron automation.
+---
+
+import { Callout } from '@/components/mdx'
+
+# Backups
+
+Back up your LearnHouse data regularly. The LearnHouse CLI has built-in backup and restore commands.
+
+<CloudCta variant="selfhost">LearnHouse Cloud backs up your academy for you.</CloudCta>
+
+## Creating a Backup
+
+Create a backup with a single command:
+
+```bash
+npx learnhouse backup
+```
+
+In a terminal, the command asks whether to create or restore a backup. Without a terminal (for example in cron), it creates a backup without asking.
+
+The archive contains:
+
+- **`database.sql`**: a `pg_dump` of the LearnHouse PostgreSQL database
+- **`.env`**: a copy of your instance's environment file
+- **`content.tar`**: uploaded files (images, videos, documents) from the app container. Skipped when content is stored in S3, and when the app container is not running (the CLI warns you).
+- **`backup.json`**: the CLI version, deployment ID, edition and creation date
+
+Backups are written to `<installDir>/backups/learnhouse-backup-<timestamp>.tar.gz`. The CLI prints the path and size when the backup completes. The `backups/` directory and the archives are readable only by your user, because they contain every secret in `.env`.
+
+<Callout type="info">
+`npx learnhouse backup` only works when PostgreSQL runs in the in-container database managed by the CLI, and the database container must be running. If you use an external database, use your provider's backup tools instead.
+</Callout>
+
+## Restoring from a Backup
+
+To restore from a backup file:
+
+```bash
+npx learnhouse restore ~/.learnhouse/<name>/backups/learnhouse-backup-<timestamp>.tar.gz
+```
+
+`restore` also accepts the `db-pre-upgrade-<timestamp>.sql.gz` dumps written by `npx learnhouse update`, and plain `.sql` dumps.
+
+The command:
+
+1. Asks for confirmation (pass `--yes` to skip it; it is required when there is no terminal)
+2. Stops the app container so nothing holds database connections
+3. Replaces the database in a single transaction. If anything fails, the transaction rolls back and the database is unchanged.
+4. In a terminal, offers to restore the `.env` file from the archive. It warns you when the backup came from a different deployment.
+5. Starts the services again and restores the uploaded content from `content.tar`
+
+<Callout type="warning">
+Restoring a backup overwrites the database. Make sure you are restoring to the correct installation (use `--dir` when you have several).
+</Callout>
+
+## Automating Backups
+
+Set up automated backups with a cron job. Because cron has no terminal, `backup` creates a backup without prompting. Pass `--dir` so the command finds your installation, and use the full path to `npx` if it is not on cron's `PATH`:
+
+```bash
+# Edit your crontab
+crontab -e
+
+# Daily backup at 2:00 AM
+0 2 * * * npx --yes learnhouse --dir /home/you/.learnhouse/default backup >> /home/you/learnhouse-backup.log 2>&1
+```
+
+The CLI exits with a non-zero code when a backup fails, so your monitoring can pick it up.
+
+## Backup Retention
+
+Backup files accumulate over time and can consume significant disk space. Implement a retention policy to remove old backups. For example, delete backups older than 7 days:
+
+```bash
+find ~/.learnhouse/<name>/backups -name "learnhouse-backup-*.tar.gz" -mtime +7 -delete
+```
+
+Copy backups off the server as well, so a lost disk does not take them with it.
+
+## S3 Content
+
+When using `s3api` storage, uploaded files are not in the backup archive. Rely on your S3 provider's versioning, lifecycle, or cross-region replication features to protect them.

@@ -1,0 +1,133 @@
+---
+description: Connect informatics.msk.ru to LearnHouse, submit code from the LMS, follow verdicts and credit tasks exactly once.
+---
+
+import { Callout } from '@/components/mdx'
+
+# Informatics
+
+The Informatics module connects a LearnHouse course to the external judge at
+[informatics.msk.ru](https://informatics.msk.ru). The learner connects their
+**informatics.msk.ru login and password** once. The API encrypts the password,
+queues a submission and a background worker submits the code and polls the
+verdict. No browser extension or userscript is required.
+
+<Callout>
+The password is stored encrypted. It is never returned by the API, never
+logged, and it is deleted when the learner disconnects. Cookies are kept in
+memory only.
+</Callout>
+
+## Student setup
+
+1. Open **Account → Profile**.
+2. In the **Automatic submission** card enter your informatics.msk.ru email
+   (or username) and password.
+3. The API logs in once, encrypts the password and stores it. From then on it
+   submits code and reads verdicts without asking again.
+4. Use **Check session** to re-login after a password change; use
+   **Reconnect** to replace the stored password.
+
+The password is encrypted with a key derived from the deployment's JWT secret.
+It is never returned by the API or logged; cookies stay in memory only.
+
+### Google-only accounts
+
+Accounts created through Google have no local Moodle password. Sign in to
+informatics.msk.ru through Google in your browser, open
+**DevTools → Application → Cookies → informatics.msk.ru**, copy the value of
+`MoodleSession` and paste it into **Google account (no password)** in the same
+card. The cookie is validated, encrypted and used until the session expires;
+then repeat the steps.
+
+## Teacher view
+
+The code task editor has an **Informatics problem ID** field. When it is set,
+the task shows the student submission panel and, in the teacher view, a table of
+all attempts for that task. Staff with `assignments.update` permission on the
+course can open the attempt list; learners only see their own attempts.
+
+## How a task is credited
+
+An `ACCEPTED` Informatics verdict is authoritative for a task that carries an
+Informatics problem id:
+
+- the per-task submission is marked as manually graded with the maximum task
+  grade, so the normal grading pass does not overwrite it with local tests;
+- the assignment is finalized only when every task has a submission;
+- the credit is idempotent (`credited` flag);
+- a non-accepted verdict is stored but does not credit the task.
+
+## Honest limitations
+
+- Informatics does not expose an official API token. The server-side path uses
+  the same Moodle login and `filter-runs` protocol as the website, so it can
+  break if that protocol changes.
+- The password is encrypted with a key derived from the deployment's JWT
+  secret. Rotating that secret makes stored passwords unreadable; learners must
+  reconnect.
+- Statistics are computed from the LMS tables, not from Google Sheets. See
+  **Statistics** below.
+
+## Statistics
+
+Everything needed for statistics is already in the LMS database:
+
+- `informatics_submission` — every attempt: user, problem, language, status,
+  verdict, tests, score, time, memory, compiler/runtime output, timestamps;
+- `informatics_problem` — cached problem title, languages and limits;
+- `informatics_task_map` — optional `problem_id → category/title` metadata for
+  grouping.
+
+There is no Google Form or Sheet relay. Optional categories can be imported
+with:
+
+```bash
+cd apps/api
+uv run python scripts/import_informatics_mapping.py mapping.csv
+```
+
+```csv
+problem_id,category,title
+2936,Алгоритмы,Гипотенуза
+```
+
+## Background worker
+
+The worker starts with the API. It claims one attempt at a time, submits,
+polls with backoff, finalizes the verdict and credits the task. It recovers
+attempts whose worker lease expired.
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `LEARNHOUSE_INFORMATICS_WORKER` | `1` | Set to `0` to disable the worker. |
+
+## API
+
+All endpoints live under `/api/v1/informatics`.
+
+| Method | Path | Who |
+| --- | --- | --- |
+| `GET` / `POST` / `DELETE` | `/link` | Learner |
+| `POST` | `/link/session` | Learner (Google-only account, MoodleSession import) |
+| `POST` | `/link/verify` | Learner |
+| `DELETE` | `/link/server` | Learner (removes the stored password and session) |
+| `POST` | `/submissions` | Learner |
+| `GET` | `/submissions` / `/submissions/{uuid}` | Learner or staff |
+| `POST` | `/submissions/{uuid}/retry` / `cancel` | Learner |
+| `GET` | `/submissions/task/{assignment_task_uuid}` | Staff |
+| `GET` | `/problems/{id}` / `/problems/{id}/languages` | Learner |
+| `GET` | `/statistics` | Learner (own) / staff (org or user) |
+| `GET` | `/health` | Superadmin |
+| `POST` | `/admin/requeue/{uuid}` / `/admin/reconcile/{uuid}` | Staff |
+
+## Security
+
+- Password: Fernet-encrypted at rest; never returned by the API or logged.
+- Google session: the MoodleSession cookie is Fernet-encrypted at rest and
+  never returned by the API. It expires like a normal browser session.
+- Cookies used for a submission: in memory only; never written to the database.
+- Source code: stored for the owner and course staff; learner/teacher responses
+  do not expose another user's source.
+- Rate limits: submissions are rate-limited per user.
+- API tokens: cannot manage the Informatics account or submit code.

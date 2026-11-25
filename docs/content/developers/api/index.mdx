@@ -1,0 +1,48 @@
+---
+title: "REST API"
+description: "Find your way around the LearnHouse REST API: base URLs, where the full endpoint reference lives, and the guides for tokens and headless grading."
+---
+
+import { Callout } from '@/components/mdx'
+import { DevHero } from '../../../components/developers/Developers'
+
+<DevHero section="api" eyebrow="Any language" title="The REST API">
+  Everything LearnHouse does goes through this API: courses, learners, progress, assignments, payments. Call it from
+  any language, and get webhooks when things happen.
+</DevHero>
+
+The LearnHouse API is a JSON REST API. Every path starts with `/api/v1/`.
+
+| Where LearnHouse runs | Base URL |
+| --- | --- |
+| LearnHouse Cloud | `https://api.learnhouse.io/api/v1/` |
+| Self-hosted | `https://your-domain.com/api/v1/` |
+| Local development | `http://localhost:1338/api/v1/` |
+
+<Callout type="info">
+  Writing JavaScript or TypeScript? The [SDK](/developers/sdk) wraps this API with full types, retries and errors, and
+  works in browsers, Node, edge workers and React Native.
+</Callout>
+
+## API Reference
+
+The **[API Reference](/reference)** documents every endpoint with its request and response schemas, the token right it
+needs, cURL, SDK, JavaScript and Python examples, and a live playground. It is generated from the API's OpenAPI
+document, so it matches what the server accepts. Start with its guides:
+
+- **[Authentication](/reference/guides/authentication)**: API tokens, user sessions, token rights, and which endpoint groups refuse tokens.
+- **[Errors](/reference/guides/errors)**: status codes and the shape of `detail`.
+- **[Rate limits & pagination](/reference/guides/rate-limits)**: per-endpoint limits and paginated lists.
+
+## More in this section
+
+- **[API tokens](/developers/api/authentication)**: create, scope, regenerate and revoke tokens in the dashboard.
+- **[Headless Assignments](/developers/api/headless-assignments)**: author assignments, submit for learners and grade them with an API token.
+- **[Webhooks](/platform/automations/webhooks)**: get a signed request on your server when something happens in LearnHouse.
+
+The OpenAPI document the reference is built from is published at [/reference/openapi.json](/reference/openapi.json).
+
+<Callout type="info">
+On a self-hosted instance, the raw OpenAPI document (`/openapi.json`) and Swagger UI (`/docs`) are only served in
+development mode (`LEARNHOUSE_DEVELOPMENT_MODE=true`).
+</Callout>

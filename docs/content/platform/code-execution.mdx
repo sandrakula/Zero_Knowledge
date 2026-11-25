@@ -1,0 +1,76 @@
+---
+description: Set up Code Playground challenges that run learner code in 30 languages with test cases, hints, locked lines and solutions, plus the execution limits.
+---
+
+import { Callout } from '@/components/mdx'
+
+# Code Execution
+
+LearnHouse runs learners' code in a sandbox through [Judge0](https://judge0.com/). You use it in two places:
+
+- The **Code Playground** block, a coding challenge you add to any Dynamic Page from the `/` menu.
+- The **Code** task type in [assignments](/platform/assignments/task-types#code), for graded code exercises.
+
+Both run code the same way. This page covers the Code Playground block.
+
+<Callout>
+Code execution needs a Judge0 instance. On self-hosted installs set `LEARNHOUSE_JUDGE0_API_URL` (see [Environment Variables](/self-hosting/configuration/environment-variables)).
+</Callout>
+
+## Supported languages
+
+Python 3, JavaScript (Node), TypeScript, Java, C++, C, Rust, Go, PHP, Ruby, Kotlin, C#, Swift, Scala, Perl, R, Dart, Haskell, Lua, Elixir, Clojure, SQL, Bash, Objective-C, Pascal, Fortran, Prolog, Common Lisp, PowerShell and Assembly (NASM). That is 30 languages. New blocks start in Python 3.
+
+## Setting up a challenge
+
+Insert a **Code Playground** block and fill in its settings:
+
+| Setting | What it does |
+| --- | --- |
+| **Language** | The language learners write in. |
+| **Description** | The challenge statement. Supports Markdown. |
+| **Difficulty** | **Easy**, **Medium** or **Hard**. Shown as a badge. |
+| **Starter code** | The code learners start from. |
+| **Test cases** | Each one has a label, an **Input** (sent to stdin) and an **Expected Output**. |
+| **Hints** | A list of hints learners can open one by one. |
+| **Solution Code** | Your model solution. Revealed to learners after enough attempts. |
+| **Attempts to unlock** | How many test runs a learner needs before the solution unlocks. Default 3. |
+| **Time Limit** | Maximum run time per execution. Default 10 seconds. |
+| **Expected Speed** / **Expected Memory** | The time and space complexity you expect, shown to learners. |
+| **Timed Challenge** | Adds a countdown timer. Set its **Duration (minutes)**. Default 5 minutes. |
+| **Additional Files** | Extra files available to the learner's code, such as `data.txt` or `utils.py`. |
+
+For **SQL** challenges you can also upload a SQLite database (`.sqlite`, `.db` or `.sqlite3`). Learners' queries run against it.
+
+### Locked lines and blanks
+
+Two markers in the starter code change how learners can edit it:
+
+- Lines between two `// --- locked ---` markers are read-only for learners.
+- Lines between two `// --- blank ---` markers become fill-in-the-blank regions: learners only fill in that part.
+
+## What learners see
+
+Learners write code in an editor with syntax highlighting and autocomplete, then run it.
+
+- **Run**: `Ctrl+Enter` (`Cmd+Enter` on macOS). With test cases, every case runs and the block shows which passed, the output against the expected output, and a score.
+- **Reset code**: `Ctrl+Shift+R` (`Cmd+Shift+R` on macOS) restores the starter code.
+- **Own test cases**: learners can add their own inputs to check edge cases.
+- **Errors**: compile and runtime errors are marked on the line they come from.
+- **Solution**: once the attempt count is reached, learners can open the solution and compare it with their own code side by side.
+- **Submission history**: each learner's runs are saved, so they can go back to a previous attempt. The newest 500 per activity are kept.
+
+Code Playground results are for practice. They are not graded. For graded code, use a Code task in an assignment.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Test cases per run | 50 |
+| Single runs per learner | 60 per minute |
+| Test case batches per learner | 20 per minute |
+| Source code size | 65,536 characters |
+| Input size per test case | 65,536 characters |
+| Additional files | 20 files, 131,072 characters each |
+
+API tokens cannot run code. Execution only works for signed-in users with access to the activity.

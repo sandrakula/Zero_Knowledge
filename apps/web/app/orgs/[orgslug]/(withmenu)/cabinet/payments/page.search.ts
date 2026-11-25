@@ -1,0 +1,50 @@
+import {
+  CurrencyCircleDollar,
+  Tag,
+  Gear,
+  User as UserIcon,
+} from '@phosphor-icons/react'
+import type { SearchMeta } from '@/lib/dashboard-search/types'
+
+export const searchMetas: SearchMeta[] = [
+  {
+    id: 'dash.payments.overview',
+    titleKey: 'dashboard.search.entries.payments_overview.title',
+    descriptionKey: 'dashboard.search.entries.payments_overview.description',
+    keywordsKey: 'dashboard.search.entries.payments_overview.keywords',
+    icon: CurrencyCircleDollar,
+    href: '/cabinet/payments/overview',
+    group: 'payments',
+    featureKey: 'payments',
+  },
+  {
+    id: 'dash.payments.offers',
+    titleKey: 'dashboard.search.entries.payments_products.title',
+    descriptionKey: 'dashboard.search.entries.payments_products.description',
+    keywordsKey: 'dashboard.search.entries.payments_products.keywords',
+    icon: Tag,
+    href: '/cabinet/payments/products',
+    group: 'payments',
+    featureKey: 'payments',
+  },
+  {
+    id: 'dash.payments.configuration',
+    titleKey: 'dashboard.search.entries.payments_configuration.title',
+    descriptionKey: 'dashboard.search.entries.payments_configuration.description',
+    keywordsKey: 'dashboard.search.entries.payments_configuration.keywords',
+    icon: Gear,
+    href: '/cabinet/payments/settings',
+    group: 'payments',
+    featureKey: 'payments',
+  },
+  {
+    id: 'dash.payments.customers',
+    titleKey: 'dashboard.search.entries.payments_customers.title',
+    descriptionKey: 'dashboard.search.entries.payments_customers.description',
+    keywordsKey: 'dashboard.search.entries.payments_customers.keywords',
+    icon: UserIcon,
+    href: '/cabinet/payments/customers',
+    group: 'payments',
+    featureKey: 'payments',
+  },
+]

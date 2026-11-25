@@ -1,0 +1,62 @@
+---
+description: Environment variables the LearnHouse CLI reads, such as LEARNHOUSE_DIR and LEARNHOUSE_ADMIN_PASSWORD, and how its generated .env file is laid out.
+---
+
+import { Callout } from '@/components/mdx'
+
+# CLI Environment Variables
+
+This page covers two things: the environment variables the CLI itself reads, and the layout of the `.env` file it generates for a Community installation. For what each variable in that file does, and every other variable LearnHouse reads, see the [Environment Variables reference](/self-hosting/configuration/environment-variables).
+
+## Variables the CLI reads
+
+| Variable | Description |
+| --- | --- |
+| `LEARNHOUSE_DIR` | Installation directory to act on. Same as the global `--dir` option. |
+| `LEARNHOUSE_DOCKER_BIN` | Docker executable to call instead of `docker` on your `PATH`, for example an absolute path or a Docker-compatible CLI. A value ending in `.js`, `.mjs` or `.cjs` is run with the current Node.js. |
+| `LEARNHOUSE_ADMIN_PASSWORD` | Admin password for `setup`, instead of `--admin-password` |
+| `LEARNHOUSE_EXTERNAL_DB` | External PostgreSQL connection string for `setup`, instead of `--external-db` |
+| `LEARNHOUSE_EXTERNAL_REDIS` | External Redis connection string for `setup`, instead of `--external-redis` |
+| `LEARNHOUSE_LICENSE_KEY` | Enterprise license key for `setup`, instead of `--license` |
+| `LEARNHOUSE_CF_API_TOKEN` | Cloudflare API token for Enterprise DNS-01 certificates, instead of `--cf-api-token` |
+| `LEARNHOUSE_NO_UPDATE_CHECK` | Any value turns off the check for a newer CLI version |
+| `NO_UPDATE_NOTIFIER` | Same as `LEARNHOUSE_NO_UPDATE_CHECK` |
+| `CI` | Any value turns off the update check |
+| `LEARNHOUSE_DEBUG` | Any value prints the stack trace when a command fails with an unexpected error |
+
+Passing secrets through the environment keeps them out of the process list and your shell history. When both a flag and its variable are set, the flag wins.
+
+```bash
+LEARNHOUSE_ADMIN_PASSWORD=secretpass123 npx learnhouse setup --ci --domain example.com --admin-email admin@yourdomain.com
+```
+
+## Generated `.env` file
+
+`setup` writes a `.env` file to the installation directory, readable only by your user. Edit it with `npx learnhouse env` or by hand, then run `npx learnhouse start` to apply the change.
+
+The file is grouped into commented sections, in this order:
+
+| Section | Variables written |
+| --- | --- |
+| Domain & Hosting | `LEARNHOUSE_DOMAIN`, `HTTP_PORT` |
+| Frontend | `NEXT_PUBLIC_LEARNHOUSE_API_URL`, `NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL`, `NEXT_PUBLIC_LEARNHOUSE_DOMAIN`, `NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN`, `NEXT_PUBLIC_LEARNHOUSE_MULTI_ORG`, `NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG`, `NEXT_PUBLIC_LEARNHOUSE_HTTPS` |
+| NextAuth | `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, and `LEARNHOUSE_GOOGLE_CLIENT_ID` / `LEARNHOUSE_GOOGLE_CLIENT_SECRET` when you enable Google OAuth |
+| Backend | `LEARNHOUSE_SQL_CONNECTION_STRING`, `LEARNHOUSE_REDIS_CONNECTION_STRING`, `LEARNHOUSE_COOKIE_DOMAIN`, `LEARNHOUSE_PORT` |
+| Security | `LEARNHOUSE_AUTH_JWT_SECRET_KEY`, `LEARNHOUSE_INITIAL_ADMIN_EMAIL`, `LEARNHOUSE_INITIAL_ADMIN_PASSWORD`, `LEARNHOUSE_INITIAL_ORG_NAME`, `LEARNHOUSE_INITIAL_ORG_SLUG` |
+| Collaboration Server | `COLLAB_INTERNAL_KEY`, `LEARNHOUSE_REDIS_URL`, `NEXT_PUBLIC_COLLAB_URL` |
+| General Settings | `LEARNHOUSE_DEVELOPMENT_MODE=False`, `LEARNHOUSE_LOGFIRE_ENABLED=False` (kept for compatibility, not read by the current runtime) |
+| AI Configuration | `LEARNHOUSE_IS_AI_ENABLED`, plus `LEARNHOUSE_GEMINI_API_KEY` when you enable AI |
+| Email Configuration | Only when you enable email: `LEARNHOUSE_EMAIL_PROVIDER`, `LEARNHOUSE_SYSTEM_EMAIL_ADDRESS`, then `LEARNHOUSE_RESEND_API_KEY` or the `LEARNHOUSE_SMTP_*` variables |
+| Content Delivery | `LEARNHOUSE_CONTENT_DELIVERY_TYPE` (`filesystem` or `s3api`), plus `LEARNHOUSE_S3_API_BUCKET_NAME` and `LEARNHOUSE_S3_API_ENDPOINT_URL` for S3 |
+| Database Configuration | Only with the in-container database: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
+
+Values the CLI derives for you:
+
+- The public URLs use `https://` and `wss://` when HTTPS is on. They include the port when it is not the default, except when you handle SSL in your own proxy.
+- `NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN` is the last two labels of the domain, and `LEARNHOUSE_COOKIE_DOMAIN` is that value with a leading dot (`.localhost` for a local install).
+- With the in-container services, the connection strings point at `db:5432` and `redis:6379`. With external services, they hold the connection strings you entered.
+- `NEXTAUTH_SECRET`, `LEARNHOUSE_AUTH_JWT_SECRET_KEY`, `COLLAB_INTERNAL_KEY` and `POSTGRES_PASSWORD` are random. Re-running `setup` on the same installation keeps them.
+
+<Callout type="info">
+The generated `docker-compose.yml` also sets `HOSTNAME=0.0.0.0` and `LEARNHOUSE_API_URL=http://localhost:9000` for the app container. The setup wizard does not write `LEARNHOUSE_SSL`; add `LEARNHOUSE_SSL=true` yourself when you serve LearnHouse over HTTPS, so links the API builds outside a request (for example in background emails) use `https://`. See [SSL & Domain](/self-hosting/configuration/ssl).
+</Callout>

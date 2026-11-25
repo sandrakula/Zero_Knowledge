@@ -1,0 +1,29 @@
+{
+  "name": "@learnhouse/collab",
+  "version": "1.4.4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "^4.8.0",
+    "@hocuspocus/server": "^4.8.0",
+    "dotenv": "^18.0.9",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "esbuild": ">=0.28.2"
+  }
+}

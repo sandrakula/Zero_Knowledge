@@ -1,0 +1,261 @@
+from typing import Optional, Dict, Any, AsyncGenerator
+from uuid import uuid4
+from datetime import datetime, timezone
+import logging
+import redis
+import json
+
+from config.config import get_learnhouse_config
+from src.services.ai.llm import generate, generate_stream, model_for_tier
+from src.services.ai.llm.errors import log_ai_failure
+
+logger = logging.getLogger(__name__)
+
+LH_CONFIG = get_learnhouse_config()
+
+
+def _build_context_prompt(message_for_the_prompt: str, text_reference: str) -> str:
+    """Combine the feature system prompt with course-content context."""
+    if text_reference:
+        return f"{message_for_the_prompt}\n\nCourse Content Context:\n{text_reference}"
+    return message_for_the_prompt
+
+
+async def ask_ai(
+    question: str,
+    message_history: Any,
+    text_reference: str,
+    message_for_the_prompt: str,
+    model_name: str,
+) -> Dict[str, Any]:
+    """
+    Process an AI query through the provider-agnostic LLM layer with course content as context.
+    """
+    try:
+        output = await generate(
+            model_name=model_name or model_for_tier("standard"),
+            user_prompt=question,
+            system_prompt=_build_context_prompt(message_for_the_prompt, text_reference),
+            history=message_history,
+        )
+        return {"output": output, "intermediate_steps": []}
+    except Exception as e:
+        raise Exception(f"Error processing AI request: {str(e)}")
+
+def get_chat_session_history(aichat_uuid: Optional[str] = None) -> Dict[str, Any]:
+    """Get or create a new chat session history using Redis"""
+    session_id = aichat_uuid if aichat_uuid else f"aichat_{uuid4()}"
+    
+    LH_CONFIG = get_learnhouse_config()
+    redis_conn_string = LH_CONFIG.redis_config.redis_connection_string
+
+    message_history = []
+    
+    if redis_conn_string:
+        try:
+            # Connect to Redis and get message history
+            r = redis.from_url(redis_conn_string, socket_connect_timeout=5, socket_timeout=5)
+            history_data = r.get(f"chat_history:{session_id}")
+            if history_data:
+                if isinstance(history_data, bytes):
+                    message_history = json.loads(history_data.decode('utf-8'))
+                elif isinstance(history_data, str):
+                    message_history = json.loads(history_data)
+                else:
+                    message_history = []
+        except Exception as e:
+            logger.error("Failed to connect to Redis: %s, using empty history", e, exc_info=True)
+            message_history = []
+    else:
+        logger.warning("Redis connection string not found, using empty history")
+        message_history = []
+
+    return {
+        "message_history": message_history,
+        "aichat_uuid": session_id
+    }
+
+def save_message_to_history(aichat_uuid: str, user_message: str, ai_response: str, user_id: Optional[int] = None, course_uuid: Optional[str] = None, sources: Optional[list] = None, mode: str = "course_only", org_id: Optional[int] = None, listed: bool = True):
+    """Save a message exchange to Redis history. Auto-creates session metadata on first message.
+
+    Pass ``user_id`` on every call: the metadata it creates is what binds the
+    session to its owner, and :func:`chat_session_belongs_to_user` refuses a
+    session that has history but no owner. ``listed=False`` records the owner
+    without adding the session to the user's chat sidebar (refine sessions for
+    quiz/scenario/assignment/editor generation).
+    """
+    LH_CONFIG = get_learnhouse_config()
+    redis_conn_string = LH_CONFIG.redis_config.redis_connection_string
+
+    if not redis_conn_string:
+        return
+
+    try:
+        r = redis.from_url(redis_conn_string, socket_connect_timeout=5, socket_timeout=5)
+
+        # Get existing history
+        history_key = f"chat_history:{aichat_uuid}"
+        history_data = r.get(history_key)
+        if history_data:
+            if isinstance(history_data, bytes):
+                history = json.loads(history_data.decode('utf-8'))
+            elif isinstance(history_data, str):
+                history = json.loads(history_data)
+            else:
+                history = []
+        else:
+            history = []
+
+        # Auto-create session metadata on first message pair
+        is_first_message = len(history) == 0
+
+        # Add new messages
+        history.append({"role": "user", "content": user_message})
+        model_msg = {"role": "model", "content": ai_response}
+        if sources:
+            model_msg["sources"] = sources
+        history.append(model_msg)
+
+        # Keep only last 20 messages to prevent unlimited growth
+        if len(history) > 20:
+            history = history[-20:]
+
+        # Save back to Redis with TTL of 25 days
+        r.setex(history_key, 2160000, json.dumps(history))
+
+        # Create session metadata on first message
+        if is_first_message and user_id is not None:
+            title = user_message[:50].strip()
+            if len(user_message) > 50:
+                title += "..."
+            save_chat_session_meta(aichat_uuid, user_id, title, course_uuid, mode=mode, org_id=org_id, listed=listed)
+
+    except Exception as e:
+        logger.error("Failed to save message to Redis: %s", e, exc_info=True)
+
+
+CHAT_TTL = 2160000  # 25 days in seconds
+
+
+def _get_redis():
+    """Get a Redis connection."""
+    LH_CONFIG = get_learnhouse_config()
+    conn = LH_CONFIG.redis_config.redis_connection_string
+    if not conn:
+        return None
+    return redis.from_url(conn, socket_connect_timeout=5, socket_timeout=5)
+
+
+def save_chat_session_meta(aichat_uuid: str, user_id: int, title: str, course_uuid: Optional[str] = None, mode: str = "course_only", org_id: Optional[int] = None, listed: bool = True):
+    """Store session metadata and add to user's session index."""
+    r = _get_redis()
+    if not r:
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        meta = {
+            "aichat_uuid": aichat_uuid,
+            "user_id": user_id,
+            "org_id": org_id,
+            "title": title,
+            "course_uuid": course_uuid,
+            "created_at": now.isoformat(),
+            "favorite": False,
+            "mode": mode,
+        }
+        r.setex(f"chat_meta:{aichat_uuid}", CHAT_TTL, json.dumps(meta))
+        if listed:
+            r.zadd(f"user_chats:{user_id}", {aichat_uuid: now.timestamp()})
+            r.expire(f"user_chats:{user_id}", CHAT_TTL)
+    except Exception as e:
+        logger.error("Failed to save chat session meta: %s", e, exc_info=True)
+
+
+def chat_session_belongs_to_user(aichat_uuid: str, user_id: int) -> bool:
+    """Return True if the chat session is owned by ``user_id``.
+
+    Ownership is recorded in the ``chat_meta:<uuid>`` Redis key (see
+    :func:`save_chat_session_meta`). A uuid with neither metadata nor history
+    is unclaimed (brand-new or fully expired) and may be taken by the caller.
+    A uuid that has history but no metadata fails closed: its owner is
+    unknown, so nobody may read it through the model or append to it.
+    """
+    r = _get_redis()
+    if not r:
+        return True
+    try:
+        meta_data = r.get(f"chat_meta:{aichat_uuid}")
+        if not meta_data:
+            return not r.exists(f"chat_history:{aichat_uuid}")
+        meta = json.loads(meta_data.decode("utf-8") if isinstance(meta_data, bytes) else meta_data)
+        return meta.get("user_id") == user_id
+    except Exception as e:
+        logger.error("Failed to verify chat session ownership: %s", e, exc_info=True)
+        return False
+
+
+async def ask_ai_stream(
+    question: str,
+    message_history: Any,
+    text_reference: str,
+    message_for_the_prompt: str,
+    model_name: str,
+) -> AsyncGenerator[str, None]:
+    """
+    Process an AI query through the provider-agnostic LLM layer with a streaming response.
+    Yields chunks of the response as they arrive.
+    """
+    try:
+        async for chunk in generate_stream(
+            model_name=model_name or model_for_tier("standard"),
+            user_prompt=question,
+            system_prompt=_build_context_prompt(message_for_the_prompt, text_reference),
+            history=message_history,
+        ):
+            yield chunk
+    except Exception as e:
+        log_ai_failure(logger, e, "ask_ai_stream failed")
+        raise
+
+
+async def generate_follow_up_suggestions(
+    ai_response: str,
+    context: str,
+    model_name: str,
+    user_message: str = "",
+) -> list[str]:
+    """
+    Generate 3 contextual follow-up questions based on the AI response.
+    Returns a list of suggested follow-up questions.
+    Uses the fast model tier with a minimal prompt for quick generation.
+    Questions are generated in the same language as the user's message.
+    """
+    try:
+        # Use only a small snippet of the response for speed
+        response_snippet = ai_response[:500] if len(ai_response) > 500 else ai_response
+
+        # Short, direct prompt for fast generation - respond in same language as user
+        prompt = f"""Given this educational response, suggest 3 brief follow-up questions a student might ask. Output only the questions, one per line. IMPORTANT: Write the questions in the same language as the user's question.
+
+User's question: {user_message[:200]}
+Response: {response_snippet}
+
+Questions:"""
+
+        text = await generate(
+            model_name=model_for_tier("fast"),
+            user_prompt=prompt,
+            max_tokens=150,
+            temperature=0.7,
+        )
+
+        # Parse the response into a list of questions
+        if text:
+            questions = [q.strip().lstrip('0123456789.-) ') for q in text.strip().split('\n') if q.strip() and '?' in q]
+            return questions[:3]
+
+        return []
+
+    except Exception as e:
+        logger.error("Failed to generate follow-up suggestions: %s", e, exc_info=True)
+        return []
